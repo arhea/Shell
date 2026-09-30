@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- **GitHub tab**: a board of the repository's open pull requests in Draft, Waiting for review, Has feedback, Changes requested and Ready columns, with a Mine / All filter. Stacked PRs are grouped into one card you can step through. Selecting a PR shows its description, conversation, checks and diff, and lets you comment, approve, request changes, mark ready or draft, re-run failed checks, merge, close, or check it out in a worktree, all through your `gh`. Open it with **View › Open GitHub** (⌃⌘H) or **Board** in the sidebar's GitHub section. (fixes [#18](https://github.com/arhea/Shell/issues/18))
+- **GitHub tab**: a board of the repository's open pull requests in Draft, Waiting for review, Has feedback, Changes requested and Ready columns, with a Mine / All filter. Stacked PRs are grouped into one card you can step through. Selecting a PR shows its description, conversation, checks and diff, and lets you comment, approve, request changes, mark ready or draft, re-run failed checks, merge, close, or check it out in a worktree, all through your `gh`. Open it with **View › Open GitHub** (⌃⌘H) or **Board** in the sidebar's GitHub section. ([#23](https://github.com/arhea/Shell/pull/23), fixes [#18](https://github.com/arhea/Shell/issues/18))
 
 ## [0.2.0] - 2026-09-30
 
