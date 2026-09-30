@@ -125,12 +125,8 @@ struct FontPreview: View {
         let t = ConfigController.shared.theme
         let font = InputEditorView.font(family: s.fontFamily, size: CGFloat(s.fontSize))
         VStack(alignment: .leading, spacing: CGFloat(s.lineHeight - 1) * CGFloat(s.fontSize) + 2) {
-            Text("~/code/shell ").foregroundColor(Color(nsColor: t.palette[4].nsColor))
-                + Text("main ").foregroundColor(Color(nsColor: t.palette[5].nsColor))
-                + Text("❯ ").foregroundColor(Color(nsColor: t.palette[2].nsColor))
-                + Text("git log --oneline -3").foregroundColor(Color(nsColor: t.foreground.nsColor))
-            Text("a1b2c3d ").foregroundColor(Color(nsColor: t.palette[3].nsColor))
-                + Text("Add vertical tabs => != === -> ").foregroundColor(Color(nsColor: t.foreground.nsColor))
+            Text("\(Text("~/code/shell ").foregroundColor(Color(nsColor: t.palette[4].nsColor)))\(Text("main ").foregroundColor(Color(nsColor: t.palette[5].nsColor)))\(Text("❯ ").foregroundColor(Color(nsColor: t.palette[2].nsColor)))\(Text("git log --oneline -3").foregroundColor(Color(nsColor: t.foreground.nsColor)))")
+            Text("\(Text("a1b2c3d ").foregroundColor(Color(nsColor: t.palette[3].nsColor)))\(Text("Add vertical tabs => != === -> ").foregroundColor(Color(nsColor: t.foreground.nsColor)))")
             Text("0O1lI {}[]() <= >= fi fl").foregroundColor(Color(nsColor: t.foreground.nsColor))
         }
         .font(Font(font))

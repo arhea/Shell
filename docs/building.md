@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- macOS 15 (Sequoia) or later, on **Apple Silicon**. libghostty is built for the native architecture only.
+- macOS 26 (Tahoe) or later, on **Apple Silicon**. libghostty is built for the native architecture only.
 - Xcode 26 or later (Swift 6 language mode; tested with Xcode 27 / Swift 6.4), with the command-line tools selected (`xcode-select -p`).
 - Zig at the version the pinned Ghostty commit asks for (`minimum_zig_version` in `Vendor/ghostty/build.zig.zon`; 0.16 today).
 - [Homebrew](https://brew.sh), for the two build tools:

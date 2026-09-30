@@ -79,9 +79,7 @@ struct ThemeCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             VStack(alignment: .leading, spacing: 3) {
-                (Text("~ ").foregroundColor(Color(nsColor: theme.palette[4].nsColor))
-                    + Text("❯ ").foregroundColor(Color(nsColor: theme.palette[2].nsColor))
-                    + Text("ls -la").foregroundColor(Color(nsColor: theme.foreground.nsColor)))
+                Text("\(Text("~ ").foregroundColor(Color(nsColor: theme.palette[4].nsColor)))\(Text("❯ ").foregroundColor(Color(nsColor: theme.palette[2].nsColor)))\(Text("ls -la").foregroundColor(Color(nsColor: theme.foreground.nsColor)))")
                 HStack(spacing: 3) {
                     ForEach(0..<8, id: \.self) { i in
                         RoundedRectangle(cornerRadius: 2).fill(Color(nsColor: theme.palette[i].nsColor)).frame(width: 14, height: 10)

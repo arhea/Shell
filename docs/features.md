@@ -103,7 +103,7 @@ Background jobs log to `~/Library/Logs/Shell/`. You get a notification when some
 
 ## Apple Intelligence
 
-Optional features that use Apple's on-device model (FoundationModels). They need macOS 26 or later with Apple Intelligence turned on. **Each one is off until you turn it on** in Settings › Apple Intelligence. Everything runs on your Mac: nothing is sent to Apple or anyone else, and no suggestion ever runs by itself. On a Mac without Apple Intelligence, the features and their settings don't appear.
+Optional features that use Apple's on-device model (FoundationModels). They need a Mac with Apple Intelligence turned on. **Each one is off until you turn it on** in Settings › Apple Intelligence. Everything runs on your Mac: nothing is sent to Apple or anyone else, and no suggestion ever runs by itself. On a Mac without Apple Intelligence, the features and their settings don't appear.
 
 | Feature | What it does |
 | --- | --- |

@@ -346,7 +346,7 @@ struct AppSettings: Codable, Equatable {
     // Keyboard shortcut overrides (action id -> shortcut or nil to unbind)
     var shortcuts: [String: KeyShortcut?] = [:]
 
-    // Apple Intelligence (on-device model, macOS 26+). Every feature is off
+    // Apple Intelligence (on-device model). Every feature is off
     // until the user turns it on; none of these sync, since availability is per Mac.
     /// Suggest branch names from a description in "Start in Worktree…".
     var intelligenceBranchNames = false

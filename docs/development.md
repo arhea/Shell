@@ -23,7 +23,7 @@ After adding or removing source files, run `make project` (or `xcodegen generate
 
 ## App icon
 
-The icon is an Icon Composer document, `Resources/AppIcon.icon`: two vector layers (`chevron.svg`, `cursor.svg`) with a light fill and a dark fill for each layer and for the background. Open it in Icon Composer (Xcode › Open Developer Tool) to edit it. On macOS 26 the system renders the light, dark, tinted and clear styles from it. Xcode also generates `AppIcon.icns` for macOS 15 from the light appearance, and the disk image uses that file as its volume icon.
+The icon is an Icon Composer document, `Resources/AppIcon.icon`: two vector layers (`chevron.svg`, `cursor.svg`) with a light fill and a dark fill for each layer and for the background. Open it in Icon Composer (Xcode › Open Developer Tool) to edit it. The system renders the light, dark, tinted and clear styles from it. Xcode also generates `AppIcon.icns` from the light appearance, and the disk image uses that file as its volume icon.
 
 Keep the SVG layers as filled shapes, not strokes: the layer fill replaces the SVG's colors, and on a stroked path it floods the whole enclosed area. To check every style without switching your Mac's appearance:
 
@@ -69,7 +69,7 @@ The Metal terminal renders into snapshots. SwiftUI `NavigationSplitView` content
 
 ## Code conventions
 
-- **Swift 6 language mode (strict concurrency), macOS 15 SDK features are fine.** UI and model types are `@MainActor`. Prefer `@Observable` over `ObservableObject`. Cross-thread state is either confined to one queue (`ControlServer`, `StreamJSONDecoder`) or behind a lock; mark such types `@unchecked Sendable` with a comment saying which. Use `Task { @MainActor in … }` rather than `DispatchQueue.main.async { MainActor.assumeIsolated { … } }` in new code.
+- **Swift 6 language mode (strict concurrency), macOS 26 SDK features are fine (no availability checks needed).** UI and model types are `@MainActor`. Prefer `@Observable` over `ObservableObject`. Cross-thread state is either confined to one queue (`ControlServer`, `StreamJSONDecoder`) or behind a lock; mark such types `@unchecked Sendable` with a comment saying which. Use `Task { @MainActor in … }` rather than `DispatchQueue.main.async { MainActor.assumeIsolated { … } }` in new code.
 - **Views read narrow state.** Reading `SettingsStore.shared.settings` in a view body re-renders it on every settings change; the native Claude view reads `ChatPreferences.shared` instead. App-wide models are plain `let x = X.shared` references, not `@State`.
 - **Shared helpers.** Run external tools with `ProcessRunner` (drains stdout and stderr together, with a timeout and cancellation) or `GitRepository.run`; quote command lines with `ShellQuote`; share repositories through `GitRepository.discover` (one instance and FSEvents stream per checkout, reference-counted: balance each `discover` with one `stop()`).
 - **Logging.** Use the per-area loggers in `Log` (`app`, `settings`, `claude`, `git`, `control`, `process`) and log failed writes and launches instead of dropping them with `try?`.

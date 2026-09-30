@@ -27,7 +27,7 @@ struct IntelligenceBanner: View {
     var body: some View {
         let palette = ChromePalette.current
         HStack(spacing: 10) {
-            Image(systemName: NSImage(systemSymbolName: "apple.intelligence", accessibilityDescription: nil) != nil ? "apple.intelligence" : "sparkles")
+            Image(systemName: "apple.intelligence")
                 .foregroundStyle(palette.accent)
             Text("Shell can use Apple Intelligence on this Mac to suggest branch names, tab names and fixes for failed commands. Each feature is off until you turn it on.")
                 .font(.system(size: 12))

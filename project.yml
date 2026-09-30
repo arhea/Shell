@@ -2,14 +2,14 @@ name: Shell
 options:
   bundleIdPrefix: app.bethesdalabs
   deploymentTarget:
-    macOS: "15.0"
+    macOS: "26.0"
   createIntermediateGroups: true
   generateEmptyDirectories: true
 
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    MACOSX_DEPLOYMENT_TARGET: "15.0"
+    MACOSX_DEPLOYMENT_TARGET: "26.0"
     ENABLE_HARDENED_RUNTIME: YES
     DEAD_CODE_STRIPPING: YES
     DEVELOPMENT_TEAM: T9PCKZ42NK
@@ -37,8 +37,7 @@ targets:
         type: folder
         buildPhase: resources
       - path: Resources/Assets.xcassets
-      # Icon Composer document: light, dark, tinted and clear variants on
-      # macOS 26; Xcode also generates the classic icon for macOS 15.
+      # Icon Composer document: light, dark, tinted and clear variants.
       - path: Resources/AppIcon.icon
         buildPhase: resources
     dependencies:
@@ -53,9 +52,7 @@ targets:
       - sdk: IOSurface.framework
       - sdk: UserNotifications.framework
       - sdk: UniformTypeIdentifiers.framework
-      # Apple Intelligence (macOS 26+). Weak so Shell still launches on macOS 15.
       - sdk: FoundationModels.framework
-        weak: true
     info:
       path: Resources/Info.plist
       properties:
@@ -65,7 +62,7 @@ targets:
         CFBundleVersion: "1"
         CFBundleIconName: AppIcon
         LSApplicationCategoryType: public.app-category.developer-tools
-        LSMinimumSystemVersion: "15.0"
+        LSMinimumSystemVersion: "26.0"
         NSHighResolutionCapable: true
         NSPrincipalClass: NSApplication
         NSSupportsAutomaticTermination: false
@@ -152,7 +149,7 @@ targets:
         # Keep in step with the app's versions.
         CFBundleShortVersionString: "0.1.0"
         CFBundleVersion: "1"
-        LSMinimumSystemVersion: "15.0"
+        LSMinimumSystemVersion: "26.0"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
