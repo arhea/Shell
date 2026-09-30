@@ -21,6 +21,19 @@ Tests run inside Shell (it's the test host), but they never touch your real file
 
 After adding or removing source files, run `make project` (or `xcodegen generate`). The Xcode project is generated from `project.yml` and isn't checked in.
 
+## App icon
+
+The icon is an Icon Composer document, `Resources/AppIcon.icon`: two vector layers (`chevron.svg`, `cursor.svg`) with a light fill and a dark fill for each layer and for the background. Open it in Icon Composer (Xcode › Open Developer Tool) to edit it. On macOS 26 the system renders the light, dark, tinted and clear styles from it. Xcode also generates `AppIcon.icns` for macOS 15 from the light appearance, and the disk image uses that file as its volume icon.
+
+Keep the SVG layers as filled shapes, not strokes: the layer fill replaces the SVG's colors, and on a stroked path it floods the whole enclosed area. To check every style without switching your Mac's appearance:
+
+```bash
+"$(xcode-select -p)/../Applications/Icon Composer.app/Contents/Executables/ictool" Resources/AppIcon.icon \
+  --export-image --output-file dark.png --platform macOS --rendition Dark --width 512 --height 512 --scale 1
+```
+
+Renditions: `Default`, `Dark`, `TintedLight`, `TintedDark`, `ClearLight`, `ClearDark`.
+
 ## Driving the app without Screen Recording
 
 `shellctl debug …` drives a running Shell over the control socket, so you (or a coding agent) can inspect the app from a Shell terminal tab without granting Screen Recording:
