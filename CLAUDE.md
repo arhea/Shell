@@ -182,7 +182,7 @@ git commit -am "chore: release v$VERSION"
 make dist
 ```
 
-`scripts/release.sh` builds Release for arm64, verifies the Developer ID signature, hardened runtime, secure timestamp and absence of `get-task-allow`, notarizes and staples the app, packages it into a disk image with an `/Applications` shortcut, then signs, notarizes and staples the disk image and writes its checksum. Notarization runs twice, so allow 5–15 minutes.
+`scripts/release.sh` builds Release for arm64, verifies the Developer ID signature, hardened runtime, secure timestamp and absence of `get-task-allow`, notarizes and staples the app, packages it into a styled disk image (`scripts/make-dmg.sh`: terminal-themed background, `/Applications` shortcut, volume icon), then signs, notarizes and staples the disk image and writes its checksum. Notarization runs twice, so allow 5–15 minutes.
 
 Output:
 

@@ -45,6 +45,7 @@ The first run takes about 3 minutes. After that, bootstrap skips the libghostty 
 | `make build` / `make release` | Debug / Release build into `build/DerivedData` |
 | `make run` | Debug build, then open the app |
 | `make dist` | Developer ID-signed, notarized, stapled `.dmg` in `build/dist` (see [Releasing](releasing.md)) |
+| `make dmg-preview` | Unsigned `.dmg` of the Debug build, opened in Finder, to check the installer window |
 | `make install` | Same as `dist`, then copy to `/Applications` (quit Shell first) |
 | `make clean` | Remove `build/` |
 | `./scripts/build.sh` | Build and print only this project's errors and warnings |
