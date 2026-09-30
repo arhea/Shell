@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-30
+
+Shell adds a GitHub tab: a kanban board of your repository's pull requests, with stacked PRs grouped together and review, checks, merge and checkout built in. The native Claude Code view also gets a centered composer, sign-in from inside the view, and image paste.
+
 ### Added
 
 - **GitHub tab**: a board of the repository's open pull requests in Draft, Waiting for review, Has feedback, Changes requested and Ready columns, with a Mine / All filter. Stacked PRs are grouped into one card you can step through. Selecting a PR shows its description, conversation, checks and diff, and lets you comment, approve, request changes, mark ready or draft, re-run failed checks, merge, close, or check it out in a worktree, all through your `gh`. Open it with **View › Open GitHub** (⌃⌘H) or **Board** in the sidebar's GitHub section. ([#23](https://github.com/arhea/Shell/pull/23), fixes [#18](https://github.com/arhea/Shell/issues/18))
@@ -50,6 +54,7 @@ First public release.
 - Optional on-device Apple Intelligence features, all off by default.
 - Shortcuts and Spotlight actions, Finder services, a Dock menu, a desktop widget, Quick Look previews and optional iCloud settings sync.
 
-[Unreleased]: https://github.com/arhea/Shell/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/arhea/Shell/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/arhea/Shell/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/arhea/Shell/releases/tag/v0.2.0
 [0.1.0]: https://github.com/arhea/Shell/releases/tag/v0.1.0
