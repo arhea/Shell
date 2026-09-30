@@ -624,6 +624,8 @@ struct ClaudeComposerField: NSViewRepresentable {
                 parent.onExit()
                 return
             }
+            // Keep the draft while signed out or starting.
+            guard claude.canSend else { return }
             claude.send(text, attachments: attachments)
             claude.draftAttachments = []
             if !text.isEmpty, model.history.last != text { model.history.append(text) }

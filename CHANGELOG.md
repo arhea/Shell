@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- The native Claude Code view can sign in to Claude Code. When Claude Code is signed out, or its sign-in expires mid-conversation, the view shows a sign-in card that runs Claude Code's own login (the same choices as `/login`) instead of an error, then starts or continues the session and sends the message that failed. ([#16](https://github.com/arhea/Shell/issues/16))
+
 ## [0.2.0] - 2026-09-30
 
 Shell now keeps itself up to date: it checks GitHub for new releases, verifies them and installs on quit. This release also brings a refreshed installer, an app icon that follows your appearance, and a native About window, and it now requires macOS 26.
