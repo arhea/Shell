@@ -1,0 +1,35 @@
+name: Set up Zig
+description: >
+  Installs an exact Zig release from ziglang.org, verified against a pinned
+  SHA-256, and puts it on PATH. Replaces third-party setup actions so the only
+  things we trust are the official download and a checksum we reviewed.
+inputs:
+  version:
+    description: Zig version, e.g. 0.16.0. Must match minimum_zig_version in Ghostty's build.zig.zon.
+    required: true
+  sha256:
+    description: >
+      SHA-256 of zig-aarch64-macos-<version>.tar.xz, from
+      https://ziglang.org/download/index.json ("0.16.0" > "aarch64-macos" > "shasum").
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Download, verify and install Zig ${{ inputs.version }}
+      shell: bash
+      env:
+        ZIG_VERSION: ${{ inputs.version }}
+        ZIG_SHA256: ${{ inputs.sha256 }}
+      run: |
+        set -euo pipefail
+        [[ $(uname -sm) == "Darwin arm64" ]] || { echo "::error::setup-zig only supports Apple Silicon macOS runners"; exit 1; }
+        name="zig-aarch64-macos-${ZIG_VERSION}"
+        dest="${RUNNER_TEMP}/zig"
+        mkdir -p "$dest"
+        curl --fail --silent --show-error --location --retry 3 --proto '=https' --tlsv1.2 \
+          --output "${dest}/${name}.tar.xz" "https://ziglang.org/download/${ZIG_VERSION}/${name}.tar.xz"
+        echo "${ZIG_SHA256}  ${dest}/${name}.tar.xz" | shasum -a 256 --check --strict
+        tar -xJf "${dest}/${name}.tar.xz" -C "$dest"
+        rm "${dest}/${name}.tar.xz"
+        echo "${dest}/${name}" >> "$GITHUB_PATH"
+        "${dest}/${name}/zig" version
