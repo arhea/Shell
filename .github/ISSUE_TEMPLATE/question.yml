@@ -1,0 +1,26 @@
+name: Question
+description: Ask how something works, or raise a question that needs a decision.
+title: "question: "
+labels: ["question", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check the docs (`docs/getting-started.md`, `docs/troubleshooting.md`) first. Keep the `question: ` prefix and ask the question in the title, e.g. `question: Can Shell read my existing Ghostty config?`
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: State it so a concrete answer is possible.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What prompted it, what you've tried or read already, and links.
+  - type: input
+    id: shell-version
+    attributes:
+      label: Shell and macOS version
+      placeholder: Shell 0.1.0 (1), macOS 15.5

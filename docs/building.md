@@ -44,7 +44,7 @@ The first run takes about 3 minutes. After that, bootstrap skips the libghostty 
 | `make project` | Regenerate `Shell.xcodeproj` from `project.yml` |
 | `make build` / `make release` | Debug / Release build into `build/DerivedData` |
 | `make run` | Debug build, then open the app |
-| `make dist` | Developer ID-signed, notarized, stapled zip in `build/dist` (see [Releasing](releasing.md)) |
+| `make dist` | Developer ID-signed, notarized, stapled `.dmg` in `build/dist` (see [Releasing](releasing.md)) |
 | `make install` | Same as `dist`, then copy to `/Applications` (quit Shell first) |
 | `make clean` | Remove `build/` |
 | `./scripts/build.sh` | Build and print only this project's errors and warnings |
@@ -64,6 +64,7 @@ The desktop widget (`ShellWidgets.appex`, embedded in `Contents/PlugIns`) shares
 2. Run `./scripts/bootstrap.sh --force`.
 3. Build. libghostty's embedding API (`include/ghostty.h`) isn't stable, so expect small fixes in `Sources/Shell/Ghostty/`.
 4. Check `Vendor/ghostty/build.zig.zon` for dependency changes, and update [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
+5. If `minimum_zig_version` in `Vendor/ghostty/build.zig.zon` changed, update the Zig `version` and `sha256` in [`.github/workflows/test.yml`](../.github/workflows/test.yml). Take the checksum for `aarch64-macos` from [ziglang.org/download/index.json](https://ziglang.org/download/index.json). CI rebuilds libghostty on the first run after the bump, because the cache is keyed by the Ghostty commit.
 
 ## Troubleshooting
 

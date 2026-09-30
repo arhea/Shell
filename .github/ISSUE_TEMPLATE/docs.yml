@@ -1,0 +1,28 @@
+name: Documentation
+description: Something in the docs is missing, wrong or unclear.
+title: "docs: "
+labels: ["docs", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep the `docs: ` prefix and name the page and the gap, e.g. `docs: Explain how to load the zsh integration inside tmux`. Small fixes are welcome as a pull request straight away.
+  - type: input
+    id: page
+    attributes:
+      label: Which page?
+      description: A path or link, e.g. `docs/shell-integration.md#how-it-loads`.
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's missing or wrong?
+      description: Quote the current text if it's wrong. Say what you were trying to do and where you got stuck.
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested change
+      description: Draft wording, if you have it.
