@@ -297,32 +297,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShortcutActionHandling
     @objc func showAbout(_ sender: Any?) {
         let info = ghostty_info()
         let version = info.version.map { String(decoding: Data(bytes: $0, count: Int(info.version_len)), as: UTF8.self) } ?? "?"
-        NSApp.orderFrontStandardAboutPanel(options: [.credits: Self.aboutCredits(ghosttyVersion: version)])
-    }
-
-    /// Credits for the open-source projects whose code ships in the app.
-    private static func aboutCredits(ghosttyVersion: String) -> NSAttributedString {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .center
-        paragraph.paragraphSpacing = 4
-        let body: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11),
-                                                   .foregroundColor: NSColor.secondaryLabelColor,
-                                                   .paragraphStyle: paragraph]
-        let credits = NSMutableAttributedString(string: "A native macOS terminal built on libghostty \(ghosttyVersion).\n\nBuilt with\n",
-                                                attributes: body)
-        let projects: [(name: String, url: String, note: String)] = [
-            ("Ghostty", "https://github.com/ghostty-org/ghostty", "© Mitchell Hashimoto and contributors (MIT)"),
-            ("Kitty", "https://github.com/kovidgoyal/kitty", "shell integration © Kovid Goyal (GPLv3)"),
-            ("iTerm2-Color-Schemes", "https://github.com/mbadolato/iTerm2-Color-Schemes", "themes © Mark Badolato and contributors (MIT)"),
-        ]
-        for project in projects {
-            var link = body
-            link[.link] = URL(string: project.url)
-            credits.append(NSAttributedString(string: project.name, attributes: link))
-            credits.append(NSAttributedString(string: " — \(project.note)\n", attributes: body))
-        }
-        credits.append(NSAttributedString(string: "\nThank you to everyone who builds and maintains them.", attributes: body))
-        return credits
+        AboutWindowController.show(ghosttyVersion: version)
     }
 
     // MARK: GhosttyRuntimeDelegate
