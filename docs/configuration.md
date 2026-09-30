@@ -8,7 +8,8 @@ Settings › (⌘,) covers everything. Under the hood, settings are a plain JSON
 | --- | --- |
 | `~/Library/Application Support/Shell/settings.json` | All settings. Pretty-printed with sorted keys. Missing keys fall back to defaults, so older files keep loading. |
 | `~/Library/Application Support/Shell/ghostty.conf` | libghostty config **generated** from `settings.json`. Don't edit it, because Shell overwrites it. |
-| `~/Library/Logs/Shell/` | Logs from background maintenance jobs (Homebrew, Node.js, worktree and agent-storage cleanup). |
+| `~/Library/Logs/Shell/` | Logs from background maintenance jobs (Homebrew, Node.js, worktree and agent-storage cleanup) and `update.log` from installing updates. |
+| `~/Library/Application Support/Shell/updates.json` | When Shell last checked for updates, and the latest release it saw. |
 
 Shell does **not** read `~/.config/ghostty/config`. To pass raw Ghostty options through, use Settings › Advanced (`extraGhosttyConfig`). That text is appended to the generated config, so it overrides anything Shell sets. See the [Ghostty config reference](https://ghostty.org/docs/config/reference).
 
@@ -50,6 +51,8 @@ The full model, with defaults, is `AppSettings` in [`Sources/Shell/Settings/AppS
 | `extraGhosttyConfig` | `""` | Raw Ghostty config lines |
 | `timeSensitiveAgentAlerts` | `false` | Deliver "needs your input" agent alerts as Time Sensitive |
 | `iCloudSync` | `false` | Sync portable settings through iCloud Drive (below) |
+| `checkForUpdates` | `true` | Check GitHub for a new release every six hours |
+| `installUpdatesAutomatically` | `true` | Download new releases in the background and install them when Shell quits |
 | `intelligenceBranchNames`, `intelligencePaletteIntents`, `intelligenceCommandFixes`, `intelligenceSessionSummaries`, `intelligenceTabNames` | `false` | Apple Intelligence features. See [Features](features.md#apple-intelligence). |
 | `intelligenceAnnouncementShown` | `false` | Set once the one-time Apple Intelligence banner has been shown |
 
@@ -59,7 +62,7 @@ Sync is **completely optional and off by default**. Turn it on in Settings › G
 
 - Shell mirrors the portable settings to `iCloud Drive/Shell/settings.json`. Other Macs with sync on apply changes from that file within a few seconds.
 - When you turn it on and a synced copy already exists, Shell asks which to keep: the iCloud copy or this Mac's settings.
-- **What syncs:** appearance and themes, color overrides, font and cursor, terminal behavior, prompt and completion preferences, tab style, notification and Claude preferences, the hotkey window, keyboard shortcuts, and `extraGhosttyConfig`.
+- **What syncs:** appearance and themes, color overrides, font and cursor, terminal behavior, prompt and completion preferences, tab style, notification, software update and Claude preferences, the hotkey window, keyboard shortcuts, and `extraGhosttyConfig`.
 - **What never syncs:** `environment` (it can hold secrets), `shellPath`, worktree, Go, Homebrew, Node.js and agent-storage settings, UI state such as sidebar tabs and widths, `iCloudSync` itself, Apple Intelligence settings (availability differs from Mac to Mac), and command history.
 - When two Macs change settings at the same time, the most recent write wins.
 - Turning sync off stops syncing and leaves the file in iCloud Drive. Delete `iCloud Drive/Shell` to remove it.

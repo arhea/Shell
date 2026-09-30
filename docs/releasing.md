@@ -30,9 +30,24 @@ The disk image window is styled by [`scripts/make-dmg.sh`](../scripts/make-dmg.s
 | Flag | Effect |
 | --- | --- |
 | `--install` | Also copy the app to `/Applications` |
-| `--skip-notarize` | Sign only (for local testing) |
+| `--skip-notarize` | Sign only, app and DMG (for local testing; the updater rejects un-notarized builds) |
 
-3. Publish it with `gh release`: create a draft release from the changelog, attach the `.dmg` and its SHA-256 checksum as release assets (`gh release upload`), push the release commit to `main`, then publish the draft so it tags `v<version>`. The exact commands are in the **Releasing a new version** section of [`CLAUDE.md`](../CLAUDE.md).
+3. Publish it with `gh release`: create a draft release from the changelog, attach the `.dmg` and its SHA-256 checksum as release assets (`gh release upload`), push the release commit to `main`, then publish the draft as the latest release so it tags `v<version>`. The exact commands are in the **Releasing a new version** section of [`CLAUDE.md`](../CLAUDE.md).
+
+## What the auto-updater expects
+
+Installed copies of Shell poll `GET https://api.github.com/repos/arhea/Shell/releases/latest` every six hours ([`SoftwareUpdater`](../Sources/Shell/Integrations/Updates/SoftwareUpdater.swift)). A release is picked up only when all of these hold:
+
+| Requirement | Why |
+| --- | --- |
+| Published (not a draft), not a pre-release, and marked **Latest** | `/releases/latest` only returns that release |
+| Tag is `v<version>` and `<version>` equals the app's `CFBundleShortVersionString` | The tag is compared with the running version (numeric SemVer), and the downloaded app must report the same version |
+| Assets include `Shell-<version>.dmg` **and** `Shell-<version>.dmg.sha256` | The updater ignores a release until both exist, so uploading assets before publishing never serves a half-finished release |
+| The app inside the DMG is signed by the same Developer ID team, notarized and stapled | The updater checks the signature requirement and `spctl` before staging it |
+
+The staged update replaces the installed bundle after Shell quits (a detached helper swaps it with two renames and rolls back on failure; its output goes to `~/Library/Logs/Shell/update.log`). To test against a fork, launch a Release build with `SHELL_APP_UPDATE_REPOSITORY=<owner>/<repo>`. Development (ad-hoc signed) builds never check automatically or replace themselves.
+
+Pulling a bad release: mark the previous release as **Latest** (or delete the bad one). Copies that already installed it stay on it until a newer version ships.
 
 ## Time Sensitive notifications
 

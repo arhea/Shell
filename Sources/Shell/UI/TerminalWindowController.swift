@@ -1090,7 +1090,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
         case .claudeDashboard: toggleDashboard()
         case .copy, .paste, .selectAll, .toggleFullScreen:
             break
-        case .newWindow, .settings, .commandPalette, .homebrew, .nodeSetup, .zshSetup, .mcpServers, .reloadConfig:
+        case .newWindow, .settings, .checkForUpdates, .commandPalette, .homebrew, .nodeSetup, .zshSetup, .mcpServers, .reloadConfig:
             AppDelegate.shared.perform(action)
         }
     }

@@ -35,6 +35,8 @@ final class SettingsSync {
         // Notifications
         "notifyCommandFinished", "commandFinishedThreshold", "notifyOnlyWhenInactive", "notificationSound",
         "agentNotifications", "timeSensitiveAgentAlerts",
+        // Software update
+        "checkForUpdates", "installUpdatesAutomatically",
         // Claude
         "claudeLaunchMode", "claudeRemoteControl", "claudeModel", "claudeEffort",
         // Hotkey window & shortcuts
