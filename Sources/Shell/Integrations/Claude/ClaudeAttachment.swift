@@ -123,7 +123,7 @@ struct ClaudeAttachment: Identifiable, Equatable {
         if pb.canReadObject(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) { return true }
         // Spreadsheets and some editors put a picture of copied text next to the
         // text itself; that's a text paste.
-        guard pb.string(forType: .string) == nil else { return false }
+        guard pb.availableType(from: [.string]) == nil else { return false }
         return pb.availableType(from: pasteboardImageTypes.map(\.0)) != nil
     }
 
