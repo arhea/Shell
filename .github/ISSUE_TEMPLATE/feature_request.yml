@@ -1,0 +1,32 @@
+name: Feature request
+description: Suggest an idea or improvement for Shell.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. For anything larger than a small tweak, agreeing on the approach in this issue before writing code saves everyone time.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the workflow and what gets in your way today. Start with the problem, not the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like Shell to do?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and prior art
+      description: Workarounds you use today, or how iTerm2, Warp, Ghostty or other tools handle this.
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contributing
+      options:
+        - label: I'd be willing to open a pull request for this.

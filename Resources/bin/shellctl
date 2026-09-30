@@ -1,0 +1,110 @@
+#!/bin/zsh -f
+# shellctl — talk to Shell.app from inside one of its terminal sessions.
+#
+#   shellctl notify [-t TITLE] MESSAGE...   Post a notification tied to this tab
+#   shellctl agent KIND EVENT [MESSAGE]     KIND: claude|codex|other
+#                                           EVENT: working|needs-input|finished|ended
+#   shellctl claude-hook EVENT              Claude Code hook (reads hook JSON on stdin)
+#   shellctl codex-notify JSON              Codex `notify` program
+#
+# Outside Shell (no $SHELL_APP_SOCKET) every command is a silent no-op, so
+# hooks installed in your agent configs never break other terminals.
+
+emulate -L zsh
+setopt extendedglob
+zmodload zsh/net/socket 2>/dev/null || exit 0
+
+sock=$SHELL_APP_SOCKET
+sid=$SHELL_APP_SESSION
+[[ -S $sock ]] || exit 0
+
+esc() {
+    REPLY=${1//\\/\\\\}
+    REPLY=${REPLY//$'\n'/\\n}
+    REPLY=${REPLY//$'\t'/\\t}
+}
+
+send() {
+    local msg=$1 f fd
+    shift
+    msg+=$'\t'$sid
+    for f in "$@"; do
+        esc "$f"
+        msg+=$'\t'$REPLY
+    done
+    zsocket $sock 2>/dev/null || return 0
+    fd=$REPLY
+    print -r -u $fd -- "$msg"
+    exec {fd}>&-
+}
+
+# json_str JSON KEY — extracts a top-level string field (good enough for hook payloads).
+json_str() {
+    local re='"'$2'"[[:space:]]*:[[:space:]]*"(([^"\\]|\\.)*)"'
+    [[ $1 =~ $re ]] || return 1
+    REPLY=${match[1]}
+    REPLY=${REPLY//\\n/$'\n'}
+    REPLY=${REPLY//\\t/$'\t'}
+    REPLY=${REPLY//\\\"/\"}
+    REPLY=${REPLY//\\\\/\\}
+}
+
+truncate_msg() {
+    REPLY=${1//$'\n'/ }
+    REPLY=${REPLY//  #/ }
+    (( ${#REPLY} > 240 )) && REPLY="${REPLY[1,237]}…"
+}
+
+cmd=$1
+(( $# )) && shift
+
+case $cmd in
+    notify)
+        typeset title=""
+        if [[ $1 == -t ]]; then title=$2; shift 2; fi
+        send notify "${title:-Shell}" "$*"
+        ;;
+    agent)
+        send agent "${1:-other}" "${2:-finished}" "${3:-}"
+        ;;
+    claude-hook)
+        typeset event=${1:-} payload=""
+        IFS= read -r -d '' payload
+        [[ -z $event ]] && json_str "$payload" hook_event_name && event=$REPLY
+        case $event in
+            UserPromptSubmit|PreToolUse|PostToolUse)
+                send agent claude working ""
+                ;;
+            Notification)
+                json_str "$payload" message && truncate_msg "$REPLY"
+                send agent claude needs-input "${REPLY:-Claude needs your input}"
+                ;;
+            Stop)
+                send agent claude finished "Claude finished responding"
+                ;;
+            SessionEnd)
+                send agent claude ended ""
+                ;;
+        esac
+        ;;
+    codex-notify)
+        typeset payload=$1 type="" msg=""
+        json_str "$payload" type && type=$REPLY
+        json_str "$payload" last-assistant-message && truncate_msg "$REPLY" && msg=$REPLY
+        case $type in
+            *approval*|*input*) send agent codex needs-input "${msg:-Codex needs your approval}" ;;
+            *) send agent codex finished "${msg:-Codex finished its turn}" ;;
+        esac
+        ;;
+    debug)
+        send debug "$@"
+        ;;
+    ""|-h|--help|help)
+        sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+        ;;
+    *)
+        print -u2 "shellctl: unknown command: $cmd"
+        exit 2
+        ;;
+esac
+exit 0

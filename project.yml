@@ -1,0 +1,198 @@
+name: Shell
+options:
+  bundleIdPrefix: app.bethesdalabs
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
+    ENABLE_HARDENED_RUNTIME: YES
+    DEAD_CODE_STRIPPING: YES
+    DEVELOPMENT_TEAM: T9PCKZ42NK
+
+targets:
+  Shell:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/Shell
+      - path: Sources/Shared
+      - path: Resources/shell
+        type: folder
+        buildPhase: resources
+      - path: Resources/bin
+        type: folder
+        buildPhase: resources
+      - path: Vendor/GhosttyResources/ghostty
+        type: folder
+        buildPhase: resources
+      - path: Vendor/GhosttyResources/terminfo
+        type: folder
+        buildPhase: resources
+      - path: Vendor/GhosttyResources/fonts
+        type: folder
+        buildPhase: resources
+      - path: Resources/Assets.xcassets
+    dependencies:
+      # Embedded in Contents/PlugIns.
+      - target: ShellWidgets
+      - framework: Vendor/GhosttyKit.xcframework
+        embed: false
+      - sdk: Carbon.framework
+      - sdk: Metal.framework
+      - sdk: QuartzCore.framework
+      - sdk: CoreText.framework
+      - sdk: IOSurface.framework
+      - sdk: UserNotifications.framework
+      - sdk: UniformTypeIdentifiers.framework
+      # Apple Intelligence (macOS 26+). Weak so Shell still launches on macOS 15.
+      - sdk: FoundationModels.framework
+        weak: true
+    info:
+      path: Resources/Info.plist
+      properties:
+        CFBundleName: Shell
+        CFBundleDisplayName: Shell
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        CFBundleIconName: AppIcon
+        LSApplicationCategoryType: public.app-category.developer-tools
+        LSMinimumSystemVersion: "15.0"
+        NSHighResolutionCapable: true
+        NSPrincipalClass: NSApplication
+        NSSupportsAutomaticTermination: false
+        NSSupportsSuddenTermination: false
+        NSAppleEventsUsageDescription: A program running in Shell wants to use AppleScript.
+        NSSystemAdministrationUsageDescription: A program running in Shell requires elevated privileges.
+        NSDesktopFolderUsageDescription: A program running in Shell wants to access your Desktop folder.
+        NSDocumentsFolderUsageDescription: A program running in Shell wants to access your Documents folder.
+        NSDownloadsFolderUsageDescription: A program running in Shell wants to access your Downloads folder.
+        NSRemovableVolumesUsageDescription: A program running in Shell wants to access a removable volume.
+        NSNetworkVolumesUsageDescription: A program running in Shell wants to access a network volume.
+        NSCameraUsageDescription: A program running in Shell wants to use the camera.
+        NSMicrophoneUsageDescription: A program running in Shell wants to use your microphone.
+        NSLocationUsageDescription: A program running in Shell wants to use your location.
+        NSContactsUsageDescription: A program running in Shell wants to access your contacts.
+        NSCalendarsUsageDescription: A program running in Shell wants to access your calendar.
+        NSRemindersUsageDescription: A program running in Shell wants to access your reminders.
+        NSPhotoLibraryUsageDescription: A program running in Shell wants to access your photo library.
+        NSBluetoothAlwaysUsageDescription: A program running in Shell wants to use Bluetooth.
+        NSLocalNetworkUsageDescription: A program running in Shell wants to access the local network.
+        # shellapp://session/<uuid> and shellapp://dashboard (widget links).
+        CFBundleURLTypes:
+          - CFBundleURLName: app.bethesdalabs.Shell
+            CFBundleURLSchemes: [shellapp]
+        # Finder › Services (and right-click on a folder): open Shell there.
+        NSServices:
+          - NSMenuItem:
+              default: New Shell Tab Here
+            NSMessage: openTabHere
+            NSPortName: Shell
+            NSRequiredContext: {}
+            NSSendFileTypes: [public.folder]
+          - NSMenuItem:
+              default: New Shell Window Here
+            NSMessage: openWindowHere
+            NSPortName: Shell
+            NSRequiredContext: {}
+            NSSendFileTypes: [public.folder]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.bethesdalabs.Shell
+        # Resources/Shell.entitlements matches Ghostty.app: macOS attributes
+        # privacy prompts from programs in a tab to the terminal, so under the
+        # hardened runtime these let them ask. No allow-jit (libghostty doesn't
+        # JIT) and no disable-library-validation in Release; see docs/releasing.md.
+        CODE_SIGN_ENTITLEMENTS: Resources/Shell.entitlements
+        PRODUCT_NAME: Shell
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "-"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        OTHER_LDFLAGS: ["-lc++"]
+        SWIFT_OBJC_BRIDGING_HEADER: ""
+        GCC_OPTIMIZATION_LEVEL: s
+      configs:
+        Debug:
+          # Ad-hoc signed debug builds load Xcode's debug dylibs.
+          CODE_SIGN_ENTITLEMENTS: Resources/ShellDebug.entitlements
+        Release:
+          SWIFT_OPTIMIZATION_LEVEL: -O
+          SWIFT_COMPILATION_MODE: wholemodule
+          # Distributed outside the App Store: Developer ID + notarization
+          # (scripts/release.sh). Debug builds stay ad-hoc signed.
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "Developer ID Application"
+          OTHER_CODE_SIGN_FLAGS: --timestamp
+          # Plain `xcodebuild build` otherwise injects get-task-allow, which
+          # notarization rejects.
+          CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+          # libghostty is built for Apple Silicon only.
+          ARCHS: arm64
+
+  # Desktop widgets. Sandboxed (WidgetKit requires it): reads the snapshot
+  # Shell writes to the app group container (Sources/Shared/WidgetSnapshot.swift).
+  ShellWidgets:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: Sources/ShellWidgets
+      - path: Sources/Shared
+    info:
+      path: Resources/ShellWidgets-Info.plist
+      properties:
+        CFBundleDisplayName: Shell
+        # Keep in step with the app's versions.
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        LSMinimumSystemVersion: "15.0"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.bethesdalabs.Shell.Widgets
+        PRODUCT_NAME: ShellWidgets
+        CODE_SIGN_ENTITLEMENTS: Resources/ShellWidgets.entitlements
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "-"
+        SKIP_INSTALL: YES
+      configs:
+        Release:
+          SWIFT_OPTIMIZATION_LEVEL: -O
+          SWIFT_COMPILATION_MODE: wholemodule
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "Developer ID Application"
+          OTHER_CODE_SIGN_FLAGS: --timestamp
+          CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+          ARCHS: arm64
+
+  ShellTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/ShellTests
+    dependencies:
+      - target: Shell
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.bethesdalabs.ShellTests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "-"
+        BUNDLE_LOADER: $(TEST_HOST)
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Shell.app/Contents/MacOS/Shell
+
+schemes:
+  Shell:
+    build:
+      targets:
+        Shell: all
+        ShellTests: [test]
+    test:
+      targets:
+        - ShellTests
+    run:
+      config: Debug

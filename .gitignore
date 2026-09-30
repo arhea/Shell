@@ -1,0 +1,55 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Build output (make, scripts/build.sh, scripts/release.sh)
+build/
+DerivedData/
+*.xcresult
+*.dSYM/
+*.dSYM.zip
+
+# Xcode project is generated from project.yml by XcodeGen
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+
+# Swift Package Manager (not used today, but keep tooling droppings out)
+.build/
+.swiftpm/
+Package.resolved
+
+# Vendored libghostty build artifacts (produced by scripts/bootstrap.sh)
+Vendor/ghostty/
+Vendor/GhosttyKit.xcframework/
+Vendor/GhosttyResources/
+Vendor/.ghostty-built-*
+
+# Zig caches (if Zig is run from the repo root)
+.zig-cache/
+zig-cache/
+zig-out/
+
+# Signing material and secrets — never commit these
+*.p12
+*.cer
+*.certSigningRequest
+*.mobileprovision
+*.provisionprofile
+*.p8
+.env
+.env.*
+
+# Editors and local tooling
+.vscode/
+.idea/
+*.swp
+*~
+.claude/settings.local.json
