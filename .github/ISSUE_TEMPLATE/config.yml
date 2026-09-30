@@ -1,1 +1,11 @@
 blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/arhea/Shell/security/advisories/new
+    about: Please report security issues privately, not as public issues.
+  - name: Troubleshooting and FAQ
+    url: https://github.com/arhea/Shell/blob/main/docs/troubleshooting.md
+    about: Answers to common problems, and how to collect diagnostics.
+  - name: Getting help
+    url: https://github.com/arhea/Shell/blob/main/SUPPORT.md
+    about: Where to ask questions and which upstream project to report tool issues to.
