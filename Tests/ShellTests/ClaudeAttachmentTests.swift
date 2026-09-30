@@ -71,6 +71,45 @@ final class ClaudeAttachmentTests: XCTestCase {
         XCTAssertEqual(files.first?.url.path, file.standardizedFileURL.path)
     }
 
+    /// Paste validation relies on this: an image-only clipboard must count as
+    /// attachable, or a plain-text composer disables Paste (#21).
+    @MainActor
+    func testCanAttachMatchesWhatPasteReads() throws {
+        let pb = NSPasteboard(name: NSPasteboard.Name("ClaudeAttachmentTests-\(UUID().uuidString)"))
+        defer { pb.releaseGlobally() }
+        let image = try XCTUnwrap(NSBitmapImageRep(data: png(width: 8, height: 8)))
+
+        pb.clearContents()
+        XCTAssertFalse(ClaudeAttachment.canAttach(from: pb))
+
+        for (type, data) in [(NSPasteboard.PasteboardType.png, png(width: 8, height: 8)),
+                             (.tiff, try XCTUnwrap(image.tiffRepresentation)),
+                             (NSPasteboard.PasteboardType(UTType.jpeg.identifier),
+                              try XCTUnwrap(image.representation(using: .jpeg, properties: [:])))] {
+            pb.clearContents()
+            pb.setData(data, forType: type)
+            XCTAssertTrue(ClaudeAttachment.canAttach(from: pb), type.rawValue)
+            XCTAssertEqual(ClaudeAttachment.from(pasteboard: pb).count, 1, type.rawValue)
+        }
+
+        pb.clearContents()
+        pb.setString("hello", forType: .string)
+        XCTAssertFalse(ClaudeAttachment.canAttach(from: pb))
+
+        pb.clearContents()
+        pb.setString("a\tb", forType: .string)
+        pb.setData(png(width: 8, height: 8), forType: .png)
+        XCTAssertFalse(ClaudeAttachment.canAttach(from: pb))
+
+        // A Finder copy carries the file name as text too; the file wins.
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("attach-\(UUID().uuidString).txt")
+        try "x".write(to: file, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: file) }
+        pb.clearContents()
+        pb.writeObjects([file as NSURL, file.lastPathComponent as NSString])
+        XCTAssertTrue(ClaudeAttachment.canAttach(from: pb))
+    }
+
     @MainActor
     func testDropProvidersBecomeAttachments() throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("drop-\(UUID().uuidString).txt")

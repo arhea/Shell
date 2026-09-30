@@ -112,17 +112,29 @@ struct ClaudeAttachment: Identifiable, Equatable {
         return NSImage(cgImage: cg, size: NSSize(width: cg.width / 2, height: cg.height / 2))
     }
 
+    /// Image types read from a pasteboard, in order of preference.
+    static let pasteboardImageTypes: [(NSPasteboard.PasteboardType, UTType)] = [
+        (.png, .png), (.tiff, .tiff), (NSPasteboard.PasteboardType(UTType.jpeg.identifier), .jpeg),
+    ]
+
+    /// Whether `from(pasteboard:)` would find something to attach, without
+    /// reading any data. Cheap enough for menu validation and drag updates.
+    static func canAttach(from pb: NSPasteboard) -> Bool {
+        if pb.canReadObject(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) { return true }
+        // Spreadsheets and some editors put a picture of copied text next to the
+        // text itself; that's a text paste.
+        guard pb.string(forType: .string) == nil else { return false }
+        return pb.availableType(from: pasteboardImageTypes.map(\.0)) != nil
+    }
+
     /// Files, or else image data, on a pasteboard (paste or drop). Empty when
     /// it only holds text.
     static func from(pasteboard pb: NSPasteboard, pastedSoFar: Int = 0) -> [ClaudeAttachment] {
         if let urls = pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
             return urls.compactMap(load)
         }
-        // Spreadsheets and some editors put a picture of copied text next to the
-        // text itself; paste the text then.
-        guard pb.string(forType: .string) == nil else { return [] }
-        for (pbType, utType) in [(NSPasteboard.PasteboardType.png, UTType.png), (.tiff, .tiff),
-                                 (NSPasteboard.PasteboardType("public.jpeg"), .jpeg)] {
+        guard canAttach(from: pb) else { return [] }
+        for (pbType, utType) in pasteboardImageTypes {
             if let data = pb.data(forType: pbType), let a = pastedImage(data, type: utType, index: pastedSoFar + 1) { return [a] }
         }
         return []
