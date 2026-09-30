@@ -11,6 +11,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The Claude view starts with the composer centered in the pane, under the welcome, and moves it to the bottom when you send your first message. Continued and resumed sessions open with it at the bottom, and the move respects Reduce Motion. ([#19](https://github.com/arhea/Shell/pull/19), fixes [#17](https://github.com/arhea/Shell/issues/17))
 - Settings › Chat Text › **Composer width**: Centered (a column up to 1200 pt, the default) or Full width. The existing maximum width now sets the reading width of transcript text within that column; if you had turned it off, you get Full width. ([#19](https://github.com/arhea/Shell/pull/19), fixes [#17](https://github.com/arhea/Shell/issues/17))
 
+### Fixed
+
+- The native Claude Code view can sign in to Claude Code. When Claude Code is signed out, or its sign-in expires mid-conversation, the view shows a sign-in card that runs Claude Code's own login (the same choices as `/login`) instead of an error, then starts or continues the session and sends the message that failed. ([#20](https://github.com/arhea/Shell/pull/20), fixes [#16](https://github.com/arhea/Shell/issues/16))
+
 ## [0.2.0] - 2026-09-30
 
 Shell now keeps itself up to date: it checks GitHub for new releases, verifies them and installs on quit. This release also brings a refreshed installer, an app icon that follows your appearance, and a native About window, and it now requires macOS 26.

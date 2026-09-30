@@ -234,6 +234,10 @@ final class ClaudeCodeSession {
     private(set) var hasExited = false
     /// Set when the folder hasn't been trusted in Claude Code; nothing was started.
     private(set) var needsTrust = false
+    /// Set while Claude Code isn't signed in; the view shows the sign-in card.
+    private(set) var login: ClaudeLogin?
+    /// A `claude` process was started (after the trust and sign-in checks).
+    private(set) var isLaunched = false
     /// The conversation has begun: something is in the transcript, or this
     /// continues an earlier session. The view centers the composer until then.
     /// Never goes back to false, so the composer doesn't jump back up.
@@ -288,6 +292,24 @@ final class ClaudeCodeSession {
     @ObservationIgnored private var blockItems: [Int: ClaudeItem] = [:]
     @ObservationIgnored private var toolItems: [String: ClaudeItem] = [:]
     @ObservationIgnored private var turnHadText = false
+    /// Ignores output and exit from a process replaced after signing in.
+    @ObservationIgnored private var generation = 0
+    @ObservationIgnored private var authChecked = false
+    @ObservationIgnored private var hasSentMessage = false
+    @ObservationIgnored private var hasCompletedTurn = false
+    @ObservationIgnored private var closed = false
+    /// The current turn failed because Claude Code isn't signed in.
+    @ObservationIgnored private var turnNeedsLogin = false
+    /// The last message sent, with its attachments, and the message to send
+    /// again once signed in.
+    @ObservationIgnored private var lastSent: SentMessage?
+    @ObservationIgnored private var resendAfterLogin: SentMessage?
+
+    private struct SentMessage {
+        var text: String
+        var attachments: [ClaudeAttachment]
+        var item: ClaudeItem
+    }
 
     @ObservationIgnored private var mcpObserver: NSObjectProtocol?
 
@@ -399,6 +421,41 @@ final class ClaudeCodeSession {
             hasExited = true
             return
         }
+        // Print mode can't run /login, so check first and sign in from the view.
+        guard authChecked else {
+            Task { [weak self, request] in
+                let status = await ClaudeAuth.status(binary: request.binary, environment: request.environment,
+                                                     directory: request.directory)
+                guard let self, !self.closed else { return }
+                self.authChecked = true
+                if status == .loggedOut { self.requireLogin(expired: false) } else { self.start() }
+            }
+            return
+        }
+        guard launch() else { return }
+
+        loadHistory()
+        // Pick up sign-ins and toggles made in the MCP manager.
+        mcpObserver = NotificationCenter.default.addObserver(forName: .mcpServerDidChange, object: nil, queue: .main) { [weak self] note in
+            guard let name = note.userInfo?["name"] as? String else { return }
+            MainActor.assumeIsolated { self?.reconnectMCP(name) }
+        }
+        Task { [weak self, directory, env = request.environment] in
+            let repo = await GitRepository.discover(from: directory, environment: env)
+            guard let self else { repo?.stop(); return }
+            if self.hasExited || self.closed { repo?.stop() } else { self.repository = repo }
+            self.repositoryChecked = true
+            self.syncSessionName()
+        }
+        if let prompt = request.arguments.prompt { send(prompt) }
+    }
+
+    /// Starts the `claude` process. `resume` replaces the command line's
+    /// -c/--resume when restarting a conversation after signing in.
+    @discardableResult
+    private func launch(resume: String? = nil) -> Bool {
+        generation += 1
+        let gen = generation
         let p = Process()
         p.executableURL = URL(fileURLWithPath: request.binary)
         var args = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
@@ -406,7 +463,11 @@ final class ClaudeCodeSession {
         if model != "default" { args += ["--model", model] }
         if !effort.isEmpty { args += ["--effort", effort] }
         if permissionMode != .default || explicitPermissionMode { args += ["--permission-mode", permissionMode.rawValue] }
-        args += request.arguments.passthrough
+        if let resume {
+            args += Self.withoutSessionSelection(request.arguments.passthrough) + ["--resume", resume]
+        } else {
+            args += request.arguments.passthrough
+        }
         p.arguments = args
         p.currentDirectoryURL = URL(fileURLWithPath: directory)
         var env = request.environment
@@ -420,7 +481,7 @@ final class ClaudeCodeSession {
         p.standardOutput = outPipe
         p.standardError = errPipe
         let decoder = StreamJSONDecoder { [weak self] batch in
-            guard let self else { return }
+            guard let self, gen == self.generation else { return }
             for obj in batch.objects { self.handle(obj) }
         }
         outPipe.fileHandleForReading.readabilityHandler = { handle in
@@ -435,7 +496,7 @@ final class ClaudeCodeSession {
             guard let text = String(data: data, encoding: .utf8) else { return }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    guard let self else { return }
+                    guard let self, gen == self.generation else { return }
                     self.stderrTail.append(contentsOf: text.split(separator: "\n").map(String.init))
                     if self.stderrTail.count > 40 { self.stderrTail.removeFirst(self.stderrTail.count - 40) }
                 }
@@ -443,7 +504,12 @@ final class ClaudeCodeSession {
         }
         p.terminationHandler = { [weak self] proc in
             let code = proc.terminationStatus
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.processExited(code: code) } }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, gen == self.generation else { return }
+                    self.processExited(code: code)
+                }
+            }
         }
         do {
             try p.run()
@@ -451,24 +517,12 @@ final class ClaudeCodeSession {
             append(ClaudeItem(kind: .error, text: "Couldn't start \(request.binary): \(error.localizedDescription)"))
             isStarting = false
             hasExited = true
-            return
+            return false
         }
         process = p
         stdin = inPipe.fileHandleForWriting
+        isLaunched = true
 
-        loadHistory()
-        // Pick up sign-ins and toggles made in the MCP manager.
-        mcpObserver = NotificationCenter.default.addObserver(forName: .mcpServerDidChange, object: nil, queue: .main) { [weak self] note in
-            guard let name = note.userInfo?["name"] as? String else { return }
-            MainActor.assumeIsolated { self?.reconnectMCP(name) }
-        }
-        Task { [weak self, directory, env = request.environment] in
-            let repo = await GitRepository.discover(from: directory, environment: env)
-            guard let self else { repo?.stop(); return }
-            if self.hasExited { repo?.stop() } else { self.repository = repo }
-            self.repositoryChecked = true
-            self.syncSessionName()
-        }
         sendControl(["subtype": "initialize"]) { [weak self] response, _ in
             guard let self else { return }
             self.applyInitialize(response ?? [:])
@@ -476,10 +530,29 @@ final class ClaudeCodeSession {
                 self.setRemoteControl(true)
             }
         }
-        if let prompt = request.arguments.prompt { send(prompt) }
+        return true
+    }
+
+    /// Passthrough flags without the ones that pick a conversation
+    /// (-c, --resume, --session-id, --fork-session).
+    nonisolated static func withoutSessionSelection(_ passthrough: [String]) -> [String] {
+        var result: [String] = []
+        var i = 0
+        while i < passthrough.count {
+            switch passthrough[i] {
+            case "-c", "--continue", "--fork-session": i += 1
+            case "-r", "--resume", "--session-id": i += 2
+            default:
+                result.append(passthrough[i])
+                i += 1
+            }
+        }
+        return result
     }
 
     func terminate() {
+        closed = true
+        login?.stop()
         if let mcpObserver { NotificationCenter.default.removeObserver(mcpObserver) }
         mcpObserver = nil
         // Release our share of the repository once (it's shared with other views).
@@ -487,7 +560,12 @@ final class ClaudeCodeSession {
         repository = nil
         try? stdin?.close()
         stdin = nil
+        stopProcess()
+    }
+
+    private func stopProcess() {
         guard let p = process else { return }
+        process = nil
         for pipe in [p.standardOutput, p.standardError] { (pipe as? Pipe)?.fileHandleForReading.readabilityHandler = nil }
         guard p.isRunning else { return }
         p.terminate()
@@ -499,21 +577,65 @@ final class ClaudeCodeSession {
 
     private func processExited(code: Int32) {
         hasExited = true
-        isRunning = false
-        isStarting = false
-        pending.removeAll()
-        for item in toolItems.values where item.isRunning { item.isRunning = false }
-        // Nothing will answer these now.
-        for callback in callbacks.values { callback(nil, "Claude Code exited") }
-        callbacks.removeAll()
-        toolItems.removeAll()
-        try? stdin?.close()
-        stdin = nil
+        endProcessState(reason: "Claude Code exited")
+        // Signed out: the sign-in card already says what happened.
+        guard login == nil else { return }
         if code != 0 && code != SIGTERM {
             let detail = stderrTail.suffix(8).joined(separator: "\n")
             append(ClaudeItem(kind: .error, text: "Claude Code exited with status \(code)." + (detail.isEmpty ? "" : "\n\n" + detail)))
         }
         onEvent?("ended", nil)
+    }
+
+    /// Clears everything tied to the running process.
+    private func endProcessState(reason: String) {
+        isRunning = false
+        isStarting = false
+        pending.removeAll()
+        for item in toolItems.values where item.isRunning { item.isRunning = false }
+        // Nothing will answer these now.
+        for callback in callbacks.values { callback(nil, reason) }
+        callbacks.removeAll()
+        toolItems.removeAll()
+        blockItems = [:]
+        turnNeedsLogin = false
+        try? stdin?.close()
+        stdin = nil
+    }
+
+    // MARK: Sign-in
+
+    /// Shows the sign-in card. `expired` when a running session lost its sign-in.
+    private func requireLogin(expired: Bool) {
+        isStarting = false
+        guard login == nil else { return }
+        let login = ClaudeLogin(binary: request.binary, environment: request.environment, directory: directory, expired: expired)
+        login.onSignedIn = { [weak self] in self?.signedIn() }
+        self.login = login
+    }
+
+    /// Starts the session, or restarts it so Claude Code picks up the new
+    /// sign-in, continuing the conversation and sending the message that failed.
+    private func signedIn() {
+        login = nil
+        guard !closed else { return }
+        guard isLaunched else {
+            start()
+            return
+        }
+        generation += 1
+        stopProcess()
+        endProcessState(reason: "Claude Code restarted after signing in")
+        stderrTail.removeAll()
+        hasExited = false
+        isStarting = true
+        // A conversation exists once a message was sent; otherwise start as the command line asked.
+        guard launch(resume: hasSentMessage ? sessionID : nil) else { return }
+        if let message = resendAfterLogin {
+            resendAfterLogin = nil
+            items.removeAll { $0 === message.item }
+            send(message.text, attachments: message.attachments)
+        }
     }
 
     /// Tool output kept per call in the transcript (whole-file reads and long
@@ -528,13 +650,20 @@ final class ClaudeCodeSession {
 
     // MARK: Sending
 
+    /// False while starting up, signed out, or after Claude Code exited; the
+    /// composer keeps its text until then.
+    var canSend: Bool { isLaunched && !hasExited && login == nil }
+
     func send(_ text: String, attachments: [ClaudeAttachment] = []) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty || !attachments.isEmpty, !hasExited else { return }
+        guard !trimmed.isEmpty || !attachments.isEmpty, canSend else { return }
         let item = ClaudeItem(kind: .user, text: trimmed)
         // Sent: keep the thumbnail and file, not the encoded image bytes.
         item.attachments = attachments.map { $0.withoutImageData() }
         append(item)
+        // Kept until the turn succeeds, to send again if it fails for want of a sign-in.
+        lastSent = SentMessage(text: trimmed, attachments: attachments, item: item)
+        hasSentMessage = true
         write(["type": "user",
                "message": ["role": "user", "content": ClaudeAttachment.content(text: trimmed, attachments: attachments, directory: directory)],
                "parent_tool_use_id": NSNull(),
@@ -696,6 +825,11 @@ final class ClaudeCodeSession {
         case "stream_event":
             if !subagent, let event = msg["event"] as? [String: Any] { handleStreamEvent(event) }
         case "assistant":
+            // "Not logged in · Please run /login": the result shows the sign-in card instead.
+            if ClaudeAuth.isAuthFailure(msg) {
+                turnNeedsLogin = true
+                return
+            }
             if !subagent, let message = msg["message"] as? [String: Any] { handleAssistant(message) }
         case "user":
             if let message = msg["message"] as? [String: Any] { handleUser(message, subagent: subagent, toolResult: msg["tool_use_result"]) }
@@ -820,7 +954,18 @@ final class ClaudeCodeSession {
         if let ms = msg["duration_ms"] as? Double { lastTurnDuration = ms / 1000 }
         let isError = msg["is_error"] as? Bool ?? false
         let text = msg["result"] as? String ?? ""
-        if isError || (msg["subtype"] as? String ?? "success") != "success" {
+        let failed = isError || (msg["subtype"] as? String ?? "success") != "success"
+        let sent = lastSent
+        lastSent = nil
+        if turnNeedsLogin || (failed && ClaudeAuth.isLoginError(text)) {
+            turnNeedsLogin = false
+            resendAfterLogin = sent
+            requireLogin(expired: hasCompletedTurn)
+            onEvent?("needs-input", "Sign in to Claude Code to continue")
+            return
+        }
+        if !failed { hasCompletedTurn = true }
+        if failed {
             let errors = (msg["errors"] as? [String] ?? []).joined(separator: "\n")
             let detail = !errors.isEmpty ? errors : !text.isEmpty ? text : (msg["subtype"] as? String ?? "error")
             if detail.localizedCaseInsensitiveContains("interrupt") || msg["subtype"] as? String == "error_during_execution" {

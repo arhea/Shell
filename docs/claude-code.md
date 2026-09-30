@@ -115,6 +115,18 @@ Claude Code asks whether you trust a folder before it reads, edits or runs anyth
 - **Review in Terminal UI** opens Claude Code's own prompt instead.
 - **Worktrees of trusted repositories** start without asking, and are recorded as trusted so the terminal UI agrees. Shell finds the main checkout from the worktree's `.git` file. Turn this off in Settings › Claude & Codex if you check out untrusted code, such as pull requests from forks, in worktrees.
 
+### Signing in
+
+Print mode can't run `/login`, so the view checks `claude auth status` before it starts. When Claude Code isn't signed in, or a session's sign-in expires or is revoked mid-conversation, the view shows a **Sign in to Claude Code** card instead of an error:
+
+1. Choose the account type, as in `/login`: **Claude account with subscription** (Pro, Max, Team or Enterprise) or **Anthropic Console account** (API usage billing). Check **Use single sign-on (SSO)** to force the SSO flow.
+2. Claude Code opens the sign-in page in your browser. If it didn't open, click **Open Sign-in Page**.
+3. If the page shows a code, paste it into the card and click **Submit**.
+
+The card runs Claude Code's own `claude auth login`, so the result is the same as `/login` in the terminal UI: Claude Code stores the credentials, and `claude` in every terminal is signed in too. Shell never reads, stores or copies them. Once you're signed in, the session starts, or restarts and continues the conversation, and a message that failed for want of a sign-in is sent again. Text in the composer stays there while you sign in. If sign-in is cancelled or fails, the card says why and offers the account types again.
+
+Sessions that use Amazon Bedrock, Google Vertex AI or another provider aren't gated, since signing in to Anthropic doesn't apply to them.
+
 ### What you get
 
 - **Permission mode.** New sessions start in **auto mode** by default. Change the default in Settings › Claude & Codex (or pick *Claude Code's default* to use `permissions.defaultMode` from its settings.json). A `--permission-mode` you type wins, and Claude Code falls back to its default when auto mode isn't available for your plan or model. Sessions started from the Claude button get the same default as a `--permission-mode` flag.
