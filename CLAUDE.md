@@ -19,7 +19,7 @@ This is a personal open-source project (MIT, bundle ID `app.bethesdalabs.Shell`)
 
 | | |
 | --- | --- |
-| OS | macOS 15 (Sequoia) or later. Apple Intelligence features need macOS 26+ (`FoundationModels` is weak-linked; guard with availability checks). |
+| OS | macOS 26 (Tahoe) or later. No availability checks needed for macOS 26 APIs, including `FoundationModels`. |
 | Architecture | Apple Silicon (arm64) only. libghostty is built for the native arch. |
 | Language | Swift 6 language mode, strict concurrency. AppKit for windows and terminal views, SwiftUI for settings, sidebars and the Claude view. |
 | Toolchain | Xcode 26+, Zig (version pinned by Ghostty's `build.zig.zon`), XcodeGen. |
@@ -226,7 +226,7 @@ SHA=$(cut -d' ' -f1 "build/dist/Shell-$VERSION.dmg.sha256")
 
 ## Install
 
-Download **Shell-$VERSION.dmg** below, open it, and drag Shell to Applications. Requires macOS 15 or later on Apple Silicon. The app and disk image are signed with a Developer ID and notarized by Apple.
+Download **Shell-$VERSION.dmg** below, open it, and drag Shell to Applications. Requires macOS 26 or later on Apple Silicon. The app and disk image are signed with a Developer ID and notarized by Apple.
 
 SHA-256: \`$SHA\`
 

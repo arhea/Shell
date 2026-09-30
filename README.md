@@ -4,7 +4,7 @@
 
 Shell is built in Swift on [libghostty](https://ghostty.org). It combines the parts of Warp and iTerm2 people use most: a real native prompt, zsh completions with previews, iTerm2 keybindings, and flexible tabs and splits. On top of that come first-class tools for Claude Code, Codex, git worktrees and GitHub. There are no accounts, no telemetry and no cloud AI. Optional Apple Intelligence features run on your Mac and stay off until you turn them on.
 
-![macOS 15+](https://img.shields.io/badge/macOS-15%2B-black) ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-black) ![Swift](https://img.shields.io/badge/Swift-AppKit%20%2B%20SwiftUI-orange) ![License: MIT](https://img.shields.io/badge/license-MIT-blue) [![Tests](https://github.com/arhea/Shell/actions/workflows/test.yml/badge.svg)](https://github.com/arhea/Shell/actions/workflows/test.yml)
+![macOS 26+](https://img.shields.io/badge/macOS-26%2B-black) ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-black) ![Swift](https://img.shields.io/badge/Swift-AppKit%20%2B%20SwiftUI-orange) ![License: MIT](https://img.shields.io/badge/license-MIT-blue) [![Tests](https://github.com/arhea/Shell/actions/workflows/test.yml/badge.svg)](https://github.com/arhea/Shell/actions/workflows/test.yml)
 
 ## Highlights
 
@@ -20,7 +20,7 @@ Shell is built in Swift on [libghostty](https://ghostty.org). It combines the pa
   - An MCP server manager.
   - Agent disk-usage cleanup.
 - **Git and GitHub in the sidebar.** A file tree with git status. Worktrees with PR state and stale detection. Pull requests and Actions runs through `gh`, with one-click review worktrees.
-- **Optional on-device Apple Intelligence** (macOS 26+). It can suggest branch names, tab names and fixes for failed commands, match plain-English commands in the palette, and summarize Claude sessions. Every feature is off until you turn it on, and nothing leaves your Mac.
+- **Optional on-device Apple Intelligence.** It can suggest branch names, tab names and fixes for failed commands, match plain-English commands in the palette, and summarize Claude sessions. Every feature is off until you turn it on, and nothing leaves your Mac.
 - **At home on macOS.** Scriptable Shortcuts and Spotlight actions, Finder *New Shell Tab Here*, a Dock menu of waiting agents and recent folders, Quick Look previews, opt-in Time Sensitive agent alerts, and optional iCloud settings sync.
 - **Toolchain housekeeping.** Managers for Homebrew, Node.js (`n` / `nvm`, npm, pnpm, yarn, bun), Zsh and Oh My Zsh, and Go caches, with optional scheduled updates.
 - **Your dotfiles stay yours.** The zsh integration is injected at launch, not installed. Anything that edits a config file is opt-in, minimal and reversible.
@@ -29,7 +29,7 @@ See **[Features](docs/features.md)** for the full tour.
 
 ## Install
 
-Shell requires **macOS 15 or later on Apple Silicon**.
+Shell requires **macOS 26 or later on Apple Silicon**.
 
 Download `Shell-<version>.dmg` from the latest release on the [Releases page](../../releases), open it, and drag Shell to Applications. It's signed with a Developer ID and notarized by Apple. Shell then keeps itself up to date from GitHub releases (Settings › General › Software Update).
 

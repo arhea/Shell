@@ -9,11 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - The installer disk image opens to a styled, terminal-themed window: drag Shell onto Applications along a chevron trail, with the version shown in the corner and Shell's icon on the mounted volume. ([#6](https://github.com/arhea/Shell/pull/6), fixes [#5](https://github.com/arhea/Shell/issues/5))
-- Shell's app icon follows your appearance on macOS 26: a light icon in light mode, the dark icon in dark mode, and the Tinted and Clear icon styles. On macOS 15, Shell uses the light icon. ([#6](https://github.com/arhea/Shell/pull/6), fixes [#5](https://github.com/arhea/Shell/issues/5))
+- Shell's app icon follows your appearance: a light icon in light mode, the dark icon in dark mode, and the Tinted and Clear icon styles. ([#6](https://github.com/arhea/Shell/pull/6), fixes [#5](https://github.com/arhea/Shell/issues/5))
 - Automatic updates from GitHub releases. Shell checks every six hours, downloads and verifies a new release in the background (checksum, Developer ID team, notarization), notifies you, and installs it when you quit or from **Help › Restart to Update**. **Help › Check for Updates…** checks on demand, and Settings › General › Software Update turns either behavior off. ([#8](https://github.com/arhea/Shell/pull/8), fixes [#7](https://github.com/arhea/Shell/issues/7))
 
 ### Changed
 
+- Shell now requires macOS 26 (Tahoe) or later. ([#12](https://github.com/arhea/Shell/pull/12), fixes [#11](https://github.com/arhea/Shell/issues/11))
 - **About Shell** has a cleaner, native layout modeled on macOS's About This Mac, with the libghostty version, a **View on GitHub** button and compact acknowledgements. ([#10](https://github.com/arhea/Shell/pull/10), fixes [#9](https://github.com/arhea/Shell/issues/9))
 
 ## [0.1.0]
@@ -31,7 +32,7 @@ First public release.
 - Claude Code and Codex integration: per-tab status, notifications, the Claude dashboard, a native Claude Code view, an MCP server manager and agent storage cleanup.
 - Files, worktrees and GitHub sidebar, with pull requests and Actions runs through `gh`.
 - Homebrew, Node.js, Zsh and Oh My Zsh, and Go managers, with optional scheduled maintenance.
-- Optional on-device Apple Intelligence features (macOS 26+), all off by default.
+- Optional on-device Apple Intelligence features, all off by default.
 - Shortcuts and Spotlight actions, Finder services, a Dock menu, a desktop widget, Quick Look previews and optional iCloud settings sync.
 
 [Unreleased]: https://github.com/arhea/Shell/compare/v0.1.0...HEAD

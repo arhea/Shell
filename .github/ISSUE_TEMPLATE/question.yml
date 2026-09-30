@@ -23,4 +23,4 @@ body:
     id: shell-version
     attributes:
       label: Shell and macOS version
-      placeholder: Shell 0.1.0 (1), macOS 15.5
+      placeholder: Shell 0.1.0 (1), macOS 26.0

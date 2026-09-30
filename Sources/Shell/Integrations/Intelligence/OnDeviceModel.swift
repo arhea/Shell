@@ -1,10 +1,9 @@
 import Foundation
 import FoundationModels
 
-/// Calls into Apple's on-device model (FoundationModels, macOS 26+). Each
+/// Calls into Apple's on-device model (FoundationModels). Each
 /// request gets a fresh session so nothing carries over between requests.
 /// Errors, guardrail refusals, rate limits and timeouts all come back as nil.
-@available(macOS 26.0, *)
 @MainActor
 enum OnDeviceModel {
     /// Permissive guardrails: terminal text is full of words like "kill",
@@ -134,14 +133,12 @@ enum OnDeviceModel {
 
 // MARK: - Output types
 
-@available(macOS 26.0, *)
 @Generable
 struct BranchNameIdeas {
     @Guide(description: "Three different git branch names for the work", .count(3))
     var names: [String]
 }
 
-@available(macOS 26.0, *)
 @Generable
 struct CommandFixIdea {
     @Guide(description: "True only if a corrected command would fix the error")
@@ -150,14 +147,12 @@ struct CommandFixIdea {
     var command: String
 }
 
-@available(macOS 26.0, *)
 @Generable
 struct StatusLine {
     @Guide(description: "What the agent is doing now, eight words at most")
     var line: String
 }
 
-@available(macOS 26.0, *)
 @Generable
 struct ShortName {
     @Guide(description: "A tab name of one to three words in Title Case")

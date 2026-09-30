@@ -121,9 +121,10 @@ struct GoSettingsPane: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 4) {
-                Text(c.bytes.map(WorktreeService.formatBytes) ?? "…").font(.system(size: 12.5, weight: .semibold)).monospacedDigit()
+                let size = Text(c.bytes.map(WorktreeService.formatBytes) ?? "…").font(.system(size: 12.5, weight: .semibold)).monospacedDigit()
                     .foregroundColor(c.id == .build && go.isBuildCacheOverLimit ? .red : .primary)
-                    + Text(c.id == .fuzz ? " (in build)" : "").font(.caption).foregroundColor(.secondary)
+                let note = Text(c.id == .fuzz ? " (in build)" : "").font(.caption).foregroundColor(.secondary)
+                Text("\(size)\(note)")
                 HStack(spacing: 4) {
                     if go.busy.contains(c.id) { ProgressView().controlSize(.mini) }
                     Button { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: c.path)]) } label: { Image(systemName: "folder") }

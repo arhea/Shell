@@ -41,7 +41,7 @@ Trivial fixes such as typos or broken links can go straight to a pull request.
 
 ## Development setup
 
-You need macOS 15 or later on Apple Silicon, Xcode 26 or later, and Homebrew.
+You need macOS 26 or later on Apple Silicon, Xcode 26 or later, and Homebrew.
 
 ```bash
 brew install zig xcodegen

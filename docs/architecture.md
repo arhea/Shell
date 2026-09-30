@@ -56,7 +56,7 @@ Tests/ShellTests     XCTest unit tests
 | `WidgetPublisher` | `Integrations/Widgets/WidgetPublisher.swift` | Writes the widget snapshot to the app group and reloads widget timelines |
 | `SystemIntegration` | `App/SystemIntegration.swift` | `openTab`, Finder services, Dock menu, recent folders |
 | `Intelligence` | `Integrations/Intelligence/Intelligence.swift` | Optional Apple Intelligence features: availability, per-feature gating, prompts and output checks |
-| `OnDeviceModel` | `Integrations/Intelligence/OnDeviceModel.swift` | FoundationModels calls (macOS 26+, weak-linked), one fresh session per request, with a timeout |
+| `OnDeviceModel` | `Integrations/Intelligence/OnDeviceModel.swift` | FoundationModels calls, one fresh session per request, with a timeout |
 
 ## Data flow for a command
 

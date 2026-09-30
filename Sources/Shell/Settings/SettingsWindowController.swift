@@ -44,8 +44,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .worktrees: "square.stack.3d.up"
         case .integrations: "sparkles"
         case .agentStorage: "externaldrive"
-        // The Apple Intelligence glyph is new in macOS 15.1.
-        case .intelligence: NSImage(systemSymbolName: "apple.intelligence", accessibilityDescription: nil) != nil ? "apple.intelligence" : "wand.and.sparkles"
+        case .intelligence: "apple.intelligence"
         case .advanced: "wrench.and.screwdriver"
         }
     }
@@ -111,11 +110,8 @@ struct SettingsRootView: View {
                 Section("Agents") {
                     ForEach([SettingsPane.integrations, .agentStorage]) { row($0) }
                 }
-                // The on-device model needs macOS 26; earlier systems don't see the pane.
-                if Intelligence.status != .unsupportedOS {
-                    Section("Apple Intelligence") {
-                        row(.intelligence)
-                    }
+                Section("Apple Intelligence") {
+                    row(.intelligence)
                 }
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 210, max: 240)

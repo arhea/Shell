@@ -144,7 +144,7 @@ NSBezierPath(roundedRect: badgeRect, xRadius: 3, yRadius: 3).fill()
 badge.draw(at: CGPoint(x: badgeRect.minX + 6, y: badgeRect.midY - badge.size().height / 2))
 tag.draw(at: CGPoint(x: tagX, y: badgeRect.midY - tag.size().height / 2))
 
-let platform = run("arm64 · macOS 15+", dim, mono(12))
+let platform = run("arm64 · macOS 26+", dim, mono(12))
 platform.draw(at: CGPoint(x: width - 28 - platform.size().width, y: 48))
 
 NSGraphicsContext.current = nil

@@ -17,7 +17,7 @@ This guide takes you from download to a working setup in about ten minutes. For 
 
 | | Required | Optional |
 | --- | --- | --- |
-| **macOS** | 15 (Sequoia) or later | 26 or later, for the Apple Intelligence features |
+| **macOS** | 26 (Tahoe) or later | Apple Intelligence turned on, for the Apple Intelligence features |
 | **Mac** | Apple Silicon (M1 or later) | |
 | **Shell** | Any shell works as a plain terminal | **zsh** for the native prompt, completions and command tracking (the macOS default) |
 | **Tools** | | [`claude`](https://docs.anthropic.com/claude-code), [`codex`](https://github.com/openai/codex), [`gh`](https://cli.github.com), `git`, [Homebrew](https://brew.sh) |
@@ -64,7 +64,7 @@ Shell opens one window with one tab running your login shell. A few things happe
 
 - **Notifications.** macOS asks whether Shell may send notifications. Allow them to hear about finished commands and agents that need you.
 - **Privacy prompts.** When a program you run needs the camera, contacts, a protected folder and so on, macOS asks on Shell's behalf. That's normal for any terminal. See [Releasing › Entitlements](releasing.md#entitlements) for why.
-- **Apple Intelligence.** On macOS 26 with Apple Intelligence on, a one-time banner points you to Settings › Apple Intelligence. Every feature there is off until you turn it on.
+- **Apple Intelligence.** With Apple Intelligence on, a one-time banner points you to Settings › Apple Intelligence. Every feature there is off until you turn it on.
 
 Your dotfiles aren't touched. Shell injects its zsh integration at launch through `ZDOTDIR`, so your `.zshrc`, theme and plugins load as usual. See [Shell integration](shell-integration.md).
 

@@ -51,7 +51,6 @@ enum Intelligence {
     enum Status: Equatable {
         case available
         /// macOS before 26.
-        case unsupportedOS
         /// This Mac can't run Apple Intelligence.
         case deviceNotEligible
         /// Apple Intelligence is off in System Settings.
@@ -63,7 +62,6 @@ enum Intelligence {
         var message: String {
             switch self {
             case .available: "Apple Intelligence is on. These features run on this Mac with Apple's on-device model."
-            case .unsupportedOS: "These features need macOS 26 or later."
             case .deviceNotEligible: "This Mac doesn't support Apple Intelligence."
             case .notEnabled: "Turn on Apple Intelligence in System Settings to use these features."
             case .modelNotReady: "Apple Intelligence is still getting ready. Try again once the model has downloaded."
@@ -72,10 +70,7 @@ enum Intelligence {
         }
     }
 
-    static var status: Status {
-        if #available(macOS 26.0, *) { return OnDeviceModel.status }
-        return .unsupportedOS
-    }
+    static var status: Status { OnDeviceModel.status }
 
     static var isAvailable: Bool { status == .available }
 
@@ -91,7 +86,7 @@ enum Intelligence {
     /// Loads the model ahead of a request the user is likely to make soon.
     static func prewarm(for feature: IntelligenceFeature) {
         guard isEnabled(feature) else { return }
-        if #available(macOS 26.0, *) { OnDeviceModel.prewarm() }
+        OnDeviceModel.prewarm()
     }
 
     // MARK: Features
@@ -99,7 +94,7 @@ enum Intelligence {
     /// Up to three new branch names for a description of the work, in the
     /// style of the repository's recent branches. Empty when unavailable.
     static func branchNames(for description: String, recentBranches: [String], existing: Set<String>) async -> [String] {
-        guard isEnabled(.branchNames), #available(macOS 26.0, *) else { return [] }
+        guard isEnabled(.branchNames) else { return [] }
         let prompt = IntelligencePrompts.branchNames(description: description, recentBranches: recentBranches)
         let raw = await OnDeviceModel.branchNames(prompt: prompt)
         return IntelligencePrompts.validBranchNames(raw, existing: existing)
@@ -108,7 +103,7 @@ enum Intelligence {
     /// The id of the palette command that best matches a plain-English query,
     /// or nil when nothing fits.
     static func paletteIntent(for query: String, choices: [IntelligencePrompts.Choice]) async -> String? {
-        guard isEnabled(.paletteIntents), !choices.isEmpty, #available(macOS 26.0, *) else { return nil }
+        guard isEnabled(.paletteIntents), !choices.isEmpty else { return nil }
         let prompt = IntelligencePrompts.paletteIntent(query: query, choices: choices)
         guard let id = await OnDeviceModel.choose(prompt: prompt, ids: choices.map(\.id)) else { return nil }
         return choices.contains(where: { $0.id == id }) ? id : nil
@@ -116,8 +111,7 @@ enum Intelligence {
 
     /// A corrected command for one that just failed, or nil.
     static func commandFix(command: String, exitCode: Int, output: String, directory: String, branch: String?) async -> String? {
-        guard isEnabled(.commandFixes), IntelligencePrompts.shouldSuggestFix(exitCode: exitCode, output: output),
-              #available(macOS 26.0, *) else { return nil }
+        guard isEnabled(.commandFixes), IntelligencePrompts.shouldSuggestFix(exitCode: exitCode, output: output) else { return nil }
         let prompt = IntelligencePrompts.commandFix(command: command, exitCode: exitCode, output: output, directory: directory, branch: branch)
         guard let fix = await OnDeviceModel.commandFix(prompt: prompt) else { return nil }
         return IntelligencePrompts.validatedFix(fix, original: command, output: output)
@@ -125,14 +119,14 @@ enum Intelligence {
 
     /// A short line saying what a Claude session is doing, from the tail of its transcript.
     static func sessionStatus(transcript: String) async -> String? {
-        guard isEnabled(.sessionSummaries), #available(macOS 26.0, *) else { return nil }
+        guard isEnabled(.sessionSummaries) else { return nil }
         let prompt = IntelligencePrompts.sessionStatus(transcript: transcript)
         return await OnDeviceModel.line(prompt: prompt, kind: .status).flatMap { IntelligencePrompts.cleanLine($0, maxLength: 80) }
     }
 
     /// A short name for a tab or a group of tabs.
     static func tabName(context: String, group: Bool) async -> String? {
-        guard isEnabled(.tabNames), #available(macOS 26.0, *) else { return nil }
+        guard isEnabled(.tabNames) else { return nil }
         let prompt = IntelligencePrompts.tabName(context: context, group: group)
         return await OnDeviceModel.line(prompt: prompt, kind: .name).flatMap { IntelligencePrompts.cleanLine($0, maxLength: 32) }
     }
