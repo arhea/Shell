@@ -17,7 +17,7 @@ build: project
 release:
 	$(MAKE) build CONFIG=Release
 
-# Signed + notarized zip in build/dist (see scripts/release.sh).
+# Signed + notarized .dmg in build/dist (see scripts/release.sh).
 dist:
 	./scripts/release.sh
 

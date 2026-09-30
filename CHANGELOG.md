@@ -2,7 +2,7 @@
 
 All notable changes to Shell are documented here.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Shell uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Until 1.0, minor versions may include breaking changes to settings or behavior; these are called out under **Changed**.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Shell uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Each entry links to its pull request and, where there is one, the issue it fixes. Until 1.0, minor versions may include breaking changes to settings or behavior; these are called out under **Changed**.
 
 ## [Unreleased]
 
@@ -24,5 +24,5 @@ First public release.
 - Optional on-device Apple Intelligence features (macOS 26+), all off by default.
 - Shortcuts and Spotlight actions, Finder services, a Dock menu, a desktop widget, Quick Look previews and optional iCloud settings sync.
 
-[Unreleased]: ../../compare/v0.1.0...HEAD
-[0.1.0]: ../../releases/tag/v0.1.0
+[Unreleased]: https://github.com/arhea/Shell/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/arhea/Shell/releases/tag/v0.1.0

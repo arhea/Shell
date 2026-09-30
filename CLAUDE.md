@@ -24,7 +24,7 @@ This is a personal open-source project (MIT, bundle ID `app.bethesdalabs.Shell`)
 | Language | Swift 6 language mode, strict concurrency. AppKit for windows and terminal views, SwiftUI for settings, sidebars and the Claude view. |
 | Toolchain | Xcode 26+, Zig (version pinned by Ghostty's `build.zig.zon`), XcodeGen. |
 | Dependencies | No Swift packages. Everything third-party comes in through `Vendor/GhosttyKit.xcframework`. |
-| Distribution | Outside the App Store: Developer ID-signed, hardened runtime, notarized, as a zip on GitHub Releases. |
+| Distribution | Outside the App Store: Developer ID-signed, hardened runtime, notarized, as a signed and notarized `.dmg` attached to GitHub Releases. |
 
 ## Commands
 
@@ -35,7 +35,7 @@ This is a personal open-source project (MIT, bundle ID `app.bethesdalabs.Shell`)
 | `./scripts/build.sh` | Debug build, printing only this project's errors and warnings. Use this to check a change compiles. |
 | `make run` | Debug build and launch |
 | `xcodebuild -project Shell.xcodeproj -scheme Shell test` | Unit tests (isolated from real settings) |
-| `make dist` | Release build, sign, notarize, staple, zip into `build/dist/` |
+| `make dist` | Release build, sign, notarize and staple the app, then a signed, notarized `.dmg` + `.sha256` in `build/dist/` |
 
 `Shell.xcodeproj` is generated and git-ignored. Edit `project.yml`, never the project file.
 
@@ -87,11 +87,25 @@ Deeper references: `docs/architecture.md` (key types, data flow, threading, quit
 - Update `docs/` when behavior, settings or shortcuts change, and add user-visible changes to `CHANGELOG.md` under **Unreleased**.
 - Commits use Conventional Commits: `feat:`, `fix:`, `perf:`, `refactor:`, `docs:`, `test:`, `chore:`. No Linear ID.
 
+## Issues, pull requests and CI
+
+All work is tracked on GitHub (`arhea/Shell`), not Linear. The flow is always **issue → branch → pull request that closes the issue**:
+
+- **Issues** use the `github-issues` skill (`.claude/skills/github-issues/`): titles `bug:`, `feature:`, `chore:`, `docs:` or `question:`, one matching type label, and a `p1`–`p3` priority. If you start work that has no issue, create one first (confirm with Alex before filing).
+- **Branches** are `<type>/<issue>-<short-slug>` off `main`, e.g. `bug/42-ghost-text-completion`.
+- **Pull requests** use the `github-pull-requests` skill (`.claude/skills/github-pull-requests/`): a Conventional Commits title, `Closes #N`, a specific list of changes, testing evidence, and the issue's labels.
+- **Labels** are defined in `scripts/labels.sh` (re-run it after changing them). Issue forms live in `.github/ISSUE_TEMPLATE/`.
+- **CI**: `.github/workflows/test.yml` runs the unit tests on macOS 26 (Apple Silicon) for every pull request to `main` and every push to `main`. It signs ad hoc and needs no secrets. libghostty is cached by the pinned `GHOSTTY_COMMIT`, so the first run after a Ghostty bump takes longer. Don't merge a PR with a red **Tests** check.
+
 ## Releasing a new version
 
-Releases are Developer ID-signed and notarized with Alex's **personal** Apple developer account (alex.rhea@gmail.com, keychain profile `shell-notary`), not the Takt account. Versions follow SemVer and tags are `v<version>`.
+A release is a `v<version>` tag on `main`, a GitHub Release whose notes are the curated changelog, and one app artifact: a Developer ID-signed, notarized, stapled **`Shell-<version>.dmg`** plus its `.sha256`. Never attach a zip of the app. (GitHub adds "Source code (zip/tar.gz)" to every release automatically; those are source snapshots and can't be removed.)
 
-Release commits go straight to `main`. **Confirm with Alex before pushing to `main`.**
+- Signing and notarization use Alex's **personal** Apple developer account (alex.rhea@gmail.com, team `T9PCKZ42NK`, keychain profile `shell-notary`), never the Takt account.
+- Versions follow SemVer. Before 1.0, breaking changes to settings or behavior bump the minor version.
+- The release commit goes straight to `main`. **Confirm with Alex before pushing to `main` and before publishing the release.**
+
+The order is deliberate: build and notarize the DMG *before* anything is public, so a failed build or a notarization rejection never leaves a half-made release or a tag behind.
 
 ### Preconditions
 
@@ -99,60 +113,159 @@ Release commits go straight to `main`. **Confirm with Alex before pushing to `ma
 git switch main && git pull --ff-only && git status --short
 ```
 
-- The tree is clean and up to date.
+- The tree is clean and up to date with `origin/main`.
 - Tests pass: `xcodebuild -project Shell.xcodeproj -scheme Shell test`.
-- The notary profile exists: `xcrun notarytool history --keychain-profile shell-notary` succeeds.
-- `gh auth status` is signed in with push access.
+- `security find-identity -v -p codesigning` lists `Developer ID Application: Alex Rhea (T9PCKZ42NK)`.
+- `xcrun notarytool history --keychain-profile shell-notary` succeeds.
+- `gh auth status` is signed in as `arhea`.
 
-### Steps
+### 1. Gather what changed
 
-1. **Pick the version.** Read `CHANGELOG.md` › Unreleased and choose the next SemVer (`VERSION=0.2.0`). Increment the build number by one (`BUILD=2`).
+```bash
+PREV=$(git describe --tags --abbrev=0 2>/dev/null || true)   # empty for the first release
+git log --no-merges --format='%h %s (%an)' ${PREV:+$PREV..}HEAD
+```
 
-2. **Bump the version.** In `project.yml`, set `CFBundleShortVersionString` to `$VERSION` and `CFBundleVersion` to `$BUILD` for **both** the `Shell` and `ShellWidgets` targets (they must match).
+```bash
+gh pr list --repo arhea/Shell --state merged --base main --limit 200 \
+  ${PREV:+--search "merged:>=$(git log -1 --format=%cs "$PREV")"} \
+  --json number,title,author,labels,closingIssuesReferences,url
+```
 
-3. **Update the changelog.** Rename `## [Unreleased]` to `## [$VERSION] - YYYY-MM-DD`, add a fresh empty `## [Unreleased]` above it, and update the compare links at the bottom.
+GitHub's auto-generated notes are useful raw material, never the final notes:
 
-4. **Commit locally.**
+```bash
+gh api repos/arhea/Shell/releases/generate-notes -f tag_name="v$VERSION" ${PREV:+-f previous_tag_name="$PREV"} --jq .body
+```
 
-   ```bash
-   git commit -am "chore: release v$VERSION"
-   ```
+Cross-check against `CHANGELOG.md` › Unreleased. Anything user-visible that's missing from Unreleased gets added now.
 
-5. **Create a draft release** with the changelog section as notes. Drafts don't create the tag yet.
+### 2. Write the changelog
 
-   ```bash
-   mkdir -p build
-   awk -v v="$VERSION" '$0 ~ "^## \\[" v "\\]" {f=1; next} /^## \[|^\[/ {f=0} f' CHANGELOG.md > build/release-notes.md
-   gh release create "v$VERSION" --draft --target main --title "Shell $VERSION" --notes-file build/release-notes.md
-   ```
+Edit `CHANGELOG.md`: rename `## [Unreleased]` to `## [$VERSION] - YYYY-MM-DD` and add a fresh, empty `## [Unreleased]` above it. The new section becomes the release notes verbatim, so it must be good:
 
-6. **Build, sign and notarize.** `make dist` runs `scripts/release.sh`: a Release arm64 build signed with Developer ID and a secure timestamp, checked for hardened runtime and no `get-task-allow`, notarized, stapled, verified with `spctl`, and zipped.
+- **Open with one or two sentences** saying what the release is about, before the first heading. Lead with the change a user most cares about.
+- **Group entries** under Keep a Changelog headings, in this order, omitting empty ones: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`.
+- **Write for users, not for the diff.** Describe the behavior and where to find it ("Settings › Worktrees can now…"), not the implementation. One line per change, starting with a verb or the feature name. No commit hashes, no `chore:`/`refactor:` noise unless it changes behavior or performance.
+- **Link every entry to its source.** Use full URLs (relative links and bare `#123` don't resolve in `CHANGELOG.md`): the PR, and the issue it closes when there is one.
 
-   ```bash
-   make dist
-   ```
+  ```markdown
+  - Worktrees sidebar shows each branch's CI status. ([#42](https://github.com/arhea/Shell/pull/42), fixes [#37](https://github.com/arhea/Shell/issues/37))
+  ```
 
-   Output: `build/dist/Shell-$VERSION-$BUILD.zip`. If notarization fails, the script prints Apple's log. Fix the cause and re-run; don't use `--skip-notarize` for a release.
+  If a change landed without a PR, link the commit: `([abc1234](https://github.com/arhea/Shell/commit/abc1234))`.
+- **Credit outside contributors** at the end of the entry: `Thanks @username.`
+- **Call out anything that needs action** (a changed setting, a new permission prompt, reinstalling agent hooks) in bold at the start of the entry under `Changed`.
+- **Security fixes** name the impact, link the published advisory (`GHSA-…`) once it's public, and credit the reporter unless they asked not to be.
 
-7. **Attach the build** and a checksum.
+Update the link references at the bottom of the file:
 
-   ```bash
-   cd build/dist && shasum -a 256 "Shell-$VERSION-$BUILD.zip" > "Shell-$VERSION-$BUILD.zip.sha256" && cd -
-   gh release upload "v$VERSION" "build/dist/Shell-$VERSION-$BUILD.zip" "build/dist/Shell-$VERSION-$BUILD.zip.sha256"
-   ```
+```markdown
+[Unreleased]: https://github.com/arhea/Shell/compare/v$VERSION...HEAD
+[$VERSION]: https://github.com/arhea/Shell/compare/v$PREV...v$VERSION
+```
 
-8. **Push to `main`** (after Alex confirms).
+(For the first release, `[$VERSION]` links to `https://github.com/arhea/Shell/releases/tag/v$VERSION`.)
 
-   ```bash
-   git push origin main
-   ```
+### 3. Bump the version
 
-9. **Publish the release.** This creates the `v$VERSION` tag on the pushed release commit.
+In `project.yml`, set `CFBundleShortVersionString` to `$VERSION` and increment `CFBundleVersion` by one, for **both** the `Shell` and `ShellWidgets` targets (they must match). Then commit locally:
 
-   ```bash
-   gh release edit "v$VERSION" --draft=false --latest
-   ```
+```bash
+git commit -am "chore: release v$VERSION"
+```
 
-10. **Verify.** `gh release view "v$VERSION"` shows both assets, and `git fetch --tags && git rev-parse "v$VERSION"` matches `git rev-parse main`.
+### 4. Build the DMG
 
-If something fails before step 8, nothing is public: fix it, amend the local commit, and re-run from the failed step (`gh release delete "v$VERSION"` removes the draft). Full signing setup, entitlements and Time Sensitive notification notes are in `docs/releasing.md`.
+```bash
+make dist
+```
+
+`scripts/release.sh` builds Release for arm64, verifies the Developer ID signature, hardened runtime, secure timestamp and absence of `get-task-allow`, notarizes and staples the app, packages it into a disk image with an `/Applications` shortcut, then signs, notarizes and staples the disk image and writes its checksum. Notarization runs twice, so allow 5–15 minutes.
+
+Output:
+
+- `build/dist/Shell-$VERSION.dmg`
+- `build/dist/Shell-$VERSION.dmg.sha256`
+
+If notarization fails, the script prints Apple's log. Fix the cause, amend the release commit if needed, and re-run. Never use `--skip-notarize` for a release. Before moving on, confirm:
+
+```bash
+spctl --assess --type open --context context:primary-signature --verbose=2 "build/dist/Shell-$VERSION.dmg"
+xcrun stapler validate "build/dist/Shell-$VERSION.dmg"
+```
+
+### 5. Push the release commit
+
+After Alex confirms:
+
+```bash
+git push origin main
+```
+
+### 6. Create the release
+
+Assemble the notes from the changelog section plus an install footer, then create the release as a **draft** (drafts don't create the tag or notify watchers):
+
+```bash
+mkdir -p build
+SHA=$(cut -d' ' -f1 "build/dist/Shell-$VERSION.dmg.sha256")
+{
+  awk -v v="$VERSION" '$0 ~ "^## \\[" v "\\]" {f=1; next} /^## \[|^\[/ {f=0} f' CHANGELOG.md
+  cat <<EOF
+
+## Install
+
+Download **Shell-$VERSION.dmg** below, open it, and drag Shell to Applications. Requires macOS 15 or later on Apple Silicon. The app and disk image are signed with a Developer ID and notarized by Apple.
+
+SHA-256: \`$SHA\`
+
+The "Source code" archives are the source at this tag, not the app. To build it yourself, see [Building from source](https://github.com/arhea/Shell/blob/v$VERSION/docs/building.md).
+EOF
+  if [[ -n $PREV ]]; then printf '\n**Full changelog:** https://github.com/arhea/Shell/compare/%s...v%s\n' "$PREV" "$VERSION"; fi
+} > build/release-notes.md
+```
+
+Read `build/release-notes.md` and fix anything that reads badly before continuing. Then:
+
+```bash
+gh release create "v$VERSION" --repo arhea/Shell --draft --target main \
+  --title "Shell $VERSION" --notes-file build/release-notes.md
+```
+
+Add `--prerelease` for `-beta`/`-rc` versions.
+
+### 7. Upload the artifact
+
+```bash
+gh release upload "v$VERSION" --repo arhea/Shell \
+  "build/dist/Shell-$VERSION.dmg#Shell $VERSION for macOS (Apple Silicon)" \
+  "build/dist/Shell-$VERSION.dmg.sha256"
+```
+
+Upload only these two files.
+
+### 8. Publish and verify
+
+After Alex confirms:
+
+```bash
+gh release edit "v$VERSION" --repo arhea/Shell --draft=false --latest
+```
+
+Publishing creates the `v$VERSION` tag on the pushed release commit. Then check:
+
+- `gh release view "v$VERSION" --repo arhea/Shell` shows the notes and exactly two assets: the `.dmg` and the `.sha256`.
+- `git fetch --tags && [[ $(git rev-parse "v$VERSION^{commit}") == $(git rev-parse origin/main) ]] && echo tag-ok`
+- Download the DMG from the release page on a Mac (or user account) that has never run a dev build, open it, and launch Shell. Gatekeeper must open it with no warning.
+- Every link in the published notes resolves.
+
+### If something goes wrong
+
+| Where it failed | What to do |
+| --- | --- |
+| Before step 5 (build, notarization) | Nothing is public. Fix, `git commit --amend`, re-run from step 4. |
+| After step 5, before publishing | Fix forward with a new commit on `main`, rebuild, delete and recreate the draft (`gh release delete "v$VERSION" --repo arhea/Shell`). |
+| After publishing | Don't move or delete the tag. Ship `$VERSION` + 1 patch release with the fix. If the artifact itself is bad, `gh release edit --draft=true` to pull it while the fix ships. |
+
+Full signing setup, entitlements and Time Sensitive notification notes are in `docs/releasing.md`.

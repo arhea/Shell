@@ -4,7 +4,7 @@
 
 Shell is built in Swift on [libghostty](https://ghostty.org). It combines the parts of Warp and iTerm2 people use most: a real native prompt, zsh completions with previews, iTerm2 keybindings, and flexible tabs and splits. On top of that come first-class tools for Claude Code, Codex, git worktrees and GitHub. There are no accounts, no telemetry and no cloud AI. Optional Apple Intelligence features run on your Mac and stay off until you turn them on.
 
-![macOS 15+](https://img.shields.io/badge/macOS-15%2B-black) ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-black) ![Swift](https://img.shields.io/badge/Swift-AppKit%20%2B%20SwiftUI-orange) ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
+![macOS 15+](https://img.shields.io/badge/macOS-15%2B-black) ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-black) ![Swift](https://img.shields.io/badge/Swift-AppKit%20%2B%20SwiftUI-orange) ![License: MIT](https://img.shields.io/badge/license-MIT-blue) [![Tests](https://github.com/arhea/Shell/actions/workflows/test.yml/badge.svg)](https://github.com/arhea/Shell/actions/workflows/test.yml)
 
 ## Highlights
 
@@ -31,7 +31,7 @@ See **[Features](docs/features.md)** for the full tour.
 
 Shell requires **macOS 15 or later on Apple Silicon**.
 
-Download the latest signed and notarized build from the [Releases page](../../releases), unzip it, and move `Shell.app` to `/Applications`.
+Download `Shell-<version>.dmg` from the latest release on the [Releases page](../../releases), open it, and drag Shell to Applications. It's signed with a Developer ID and notarized by Apple.
 
 To build from source:
 
