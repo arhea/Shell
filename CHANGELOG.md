@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - The native Claude Code view can sign in to Claude Code. When Claude Code is signed out, or its sign-in expires mid-conversation, the view shows a sign-in card that runs Claude Code's own login (the same choices as `/login`) instead of an error, then starts or continues the session and sends the message that failed. ([#20](https://github.com/arhea/Shell/pull/20), fixes [#16](https://github.com/arhea/Shell/issues/16))
+- Pasting a copied image or screenshot into the Claude prompt attaches it, instead of doing nothing. ([#22](https://github.com/arhea/Shell/pull/22), fixes [#21](https://github.com/arhea/Shell/issues/21))
 
 ## [0.2.0] - 2026-09-30
 
