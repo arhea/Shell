@@ -53,3 +53,6 @@ zig-out/
 *.swp
 *~
 .claude/settings.local.json
+
+# Python bytecode (CI helper scripts)
+__pycache__/

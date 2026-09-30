@@ -1,0 +1,96 @@
+name: Swift test report
+description: >
+  Turns an Xcode .xcresult bundle into a Markdown test report: pass/fail/skip
+  counts, code coverage, and full detail for every failed test. Posts it to the
+  job summary, annotates failures inline, and keeps one up-to-date summary-only
+  comment on the pull request.
+
+inputs:
+  xcresult:
+    description: Path to the .xcresult bundle written by `xcodebuild test -resultBundlePath`.
+    required: true
+  title:
+    description: Report heading. Also keys the PR comment, so use distinct titles for multiple reports in one PR.
+    default: Test results
+  coverage-exclude:
+    description: Regex of source file paths to leave out of the coverage number. Empty to include everything.
+    default: '/Tests/|Tests?\.swift$'
+  comment-on-pr:
+    description: Create or update a comment with the summary (counts and coverage, no per-test detail) on the pull request. Needs the pull-requests write permission.
+    default: 'true'
+  fail-on-failure:
+    description: Fail this step when tests or the build failed.
+    default: 'false'
+  github-token:
+    description: Token used to comment on the pull request.
+    default: ${{ github.token }}
+
+outputs:
+  passed:
+    description: Number of tests that passed.
+    value: ${{ steps.report.outputs.passed }}
+  failed:
+    description: Number of tests that failed.
+    value: ${{ steps.report.outputs.failed }}
+  skipped:
+    description: Number of tests that were skipped.
+    value: ${{ steps.report.outputs.skipped }}
+  total:
+    description: Total number of tests.
+    value: ${{ steps.report.outputs.total }}
+  coverage:
+    description: Line coverage percentage (e.g. `72.41`), empty when coverage was not collected.
+    value: ${{ steps.report.outputs.coverage }}
+  report:
+    description: Path to the full Markdown report.
+    value: ${{ steps.report.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - name: Build report
+      id: report
+      shell: bash
+      env:
+        XCRESULT: ${{ inputs.xcresult }}
+        TITLE: ${{ inputs.title }}
+        COVERAGE_EXCLUDE: ${{ inputs.coverage-exclude }}
+        # Link to the PR head, not the synthetic merge commit.
+        REPORT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      run: |
+        set +e
+        python3 "$GITHUB_ACTION_PATH/report.py" "$XCRESULT" \
+          --title "$TITLE" \
+          --coverage-exclude "$COVERAGE_EXCLUDE" \
+          --output "$RUNNER_TEMP/swift-test-report.md" \
+          --summary-output "$RUNNER_TEMP/swift-test-report-summary.md"
+        echo "exit-code=$?" >> "$GITHUB_OUTPUT"
+
+    - name: Comment on pull request
+      if: inputs.comment-on-pr == 'true' && github.event.pull_request.number
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR: ${{ github.event.pull_request.number }}
+        TITLE: ${{ inputs.title }}
+      run: |
+        export MARKER="<!-- swift-test-report: $TITLE -->"
+        body_file="$RUNNER_TEMP/swift-test-report-summary.md"
+        { printf '%s\n' "$MARKER"; cat "$body_file"; } > "$body_file.tmp"
+        existing=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
+          --jq '.[] | select(.body | startswith(env.MARKER)) | .id' | head -n 1)
+        # Fork PRs get a read-only token, so a failed comment is a warning, not a failure.
+        if [[ -n "$existing" ]]; then
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -F "body=@$body_file.tmp" >/dev/null \
+            || echo "::warning::Could not update the test report comment on #$PR"
+        else
+          gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -F "body=@$body_file.tmp" >/dev/null \
+            || echo "::warning::Could not comment the test report on #$PR"
+        fi
+
+    - name: Fail on test failures
+      if: inputs.fail-on-failure == 'true' && steps.report.outputs.exit-code != '0'
+      shell: bash
+      run: |
+        echo "::error::Tests failed. See the job summary for details."
+        exit 1
