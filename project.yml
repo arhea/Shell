@@ -37,6 +37,10 @@ targets:
         type: folder
         buildPhase: resources
       - path: Resources/Assets.xcassets
+      # Icon Composer document: light, dark, tinted and clear variants on
+      # macOS 26; Xcode also generates the classic icon for macOS 15.
+      - path: Resources/AppIcon.icon
+        buildPhase: resources
     dependencies:
       # Embedded in Contents/PlugIns.
       - target: ShellWidgets

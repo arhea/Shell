@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Two capsules meeting at the tip: a round-capped, round-joined chevron as filled geometry. -->
+  <rect x="-160.48" y="-37.5" width="320.95" height="75" rx="37.5" fill="#7AA2F7" transform="translate(317.2 388.35) rotate(41.29)"/>
+  <rect x="-161.34" y="-37.5" width="322.67" height="75" rx="37.5" fill="#7AA2F7" transform="translate(317.2 551.95) rotate(138.26)"/>
+</svg>

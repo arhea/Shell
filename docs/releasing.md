@@ -25,6 +25,8 @@ make dist
 
 [`scripts/release.sh`](../scripts/release.sh) builds Release for arm64 and verifies the signature, including hardened runtime and secure timestamp. It then notarizes and staples the app, packages it into a disk image with an `/Applications` shortcut, signs, notarizes and staples the disk image, and writes `build/dist/Shell-<version>.dmg` plus a `.sha256` checksum.
 
+The disk image window is styled by [`scripts/make-dmg.sh`](../scripts/make-dmg.sh): a terminal-themed background rendered by [`scripts/dmg-background.swift`](../scripts/dmg-background.swift) (with the version printed in it), 128pt icons, and the app icon as the volume icon. The layout is applied through Finder with AppleScript, so the first run asks to let your terminal control Finder (System Settings › Privacy & Security › Automation). The build fails rather than shipping a plain window if Finder doesn't save the layout. To check the window without a release build, run `make dmg-preview`, which packages the Debug build unsigned and opens it.
+
 | Flag | Effect |
 | --- | --- |
 | `--install` | Also copy the app to `/Applications` |

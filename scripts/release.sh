@@ -91,12 +91,7 @@ fi
 
 step "Creating disk image"
 DMG="$DIST/Shell-$VERSION.dmg"
-STAGE=$(mktemp -d)
-trap 'rm -rf "$STAGE"' EXIT
-ditto "$APP" "$STAGE/Shell.app"
-ln -s /Applications "$STAGE/Applications"
-rm -f "$DMG"
-hdiutil create -quiet -volname "Shell $VERSION" -srcfolder "$STAGE" -fs HFS+ -format UDZO -ov "$DMG"
+./scripts/make-dmg.sh "$APP" "$DMG" "$VERSION" >/dev/null
 codesign --sign "$IDENTITY" --timestamp "$DMG"
 codesign --verify --verbose=1 "$DMG"
 
