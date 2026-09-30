@@ -30,3 +30,7 @@ Shell drives tools it doesn't own. Report problems with the tool itself upstream
 | Homebrew | [Homebrew/brew](https://github.com/Homebrew/brew/issues) |
 
 If you're not sure whether a problem is Shell's, open an issue here and we'll help work it out.
+
+## Supporting the project
+
+If Shell is useful to you, you can sponsor its development through [GitHub Sponsors](https://github.com/sponsors/arhea). Sponsorship is a thank-you, not a support contract: every issue gets the same attention, and security reports always follow [SECURITY.md](SECURITY.md).

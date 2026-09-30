@@ -91,6 +91,12 @@ Check [Troubleshooting and FAQ](docs/troubleshooting.md) first, then see [SUPPOR
 
 Contributions are welcome: bug reports, fixes, docs and focused features. Read [CONTRIBUTING.md](CONTRIBUTING.md) to get set up, and follow the [Code of Conduct](CODE_OF_CONDUCT.md). Notable changes are listed in the [changelog](CHANGELOG.md).
 
+## Support Shell
+
+Shell is free and open source, built and maintained in spare time. If it saves you time, you can support its development through [GitHub Sponsors](https://github.com/sponsors/arhea). Sponsorships help cover the Apple Developer Program membership that signing and notarizing releases requires, and the time that goes into new features and fixes.
+
+Not in a position to sponsor? Starring the repo, reporting bugs and telling a friend help too.
+
 ## Acknowledgements
 
 Shell includes code from these open-source projects. Thank you to everyone who builds and maintains them.
