@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- The installer disk image opens to a styled, terminal-themed window: drag Shell onto Applications along a chevron trail, with the version shown in the corner and Shell's icon on the mounted volume.
+- Shell's app icon follows your appearance on macOS 26: a light icon in light mode, the dark icon in dark mode, and the Tinted and Clear icon styles. On macOS 15, Shell uses the light icon.
+
 ## [0.1.0]
 
 First public release.
