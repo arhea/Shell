@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-30
+
+Shell now keeps itself up to date: it checks GitHub for new releases, verifies them and installs on quit. This release also brings a refreshed installer, an app icon that follows your appearance, and a native About window, and it now requires macOS 26.
+
 ### Added
 
 - The installer disk image opens to a styled, terminal-themed window: drag Shell onto Applications along a chevron trail, with the version shown in the corner and Shell's icon on the mounted volume. ([#6](https://github.com/arhea/Shell/pull/6), fixes [#5](https://github.com/arhea/Shell/issues/5))
@@ -14,7 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- Shell now requires macOS 26 (Tahoe) or later. ([#12](https://github.com/arhea/Shell/pull/12), fixes [#11](https://github.com/arhea/Shell/issues/11))
+- **Shell now requires macOS 26 (Tahoe) or later.** ([#12](https://github.com/arhea/Shell/pull/12), fixes [#11](https://github.com/arhea/Shell/issues/11))
 - **About Shell** has a cleaner, native layout modeled on macOS's About This Mac, with the libghostty version, a **View on GitHub** button and compact acknowledgements. ([#10](https://github.com/arhea/Shell/pull/10), fixes [#9](https://github.com/arhea/Shell/issues/9))
 
 ## [0.1.0]
@@ -35,5 +39,6 @@ First public release.
 - Optional on-device Apple Intelligence features, all off by default.
 - Shortcuts and Spotlight actions, Finder services, a Dock menu, a desktop widget, Quick Look previews and optional iCloud settings sync.
 
-[Unreleased]: https://github.com/arhea/Shell/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/arhea/Shell/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/arhea/Shell/releases/tag/v0.2.0
 [0.1.0]: https://github.com/arhea/Shell/releases/tag/v0.1.0
