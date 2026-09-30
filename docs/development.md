@@ -19,6 +19,20 @@ xcodebuild -project Shell.xcodeproj -scheme Shell test
 
 Tests run inside Shell (it's the test host), but they never touch your real files: `AppEnvironment.isRunningTests` makes launch skip windows, the terminal engine, the control socket, iCloud sync, the hotkey, scheduled jobs and session restore, and points `SettingsStore.supportDirectory` (settings, the Ghostty config, history, session restore, themes) at a throwaway `$TMPDIR/ShellTests-<pid>` folder. `TestIsolationTests` checks this.
 
+### Test reports in CI
+
+`.github/workflows/test.yml` runs the tests on every pull request and push to `main`. The `swift-test-report` action (`.github/actions/swift-test-report`) reads the `.xcresult` bundle and keeps a single, updated comment on the PR with pass, fail and skip counts plus line coverage. The job summary shows the same numbers, followed by detail for failures only: each failed test gets its message, source location, a code excerpt, any failing arguments, and its activity log. Passing and skipped tests are only counted. Failures also appear as inline annotations on the diff. Test files are left out of the coverage number.
+
+To render the same report locally:
+
+```bash
+xcodebuild -project Shell.xcodeproj -scheme Shell test -resultBundlePath build/TestResults.xcresult -enableCodeCoverage YES
+```
+
+```bash
+.github/actions/swift-test-report/report.py build/TestResults.xcresult --output build/test-report.md
+```
+
 After adding or removing source files, run `make project` (or `xcodegen generate`). The Xcode project is generated from `project.yml` and isn't checked in.
 
 ## App icon
