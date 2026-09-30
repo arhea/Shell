@@ -12,7 +12,7 @@ The source of truth is `ShortcutAction.defaultShortcut` in [`Sources/Shell/Setti
 | Command Palette… | ⇧⌘P |
 | Reload Configuration | ⇧⌘, |
 | Agent Activity | ⌥⌘N |
-| Homebrew Packages…, Node.js Versions…, Zsh & Oh My Zsh…, MCP Servers… | unbound (menu or palette) |
+| Homebrew Packages…, Node.js Versions…, Zsh & Oh My Zsh…, MCP Servers…, Check for Updates… | unbound (menu or palette) |
 
 ## Windows and tabs
 

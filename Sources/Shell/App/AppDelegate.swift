@@ -60,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShortcutActionHandling
         NSUpdateDynamicServices()
         HotkeyWindow.shared.configure()
         ScheduledMaintenance.configureAll()
+        SoftwareUpdater.shared.start()
         GoService.shared.startMonitoring()
         Task.detached(priority: .background) { ClaudeAttachment.removeStaleFiles() }
 
@@ -128,6 +129,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShortcutActionHandling
         // maintenance jobs.
         ProcessCleanup.terminateDescendants()
         ShellIntegration.stop()
+        // Last, so the install helper isn't among the descendants stopped above.
+        SoftwareUpdater.shared.installOnQuit()
     }
 
     /// `kill`/`killall Shell` sends SIGTERM, which would otherwise end the app
@@ -237,6 +240,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShortcutActionHandling
             ScheduledMaintenance.worktrees.configure()
         }
         if old.nodeAutoUpdate != new.nodeAutoUpdate { ScheduledMaintenance.node.configure() }
+        if old.checkForUpdates != new.checkForUpdates { SoftwareUpdater.shared.configure() }
         for c in controllers { c.settingsChanged(old: old, new: new) }
         HotkeyWindow.shared.controller?.settingsChanged(old: old, new: new)
     }
@@ -252,6 +256,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShortcutActionHandling
         switch action {
         case .newWindow: newWindow()
         case .settings: SettingsWindowController.shared.show()
+        case .checkForUpdates: SoftwareUpdater.shared.checkInteractively()
         case .homebrew: SettingsWindowController.shared.show(pane: .homebrew)
         case .nodeSetup: SettingsWindowController.shared.show(pane: .node)
         case .zshSetup: SettingsWindowController.shared.show(pane: .shell)

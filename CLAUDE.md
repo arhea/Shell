@@ -24,7 +24,7 @@ This is a personal open-source project (MIT, bundle ID `app.bethesdalabs.Shell`)
 | Language | Swift 6 language mode, strict concurrency. AppKit for windows and terminal views, SwiftUI for settings, sidebars and the Claude view. |
 | Toolchain | Xcode 26+, Zig (version pinned by Ghostty's `build.zig.zon`), XcodeGen. |
 | Dependencies | No Swift packages. Everything third-party comes in through `Vendor/GhosttyKit.xcframework`. |
-| Distribution | Outside the App Store: Developer ID-signed, hardened runtime, notarized, as a signed and notarized `.dmg` attached to GitHub Releases. |
+| Distribution | Outside the App Store: Developer ID-signed, hardened runtime, notarized, as a signed and notarized `.dmg` attached to GitHub Releases. The app updates itself from the latest release (`Integrations/Updates/`), so the DMG and its `.sha256` must both be attached and the release published with `--latest`. |
 
 ## Commands
 

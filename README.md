@@ -31,7 +31,7 @@ See **[Features](docs/features.md)** for the full tour.
 
 Shell requires **macOS 15 or later on Apple Silicon**.
 
-Download `Shell-<version>.dmg` from the latest release on the [Releases page](../../releases), open it, and drag Shell to Applications. It's signed with a Developer ID and notarized by Apple.
+Download `Shell-<version>.dmg` from the latest release on the [Releases page](../../releases), open it, and drag Shell to Applications. It's signed with a Developer ID and notarized by Apple. Shell then keeps itself up to date from GitHub releases (Settings › General › Software Update).
 
 To build from source:
 

@@ -118,7 +118,7 @@ Time Sensitive alerts are opt-in (Settings › Claude & Codex), must be allowed 
 ## FAQ
 
 **Does Shell send any data anywhere?**
-No telemetry or analytics. Shell's own network requests are read-only metadata fetches for the Node.js manager. Everything else goes through tools you run, such as `git`, `gh`, `brew` and `claude`. See [SECURITY.md](../SECURITY.md#security-model).
+No telemetry or analytics. Shell's own network requests are read-only: the update check against GitHub's releases API (every six hours, off in Settings › General) and metadata fetches for the Node.js manager. Everything else goes through tools you run, such as `git`, `gh`, `brew` and `claude`. See [SECURITY.md](../SECURITY.md#security-model).
 
 **Does Shell need an API key for Claude?**
 No. It drives the `claude` and `codex` binaries you already have, with their own sign-in.

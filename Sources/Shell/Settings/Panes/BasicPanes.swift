@@ -51,6 +51,7 @@ struct GeneralSettingsPane: View {
                     NotificationManager.shared.post(title: "Shell", body: "Notifications are working.", session: nil, force: true)
                 }
             }
+            SoftwareUpdateSection()
             SettingsSyncSection()
             Section("Hotkey Window") {
                 Toggle("Show a terminal from anywhere with a global shortcut", isOn: setting(\.hotkeyWindow))

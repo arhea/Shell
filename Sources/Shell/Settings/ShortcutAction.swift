@@ -3,7 +3,7 @@ import AppKit
 /// Every user-bindable command. Defaults follow iTerm2 so muscle memory carries over.
 enum ShortcutAction: String, CaseIterable, Identifiable {
     // App
-    case settings, commandPalette, homebrew, nodeSetup, zshSetup, mcpServers, reloadConfig
+    case settings, checkForUpdates, commandPalette, homebrew, nodeSetup, zshSetup, mcpServers, reloadConfig
     // Windows, tabs, panes
     case newWindow, newTab, closePane, closeTab, closeWindow
     case splitRight, splitDown
@@ -27,7 +27,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
 
     var category: Category {
         switch self {
-        case .settings, .commandPalette, .homebrew, .nodeSetup, .zshSetup, .mcpServers, .reloadConfig, .toggleNotifications: .app
+        case .settings, .checkForUpdates, .commandPalette, .homebrew, .nodeSetup, .zshSetup, .mcpServers, .reloadConfig, .toggleNotifications: .app
         case .newWindow, .newTab, .closeTab, .closeWindow, .nextTab, .previousTab, .moveTabLeft, .moveTabRight,
              .renameTab, .newTabGroup, .moveTabToNewWindow, .tab1, .tab2, .tab3, .tab4, .tab5, .tab6, .tab7, .tab8, .lastTab,
              .toggleTabBarStyle: .windows
@@ -43,6 +43,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .settings: "Settings…"
+        case .checkForUpdates: "Check for Updates…"
         case .commandPalette: "Command Palette…"
         case .homebrew: "Homebrew Packages…"
         case .mcpServers: "MCP Servers…"
@@ -115,7 +116,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         switch self {
         case .settings: .cmd(",")
         case .commandPalette: .cmdShift("p")
-        case .homebrew, .nodeSetup, .zshSetup, .mcpServers, .moveTabToNewWindow, .equalizePanes: nil
+        case .checkForUpdates, .homebrew, .nodeSetup, .zshSetup, .mcpServers, .moveTabToNewWindow, .equalizePanes: nil
         case .reloadConfig: .cmdShift(",")
         case .toggleNotifications: .cmdOpt("n")
         case .toggleSidebar: .cmdCtrl("b")

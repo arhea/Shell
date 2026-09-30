@@ -135,6 +135,11 @@ enum MainMenu {
         NSApp.windowsMenu = window
 
         let help = NSMenu(title: "Help")
+        // Restart to Update shows only once an update is found (UpdateMenuItem).
+        help.addItem(item(.checkForUpdates))
+        help.addItem(UpdateMenuItem.shared)
+        help.addItem(.separator())
+        help.delegate = UpdateMenuItem.shared
         // macOS adds the search field; these give it something to find.
         help.addItem(HelpMenuItem(title: "Keyboard Shortcuts", pane: .shortcuts))
         help.addItem(HelpMenuItem(title: "Claude Code & Codex Settings", pane: .integrations))
@@ -175,4 +180,52 @@ final class HelpMenuItem: NSMenuItem {
     required init(coder: NSCoder) { fatalError("not used") }
 
     @objc private func open() { SettingsWindowController.shared.show(pane: pane) }
+}
+
+/// Help › Restart to Update. Hidden until the updater finds a newer release;
+/// refreshed each time the Help menu opens.
+@MainActor
+final class UpdateMenuItem: NSMenuItem, NSMenuDelegate {
+    static let shared = UpdateMenuItem()
+
+    private init() {
+        super.init(title: "Restart to Update", action: #selector(run), keyEquivalent: "")
+        target = self
+        isHidden = true // until menuNeedsUpdate finds an update
+    }
+
+    @available(*, unavailable)
+    required init(coder: NSCoder) { fatalError("not used") }
+
+    func menuNeedsUpdate(_ menu: NSMenu) { refresh() }
+
+    func refresh() {
+        let updater = SoftwareUpdater.shared
+        isHidden = false
+        isEnabled = true
+        switch updater.phase {
+        case .ready(let r):
+            title = "Restart to Update to Shell \(r.version)"
+        case .available(let r):
+            title = updater.installBlocker == nil ? "Install Shell \(r.version) and Restart" : "Download Shell \(r.version)…"
+        case .downloading(let r):
+            title = "Downloading Shell \(r.version)…"
+            isEnabled = false
+        default:
+            isHidden = true
+        }
+    }
+
+    @objc private func run() {
+        let updater = SoftwareUpdater.shared
+        switch updater.phase {
+        case .available(let r) where updater.installBlocker != nil:
+            NSWorkspace.shared.open(r.notesURL)
+        case .available:
+            SettingsWindowController.shared.show(pane: .general) // shows download progress
+            updater.installAndRelaunch()
+        default:
+            updater.installAndRelaunch()
+        }
+    }
 }

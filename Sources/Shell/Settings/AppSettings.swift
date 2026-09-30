@@ -234,6 +234,12 @@ struct AppSettings: Codable, Equatable {
     /// break through Focus (the user still allows it per app in System Settings).
     var timeSensitiveAgentAlerts = false
 
+    // Software update
+    /// Check GitHub for a new release every six hours.
+    var checkForUpdates = true
+    /// Download new releases in the background and install them when Shell quits.
+    var installUpdatesAutomatically = true
+
     // Sync
     /// Mirror portable settings through iCloud Drive (see SettingsSync). Never synced itself.
     var iCloudSync = false
@@ -478,6 +484,8 @@ extension AppSettings {
         s.agentNotifications = d.agentNotifications
         s.timeSensitiveAgentAlerts = d.timeSensitiveAgentAlerts
         s.iCloudSync = d.iCloudSync
+        s.checkForUpdates = d.checkForUpdates
+        s.installUpdatesAutomatically = d.installUpdatesAutomatically
         s.claudeModel = d.claudeModel
         s.claudePermissionMode = d.claudePermissionMode
         s.claudeEffort = d.claudeEffort

@@ -11,4 +11,5 @@ enum Log {
     static let control = Logger(subsystem: subsystem, category: "control")
     static let process = Logger(subsystem: subsystem, category: "process")
     static let intelligence = Logger(subsystem: subsystem, category: "intelligence")
+    static let update = Logger(subsystem: subsystem, category: "update")
 }

@@ -32,6 +32,8 @@ Shell has no account, no sign-in and no telemetry. Features that need an externa
 2. Open the disk image and drag `Shell` onto the `Applications` shortcut.
 3. Open it. Release builds are signed with a Developer ID and notarized by Apple, so Gatekeeper opens them without a warning.
 
+Shell checks for new releases every six hours. When one is found it downloads and verifies it in the background, notifies you, and installs it when you quit, or right away from **Help › Restart to Update**. **Help › Check for Updates…** checks on demand. Turn either behavior off in Settings › General › Software Update. Updates install only into a copy you can write to, such as `/Applications/Shell.app` for an admin user.
+
 ### Build from source
 
 You need Xcode 26 or later and Homebrew.
