@@ -1,0 +1,34 @@
+name: Chore
+description: Maintenance with no user-visible change - refactors, tech debt, build, CI, tests, dependency or Ghostty updates.
+title: "chore: "
+labels: ["chore", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep the `chore: ` prefix and state the task, e.g. `chore: Move ProcessRunner timeouts into a shared constant`.
+  - type: textarea
+    id: task
+    attributes:
+      label: What needs doing?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: The cost of not doing it - risk, slowness, duplication, blocked work.
+    validations:
+      required: true
+  - type: textarea
+    id: approach
+    attributes:
+      label: Approach
+      description: Files and steps. Link code with permalinks. Call out anything that must not change.
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: |
+        - [ ] No user-visible behavior change
+        - [ ] Tests pass; ./scripts/build.sh shows no new warnings

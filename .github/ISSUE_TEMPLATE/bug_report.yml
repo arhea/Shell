@@ -1,11 +1,14 @@
 name: Bug report
 description: Something in Shell doesn't work as expected.
-labels: ["bug"]
+title: "bug: "
+labels: ["bug", "needs-triage"]
 body:
   - type: markdown
     attributes:
       value: |
         Thanks for reporting a bug. Please check `docs/troubleshooting.md` in this repository and search existing issues first.
+
+        Keep the `bug: ` prefix and follow it with a specific summary, e.g. `bug: Ghost text disappears after closing the completion menu`. A maintainer will add a priority (p1–p3) during triage.
 
         **Security issues:** don't file them here. Report them privately from the repository's **Security** tab, as described in `SECURITY.md`.
   - type: textarea
@@ -47,6 +50,18 @@ body:
         - Settings or themes
         - Building from source
         - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact
+      description: Helps the maintainer set a priority.
+      options:
+        - Crash, data loss, or I can't use Shell
+        - A core workflow is broken, and there's no reasonable workaround
+        - It's annoying, but there's a workaround
+        - Minor or cosmetic
     validations:
       required: true
   - type: input
