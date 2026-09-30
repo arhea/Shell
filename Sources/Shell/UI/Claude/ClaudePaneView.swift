@@ -11,21 +11,67 @@ struct ClaudePaneView: View {
     var onToggleExplorer: () -> Void
     var onFocus: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     private var palette: ClaudePalette { .current }
     private var fontSize: CGFloat { ChatTypography.current.size }
-    /// Settings › Chat Text › Maximum width (nil = the full pane).
-    private var maxWidth: CGFloat? { ChatTypography.current.maxWidth }
+    /// Settings › Chat Text › Composer width (nil = the full pane).
+    private var columnWidth: CGFloat? { ChatTypography.current.columnWidth }
+    /// Settings › Chat Text › Maximum width, within the column (nil = the whole column).
+    private var readingWidth: CGFloat? { [ChatTypography.current.maxWidth, columnWidth].compactMap(\.self).min() }
+    /// The composer's width while it waits, centered, for the first message.
+    private static let emptyStateWidth: CGFloat = 680
 
     var body: some View {
         let p = palette
+        // Before the first message the composer sits in the middle of the pane
+        // with the welcome above it; sending moves it to the bottom. `bottom` stays
+        // at the same place in this builder, so the composer's text view (focus,
+        // caret, the text being sent) is the same view before and after.
+        let docked = claude.hasStarted
         VStack(spacing: 0) {
             ClaudeHeader(claude: claude, palette: p, onClose: onClose, onContinueInTerminal: onContinueInTerminal,
                          onToggleExplorer: onToggleExplorer)
-            transcript(p)
-            bottom(p)
+            if docked {
+                transcript(p)
+                    .transition(.opacity)
+            } else {
+                emptyState(p)
+                    .transition(.opacity)
+            }
+            bottom(p, docked: docked)
+            if !docked {
+                // Matches the space above, so the composer is centered.
+                Color.clear
+                    .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .onTapGesture { composer.focus() }
+            }
         }
+        .animation(reduceMotion ? nil : .spring(duration: 0.4, bounce: 0.12), value: docked)
         .background(p.background)
         .foregroundStyle(p.foreground)
+    }
+
+    // MARK: Empty state
+
+    private func emptyState(_ p: ClaudePalette) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if claude.needsTrust {
+                TrustGate(directory: claude.directory, palette: p, onTrust: { claude.trustAndStart() },
+                          onOpenTerminal: onContinueInTerminal, onClose: onClose)
+            } else if let login = claude.login {
+                LoginGate(login: login, palette: p, onClose: onClose)
+            } else {
+                ClaudeWelcome(claude: claude, palette: p)
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.bottom, 6)
+        .frame(maxWidth: Self.emptyStateWidth + 28, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .contentShape(Rectangle())
+        .onTapGesture { composer.focus() }
     }
 
     // MARK: Transcript
@@ -38,7 +84,7 @@ struct ClaudePaneView: View {
                 if claude.needsTrust {
                     TrustGate(directory: claude.directory, palette: p, onTrust: { claude.trustAndStart() },
                               onOpenTerminal: onContinueInTerminal, onClose: onClose)
-                } else if claude.items.isEmpty {
+                } else if claude.items.isEmpty && claude.login == nil {
                     ClaudeWelcome(claude: claude, palette: p)
                 }
                 ForEach(ClaudeTranscript.rows(claude.items, mode: ChatPreferences.shared.toolCalls)) { row in
@@ -50,6 +96,9 @@ struct ClaudePaneView: View {
                         ToolGroupView(items: items, palette: p, mentions: mentions, fontSize: fontSize, directory: claude.directory)
                     }
                 }
+                if let login = claude.login {
+                    LoginGate(login: login, palette: p, onClose: onClose)
+                }
                 if claude.isRunning && claude.pending.isEmpty {
                     WorkingIndicator(text: claude.statusText ?? "Working…", palette: p)
                 }
@@ -57,7 +106,7 @@ struct ClaudePaneView: View {
             .padding(.horizontal, 18)
             .padding(.vertical, 14)
             // A comfortable reading measure on wide windows (Settings › Chat Text).
-            .frame(maxWidth: maxWidth ?? .infinity, alignment: .leading)
+            .frame(maxWidth: readingWidth ?? .infinity, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
         .defaultScrollAnchor(.bottom)
@@ -67,8 +116,9 @@ struct ClaudePaneView: View {
 
     // MARK: Bottom: prompts, composer, status
 
-    private func bottom(_ p: ClaudePalette) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private func bottom(_ p: ClaudePalette, docked: Bool) -> some View {
+        let width = docked ? columnWidth : min(Self.emptyStateWidth, columnWidth ?? .infinity)
+        return VStack(alignment: .leading, spacing: 6) {
             if let req = claude.pending.first {
                 if req.isQuestion {
                     QuestionCard(request: req, palette: p, fontSize: fontSize, directory: claude.directory) { answers in
@@ -102,7 +152,7 @@ struct ClaudePaneView: View {
         .padding(.horizontal, 14)
         .padding(.top, 8)
         .padding(.bottom, 8)
-        .frame(maxWidth: maxWidth.map { $0 + 28 } ?? .infinity)
+        .frame(maxWidth: width.map { $0 + 28 } ?? .infinity)
         .frame(maxWidth: .infinity)
         .zIndex(1)
     }
@@ -184,7 +234,7 @@ struct ClaudePaneView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(composer.isEmpty && claude.draftAttachments.isEmpty ? p.dim : p.claude)
-                .disabled((composer.isEmpty && claude.draftAttachments.isEmpty) || claude.hasExited)
+                .disabled((composer.isEmpty && claude.draftAttachments.isEmpty) || !claude.canSend)
                 .help("Send (Return)")
                 .accessibilityLabel("Send")
             }
@@ -261,7 +311,9 @@ struct ClaudeHeader: View {
 
     @ViewBuilder
     private func stateBadge(_ p: ClaudePalette) -> some View {
-        if claude.hasExited {
+        if claude.login != nil {
+            badge("signed out", p.yellow, p)
+        } else if claude.hasExited {
             badge("ended", p.dim, p)
         } else if !claude.pending.isEmpty {
             badge("needs you", p.yellow, p)
@@ -730,6 +782,88 @@ struct TrustGate: View {
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 10).fill(palette.surface))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(palette.yellow.opacity(0.5)))
+    }
+}
+
+/// Shown while Claude Code isn't signed in. Runs Claude Code's own login
+/// (`claude auth login`), so the sign-in is the same as `/login` in its terminal UI.
+struct LoginGate: View {
+    @Bindable var login: ClaudeLogin
+    let palette: ClaudePalette
+    var onClose: () -> Void
+    @State private var code = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(login.expired ? "Sign in to Claude Code again" : "Sign in to Claude Code", systemImage: "person.crop.circle.badge.exclamationmark")
+                .font(.system(size: 15, weight: .semibold))
+            Text(login.expired
+                 ? "Claude Code's sign-in expired or was revoked. Sign in again and the conversation continues, starting with the message that didn't go through."
+                 : "Claude Code isn't signed in. Sign in here the same way as /login in Claude Code. Claude Code saves the sign-in, so `claude` in your terminals is signed in too.")
+                .font(.system(size: 12))
+                .foregroundStyle(palette.dim)
+                .fixedSize(horizontal: false, vertical: true)
+            switch login.phase {
+            case .choosing, .failed:
+                if case .failed(let message) = login.phase {
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(palette.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                ForEach(ClaudeLogin.Method.allCases) { method in
+                    Button { login.begin(method) } label: {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(method.title).font(.system(size: 12, weight: .semibold))
+                            Text(method.detail).font(.system(size: 11)).foregroundStyle(palette.dim)
+                        }
+                        .frame(maxWidth: 320, alignment: .leading)
+                    }
+                }
+                HStack {
+                    Toggle("Use single sign-on (SSO)", isOn: $login.useSSO).toggleStyle(.checkbox)
+                    Spacer()
+                    Button("Close", action: onClose)
+                }
+                .frame(maxWidth: 360)
+            case .signingIn:
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Finish signing in in your browser…").font(.system(size: 12))
+                }
+                Text("If the page shows a code, paste it here:")
+                    .font(.system(size: 12))
+                    .foregroundStyle(palette.dim)
+                HStack {
+                    TextField("Code", text: $code)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12, design: .monospaced))
+                        .frame(maxWidth: 320)
+                        .onSubmit(submitCode)
+                    Button("Submit", action: submitCode)
+                        .disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                HStack {
+                    Button("Open Sign-in Page") { login.openSignInPage() }
+                        .disabled(login.url == nil)
+                        .help("Opens the sign-in page again, if the browser didn't open")
+                    Button("Cancel") { login.cancel() }
+                }
+            case .verifying:
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Checking sign-in…").font(.system(size: 12))
+                }
+            }
+        }
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 10).fill(palette.surface))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(palette.yellow.opacity(0.5)))
+    }
+
+    private func submitCode() {
+        login.submit(code: code)
+        code = ""
     }
 }
 

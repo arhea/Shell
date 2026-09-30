@@ -58,7 +58,7 @@ final class ComposerTextView: NSTextView {
 
     /// Accept file and image drags, not just text.
     override var acceptableDragTypes: [NSPasteboard.PasteboardType] {
-        super.acceptableDragTypes + [.fileURL, .png, .tiff]
+        super.acceptableDragTypes + [.fileURL] + ClaudeAttachment.pasteboardImageTypes.map(\.0)
     }
     var placeholder = ""
     var placeholderColor: NSColor = .tertiaryLabelColor
@@ -79,8 +79,17 @@ final class ComposerTextView: NSTextView {
         pasteAsPlainText(sender)
     }
 
+    /// A plain-text view only enables Paste for text types, which disables it
+    /// (and makes ⌘V beep) when the clipboard holds just an image.
+    override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(paste(_:)), isEditable, attachHandler != nil, ClaudeAttachment.canAttach(from: .general) {
+            return true
+        }
+        return super.validateUserInterfaceItem(item)
+    }
+
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        if Self.hasFiles(sender.draggingPasteboard) {
+        if ClaudeAttachment.canAttach(from: sender.draggingPasteboard) {
             onDragHover?(true)
             return .copy
         }
@@ -98,19 +107,14 @@ final class ComposerTextView: NSTextView {
     }
 
     override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        if Self.hasFiles(sender.draggingPasteboard) { return .copy }
+        if ClaudeAttachment.canAttach(from: sender.draggingPasteboard) { return .copy }
         return super.draggingUpdated(sender)
     }
 
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
         onDragHover?(false)
-        if Self.hasFiles(sender.draggingPasteboard), attachHandler?(sender.draggingPasteboard) == true { return true }
+        if ClaudeAttachment.canAttach(from: sender.draggingPasteboard), attachHandler?(sender.draggingPasteboard) == true { return true }
         return super.performDragOperation(sender)
-    }
-
-    private static func hasFiles(_ pb: NSPasteboard) -> Bool {
-        pb.canReadObject(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true])
-            || (pb.string(forType: .string) == nil && (pb.data(forType: .png) != nil || pb.data(forType: .tiff) != nil))
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -624,6 +628,8 @@ struct ClaudeComposerField: NSViewRepresentable {
                 parent.onExit()
                 return
             }
+            // Keep the draft while signed out or starting.
+            guard claude.canSend else { return }
             claude.send(text, attachments: attachments)
             claude.draftAttachments = []
             if !text.isEmpty, model.history.last != text { model.history.append(text) }
