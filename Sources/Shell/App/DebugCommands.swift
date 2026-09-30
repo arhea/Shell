@@ -34,6 +34,9 @@ enum DebugCommands {
             if let action = ShortcutAction(rawValue: arg) {
                 if let controller { controller.perform(action) } else { AppDelegate.shared.perform(action) }
             }
+        case "github-select":
+            // Opens a PR's detail pane in the GitHub tab ("" closes it).
+            controller?.workspace.githubBoard?.selection = Int(arg).map { .init(number: $0) }
         case "type":
             controller?.focusedPane?.editor.insert(arg)
         case "submit":

@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **GitHub tab**: a board of the repository's open pull requests in Draft, Waiting for review, Has feedback, Changes requested and Ready columns, with a Mine / All filter. Stacked PRs are grouped into one card you can step through. Selecting a PR shows its description, conversation, checks and diff, and lets you comment, approve, request changes, mark ready or draft, re-run failed checks, merge, close, or check it out in a worktree, all through your `gh`. Open it with **View › Open GitHub** (⌃⌘H) or **Board** in the sidebar's GitHub section. ([#23](https://github.com/arhea/Shell/pull/23), fixes [#18](https://github.com/arhea/Shell/issues/18))
 - The Claude view starts with the composer centered in the pane, under the welcome, and moves it to the bottom when you send your first message. Continued and resumed sessions open with it at the bottom, and the move respects Reduce Motion. ([#19](https://github.com/arhea/Shell/pull/19), fixes [#17](https://github.com/arhea/Shell/issues/17))
 - Settings › Chat Text › **Composer width**: Centered (a column up to 1200 pt, the default) or Full width. The existing maximum width now sets the reading width of transcript text within that column; if you had turned it off, you get Full width. ([#19](https://github.com/arhea/Shell/pull/19), fixes [#17](https://github.com/arhea/Shell/issues/17))
 

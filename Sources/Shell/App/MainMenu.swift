@@ -94,6 +94,7 @@ enum MainMenu {
         view.addItem(.separator())
         view.addItem(item(.toggleNotifications))
         view.addItem(item(.claudeDashboard))
+        view.addItem(item(.github))
         view.addItem(item(.toggleFullScreen))
         add(view, title: "View", to: main)
 

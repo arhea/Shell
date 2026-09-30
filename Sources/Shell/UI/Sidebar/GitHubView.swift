@@ -40,6 +40,17 @@ struct GitHubView: View {
                 }
                 .help("Open \(github.slug) on GitHub")
                 Spacer()
+                if let openGitHub = context.openGitHub {
+                    Button(action: openGitHub) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "rectangle.split.3x1")
+                            Text("Board")
+                        }
+                        .font(.system(size: 11))
+                    }
+                    .buttonStyle(HeaderButtonStyle(palette: p, active: false))
+                    .help("Open the GitHub tab: a board of pull requests and stacks (\(ShortcutAction.github.shortcut?.displayString ?? "⌃⌘H"))")
+                }
             }
             .foregroundStyle(p.foreground)
             currentBranch(p)

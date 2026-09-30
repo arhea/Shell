@@ -104,6 +104,11 @@ struct HorizontalTabBar: View {
             WindowDragArea().frame(width: chrome.isFullScreen ? 8 : 78)
             if let summary = dashboard.summary {
                 DashboardTabChip(controller: controller, workspace: workspace, summary: summary, palette: palette)
+            }
+            if workspace.githubTabOpen {
+                GitHubTabChip(controller: controller, workspace: workspace, palette: palette)
+            }
+            if dashboard.summary != nil || workspace.githubTabOpen {
                 palette.border.frame(width: 1, height: 18).padding(.horizontal, 6)
             }
             ScrollViewReader { proxy in
@@ -204,7 +209,7 @@ struct HorizontalTabChip: View {
     @State private var hovering = false
 
     var body: some View {
-        let selected = workspace.selectedTabID == tab.id && !workspace.showsDashboard
+        let selected = workspace.selectedTabID == tab.id && !workspace.showsNativePage
         let index = workspace.tabs.firstIndex { $0.id == tab.id } ?? 0
         HStack(spacing: 6) {
             TabStatusIcon(tab: tab, palette: palette)
@@ -396,9 +401,16 @@ struct VerticalTabSidebar: View {
             .frame(height: 38)
             .padding(.trailing, 8)
 
-            if let summary = DashboardVisibility(workspace: workspace).summary {
+            let summary = DashboardVisibility(workspace: workspace).summary
+            if let summary {
                 DashboardSidebarRow(controller: controller, workspace: workspace, summary: summary, palette: palette)
                     .padding(.horizontal, 8)
+            }
+            if workspace.githubTabOpen {
+                GitHubSidebarRow(controller: controller, workspace: workspace, palette: palette)
+                    .padding(.horizontal, 8)
+            }
+            if summary != nil || workspace.githubTabOpen {
                 palette.border.frame(height: 1).padding(.horizontal, 14).padding(.vertical, 6)
             }
 
@@ -504,7 +516,7 @@ struct SidebarTabRow: View {
     @State private var hovering = false
 
     var body: some View {
-        let selected = workspace.selectedTabID == tab.id && !workspace.showsDashboard
+        let selected = workspace.selectedTabID == tab.id && !workspace.showsNativePage
         let index = workspace.tabs.firstIndex { $0.id == tab.id } ?? 0
         HStack(alignment: .top, spacing: 8) {
             TabStatusIcon(tab: tab, palette: palette).padding(.top, 1)

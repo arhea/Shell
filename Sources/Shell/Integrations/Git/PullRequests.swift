@@ -1,9 +1,16 @@
 import AppKit
 import Observation
 
-/// An open pull request, as `gh pr list` reports it.
+/// An open pull request, as `gh pr list` (sidebar) or the board's GraphQL
+/// query reports it.
 struct OpenPullRequest: Identifiable, Equatable {
     enum Checks: Equatable { case none, passing, failing, pending }
+
+    /// A reviewer's latest review: APPROVED, CHANGES_REQUESTED, COMMENTED or DISMISSED.
+    struct Review: Equatable {
+        var login: String
+        var state: String
+    }
 
     var number: Int
     var title: String
@@ -22,12 +29,19 @@ struct OpenPullRequest: Identifiable, Equatable {
     var checks: Checks
     var checksSummary: String
     var reviewRequestedLogins: [String]
+    // Board-only fields (the GraphQL query fills these in).
+    var reviews: [Review] = []
+    var unresolvedThreads = 0
+    /// Actions run IDs behind failing checks, for "re-run failed".
+    var failedRunIDs: [Int] = []
 
     var id: Int { number }
 
     static func == (a: OpenPullRequest, b: OpenPullRequest) -> Bool {
         a.number == b.number && a.title == b.title && a.updatedAt == b.updatedAt && a.checks == b.checks
-            && a.reviewDecision == b.reviewDecision && a.isDraft == b.isDraft && a.head == b.head
+            && a.reviewDecision == b.reviewDecision && a.isDraft == b.isDraft && a.head == b.head && a.base == b.base
+            && a.checksSummary == b.checksSummary && a.reviews == b.reviews && a.unresolvedThreads == b.unresolvedThreads
+            && a.reviewRequestedLogins == b.reviewRequestedLogins
     }
 
     static func parse(_ o: [String: Any]) -> OpenPullRequest? {
@@ -161,25 +175,39 @@ final class PullRequestsModel {
         creating.insert(pr.number)
         defer { creating.remove(pr.number) }
         lastMessage = nil
+        switch await Self.makeWorktree(number: pr.number, head: pr.head, repoRoot: repoRoot, repoName: repoName, environment: environment) {
+        case .success(let path): return path
+        case .failure(let err):
+            lastMessage = err.message
+            return nil
+        }
+    }
+
+    struct WorktreeError: Error { var message: String }
+
+    /// The worktree checkout shared by the sidebar and the GitHub tab.
+    static func makeWorktree(number: Int, head: String, repoRoot: String, repoName: String,
+                             environment: [String: String]) async -> Result<String, WorktreeError> {
         let git = GitRepository.findGit(environment: environment)
         guard let gh = GitRepository.findExecutable("gh", environment: environment) else {
-            lastMessage = "The GitHub CLI isn't installed."
-            return nil
+            return .failure(WorktreeError(message: "The GitHub CLI isn't installed."))
         }
         let root = WorktreeService.worktreeRoot(environment: environment)
-        let slug = pr.head.replacingOccurrences(of: "/", with: "-")
+        let slug = head.replacingOccurrences(of: "/", with: "-")
         var path = "\(root)/\(repoName)/\(slug)"
-        if FileManager.default.fileExists(atPath: path) { path += "-pr\(pr.number)" }
-        try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+        if FileManager.default.fileExists(atPath: path) { path += "-pr\(number)" }
+        do {
+            try FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+        } catch {
+            return .failure(WorktreeError(message: "Couldn't create \((path as NSString).deletingLastPathComponent): \(error.localizedDescription)"))
+        }
         if let err = await WorktreeService.runReportingError(git, ["worktree", "add", "--detach", path], in: repoRoot) {
-            lastMessage = "Couldn't create the worktree: \(err)"
-            return nil
+            return .failure(WorktreeError(message: "Couldn't create the worktree: \(err)"))
         }
-        if let err = await WorktreeService.runReportingError(gh, ["pr", "checkout", "\(pr.number)"], in: path, environment: environment) {
+        if let err = await WorktreeService.runReportingError(gh, ["pr", "checkout", "\(number)"], in: path, environment: environment) {
             _ = await WorktreeService.runReportingError(git, ["worktree", "remove", "--force", path], in: repoRoot)
-            lastMessage = "Couldn't check out #\(pr.number): \(err)"
-            return nil
+            return .failure(WorktreeError(message: "Couldn't check out #\(number): \(err)"))
         }
-        return path
+        return .success(path)
     }
 }

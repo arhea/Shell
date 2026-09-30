@@ -11,6 +11,7 @@ A full tour of what Shell does. For key bindings see [Keyboard shortcuts](keyboa
 - [Copying commands and output](#copying-commands-and-output)
 - [Claude Code and Codex](#claude-code-and-codex)
 - [Files, worktrees and GitHub sidebar](#files-worktrees-and-github-sidebar)
+- [GitHub tab](#github-tab)
 - [Developer toolchain managers](#developer-toolchain-managers)
 - [Apple Intelligence](#apple-intelligence)
 - [macOS integration](#macos-integration)
@@ -83,9 +84,31 @@ Toggle it with ⌃⌘B, or the sidebar button at the top right of the window (in
 
 - **Files.** The repository tree with git status per file, or just the changed files.
 - **Worktrees.** Every worktree of the repo with its branch, ahead/behind or "not pushed", the branch's PR (open, draft, merged, closed, review state), uncommitted changes, last activity and disk size. Worktrees that are clean and idle for 7+ days (configurable) are highlighted as stale, and merged ones are badged. Open a worktree in a new tab, start Claude there, or delete it (`git worktree remove`, optionally `git branch -d`).
-- **GitHub.** Opens by itself in a terminal pane inside a GitHub repository (turn that off per pane with ⌃⌘B). It links to the repo and the current branch's PR (or *Create PR*), and lists open pull requests and recent Actions runs. The list refreshes every 10 seconds while any run is queued or running, and shows jobs, cancel and re-run failed.
+- **GitHub.** Opens by itself in a terminal pane inside a GitHub repository (turn that off per pane with ⌃⌘B). It links to the repo and the current branch's PR (or *Create PR*), and lists open pull requests and recent Actions runs. **Board** opens the [GitHub tab](#github-tab). The list refreshes every 10 seconds while any run is queued or running, and shows jobs, cancel and re-run failed.
 - **Pull requests** (via `gh`). Open PRs with checks, review state, labels, size and whether you're a requested reviewer (filter: All / Review / Mine). One click switches to the PR's worktree, focusing a tab that's already there, or creates one (`git worktree add` + `gh pr checkout`, in `$WORKTREES_HOME/<repo>/<branch>`). *Review* also starts Claude there with a review prompt.
 - **Scheduled worktree cleanup** (Settings › Worktrees). List repositories or folders of repositories, and Shell removes stale worktrees daily, weekly or monthly, with a preview first. Worktrees with uncommitted changes are never removed. Branches are only deleted when merged, and only if you opt in.
+
+## GitHub tab
+
+A board of the repository's open pull requests, in its own tab next to your terminals. Open it with **View › Open GitHub** (⌃⌘H), the command palette, or **Board** in the sidebar's GitHub section. It shows the focused pane's repository; the menu next to the repository name switches to another one open in the window. Close it with the × on its tab.
+
+Everything comes from your `gh`: one `gh api graphql` request per refresh, when the tab opens, when you come back to the window (if the board is older than 30 seconds), every 2 minutes while it's showing, and after each action. Nothing polls while the tab is hidden. Without `gh`, or signed out, the tab says how to set it up.
+
+**Columns**
+
+| Column | A PR is here when |
+| --- | --- |
+| Draft | It's a draft. |
+| Waiting for review | It's open and nobody has reviewed it yet (or, with no review required, its checks aren't passing yet). |
+| Has feedback | It has reviews or unresolved threads but no approval or change request, or it's approved but its checks are pending or failing. |
+| Changes requested | A reviewer requested changes. |
+| Ready | It's approved (or needs no review and has nothing outstanding) and its checks pass. |
+
+Cards show the number, title, author, branch, checks, review state, unresolved threads, size, labels and last update. **Mine** shows your PRs (with the rest of any stack they're in); **All** shows everyone's. The choice is remembered.
+
+**Stacks.** A PR whose base branch is another open PR's head branch is stacked on it. A stack is one card listing each layer, top to bottom, with its state; branching stacks indent each branch. The card sits in the leftmost column any of its PRs is in, since the stack is only as far along as its least-ready layer. When the PR underneath is merged or closed, the next one starts its own stack. Click a layer (or the card) to open it; the detail pane lists the whole stack to switch between.
+
+**Details and actions.** Selecting a PR opens a pane with its description and conversation (comments, reviews and inline review comments), reviewers, checks and diff. From there you can comment, approve, request changes, mark ready or convert to draft, re-run failed GitHub Actions jobs, merge with any method the repository allows, close, or open it on GitHub. Merging and closing ask first. **Worktree** checks the branch out into a new worktree (like the sidebar) and opens a terminal or Claude there, or goes to the worktree it's already in.
 
 ## Developer toolchain managers
 

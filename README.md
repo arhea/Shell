@@ -19,7 +19,7 @@ Shell is built in Swift on [libghostty](https://ghostty.org). It combines the pa
   - A native Claude Code view that drives your own `claude` binary.
   - An MCP server manager.
   - Agent disk-usage cleanup.
-- **Git and GitHub in the sidebar.** A file tree with git status. Worktrees with PR state and stale detection. Pull requests and Actions runs through `gh`, with one-click review worktrees.
+- **Git and GitHub in the sidebar.** A file tree with git status. Worktrees with PR state and stale detection. Pull requests and Actions runs through `gh`, with one-click review worktrees, plus a GitHub tab with a kanban board of pull requests and stacks you can review, merge and check out without leaving Shell.
 - **Optional on-device Apple Intelligence.** It can suggest branch names, tab names and fixes for failed commands, match plain-English commands in the palette, and summarize Claude sessions. Every feature is off until you turn it on, and nothing leaves your Mac.
 - **At home on macOS.** Scriptable Shortcuts and Spotlight actions, Finder *New Shell Tab Here*, a Dock menu of waiting agents and recent folders, Quick Look previews, opt-in Time Sensitive agent alerts, and optional iCloud settings sync.
 - **Toolchain housekeeping.** Managers for Homebrew, Node.js (`n` / `nvm`, npm, pnpm, yarn, bun), Zsh and Oh My Zsh, and Go caches, with optional scheduled updates.
@@ -60,6 +60,7 @@ New to Shell? **[Getting started](docs/getting-started.md)** walks through the f
 | Toggle the native prompt | ⌃⌘E |
 | Toggle vertical tabs | ⌃⌘T |
 | Files, worktrees and GitHub sidebar | ⌃⌘B |
+| GitHub tab (pull request board) | ⌃⌘H |
 | Copy last command / last output | ⇧⌘C / ⌥⇧⌘C |
 | Agent notifications | Settings › Claude & Codex › Install |
 | Settings | ⌘, |

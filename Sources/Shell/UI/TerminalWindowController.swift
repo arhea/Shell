@@ -113,6 +113,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
     private var explorerDragBase: CGFloat?
     private var sidebarDragBase: CGFloat?
     private var dashboardHost: NSHostingView<ClaudeDashboardView>?
+    private var githubHost: NSHostingView<GitHubTabView>?
 
     var onClose: ((TerminalWindowController) -> Void)?
 
@@ -216,7 +217,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
     /// on (⌃⌘B).
     func updateExplorer() {
         pruneTerminalRepos()
-        guard !workspace.showsDashboard, let session = focusedSession else { return hideExplorer() }
+        guard !workspace.showsNativePage, let session = focusedSession else { return hideExplorer() }
         let claude = session.nativeClaude
         let repo: GitRepository?
         let visible: Bool
@@ -277,7 +278,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
                     let tab = self.newTab(directory: dir)
                     if let command { tab.focusedSession?.pendingCommand = command }
                 },
-                switchTo: { [weak self] dir in self?.switchToDirectory(dir) })
+                switchTo: { [weak self] dir in self?.switchToDirectory(dir) },
+                openGitHub: { [weak self, weak repo] in self?.openGitHub(repo: repo) })
             let env = MCPManager.defaultEnvironment()
             let view = RightSidebarView(
                 context: context, repo: repo, tree: tree, worktrees: worktrees,
@@ -526,12 +528,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
         select(tab)
     }
 
-    /// Shows `tab`. Leaves the Claude dashboard up when `keepDashboard` is set
-    /// (a tab closed or moved away underneath it).
+    /// Shows `tab`. Leaves the Claude dashboard or GitHub tab up when
+    /// `keepDashboard` is set (a tab closed or moved away underneath it).
     func select(_ tab: TerminalTab, keepDashboard: Bool = false) {
         workspace.selectedTabID = tab.id
-        if !keepDashboard { workspace.showsDashboard = false }
-        if let gid = tab.groupID, let group = workspace.group(gid), group.isCollapsed, !workspace.showsDashboard { group.isCollapsed = false }
+        if !keepDashboard {
+            workspace.showsDashboard = false
+            workspace.showsGitHub = false
+        }
+        if let gid = tab.groupID, let group = workspace.group(gid), group.isCollapsed, !workspace.showsNativePage { group.isCollapsed = false }
         syncTerminalArea()
         focusSelected()
         updateExplorer()
@@ -681,6 +686,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
 
     func showDashboard() {
         guard !workspace.showsDashboard else { return }
+        workspace.showsGitHub = false
         workspace.showsDashboard = true
         syncTerminalArea()
         focusSelected()
@@ -698,11 +704,89 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
         updateExplorer()
     }
 
+    // MARK: GitHub tab
+
+    func toggleGitHub() {
+        if workspace.showsGitHub { hideGitHub() } else { openGitHub() }
+    }
+
+    /// Opens (or brings forward) the GitHub tab: on `repo` when given (the
+    /// sidebar's button), else on the focused pane's repository the first time,
+    /// keeping whatever repository it shows after that.
+    func openGitHub(repo explicit: GitRepository? = nil) {
+        if let explicit, let remote = explicit.github {
+            workspace.githubBoard = GitHubBoardModel.model(repoRoot: explicit.mainWorktree?.path ?? explicit.root.path, remote: remote)
+        }
+        let hadBoard = workspace.githubBoard != nil
+        workspace.githubTabOpen = true
+        if workspace.showsGitHub { syncTerminalArea() } else { showGitHub() }
+        guard !hadBoard else { return }
+        let dir = focusedSession.flatMap { $0.nativeClaude?.directory ?? $0.workingDirectory }
+        if let repo = focusedRepository, let remote = repo.github {
+            workspace.githubBoard = GitHubBoardModel.model(repoRoot: repo.mainWorktree?.path ?? repo.root.path, remote: remote)
+        } else if let dir {
+            Task { [weak self] in
+                guard let found = await GitHubBoardModel.resolve(directory: dir), let self, self.workspace.githubBoard == nil,
+                      self.workspace.githubTabOpen else { return }
+                self.showGitHub(repoRoot: found.root, remote: found.remote)
+            }
+        }
+    }
+
+    func showGitHub() {
+        guard !workspace.showsGitHub else { return }
+        workspace.showsDashboard = false
+        workspace.showsGitHub = true
+        syncTerminalArea()
+        focusSelected()
+        updateExplorer()
+    }
+
+    func hideGitHub() {
+        guard workspace.showsGitHub else { return }
+        workspace.showsGitHub = false
+        syncTerminalArea()
+        focusSelected()
+        updateExplorer()
+    }
+
+    /// Removes the GitHub tab from the tab bar.
+    func closeGitHub() {
+        hideGitHub()
+        workspace.githubTabOpen = false
+        workspace.githubBoard = nil
+    }
+
+    /// Shows another repository in the GitHub tab.
+    func showGitHub(repoRoot: String, remote: GitHubRemote) {
+        workspace.githubBoard = GitHubBoardModel.model(repoRoot: repoRoot, remote: remote)
+        syncTerminalArea()
+    }
+
+    /// GitHub repositories open in this window's panes, for the tab's repository menu.
+    var githubRepositories: [(root: String, remote: GitHubRemote)] {
+        var seen = Set<String>()
+        var result: [(root: String, remote: GitHubRemote)] = []
+        let repos = workspace.tabs.flatMap(\.orderedSessions).compactMap { $0.nativeClaude?.repository ?? terminalRepos[$0.id]?.repo }
+        for repo in repos {
+            guard let remote = repo.github else { continue }
+            let root = repo.mainWorktree?.path ?? repo.root.path
+            if seen.insert(root).inserted { result.append((root, remote)) }
+        }
+        return result.sorted { $0.remote.slug < $1.remote.slug }
+    }
+
+    private var focusedRepository: GitRepository? {
+        guard let session = focusedSession else { return nil }
+        return session.nativeClaude?.repository ?? terminalRepos[session.id]?.repo
+    }
+
     // MARK: Panes
 
     func split(_ direction: SplitDirection, before: Bool = false) {
         guard let tab = workspace.selectedTab, let current = tab.focusedSession else { return }
         workspace.showsDashboard = false
+        workspace.showsGitHub = false
         let session = makeSession(directory: current.workingDirectory)
         tab.split(current.id, with: session, direction: direction, before: before)
         syncTerminalArea()
@@ -775,7 +859,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
             updateActivePanes()
         }
         updateSessionFocus()
-        if !workspace.showsDashboard { window?.title = tab.title }
+        if !workspace.showsNativePage { window?.title = tab.title }
         updateExplorer()
     }
 
@@ -822,17 +906,40 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
         }
         container.frame = contentView.terminalArea.bounds
         container.update(tree: tab.tree, panes: panes(for: tab), zoomed: tab.zoomedSessionID)
-        let dashboard = workspace.showsDashboard
+        let covered = workspace.showsNativePage
         for (id, c) in containers {
-            let visible = id == tab.id && !dashboard
+            let visible = id == tab.id && !covered
             c.isHidden = !visible
             if let t = workspace.tabs.first(where: { $0.id == id }) {
                 for s in t.sessions.values { s.surfaceView.setOcclusion(visible: visible) }
             }
         }
         syncDashboard()
+        syncGitHub()
         updateActivePanes()
-        window?.title = dashboard ? "Claude Sessions" : tab.title
+        if workspace.showsDashboard {
+            window?.title = "Claude Sessions"
+        } else if workspace.showsGitHub {
+            window?.title = workspace.githubBoard.map { "GitHub — \($0.remote.slug)" } ?? "GitHub"
+        } else {
+            window?.title = tab.title
+        }
+    }
+
+    /// Like the dashboard, the GitHub tab is in the view tree only while it
+    /// shows, so its polling stops when you switch away.
+    private func syncGitHub() {
+        if workspace.showsGitHub {
+            guard githubHost == nil else { return }
+            let host = NSHostingView(rootView: GitHubTabView(controller: self, workspace: workspace))
+            host.sizingOptions = []
+            host.frame = contentView.terminalArea.bounds
+            contentView.terminalArea.addSubview(host)
+            githubHost = host
+        } else {
+            githubHost?.removeFromSuperview()
+            githubHost = nil
+        }
     }
 
     /// The dashboard lives in the terminal area only while it's showing, so its
@@ -863,7 +970,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
     }
 
     func focusSelected() {
-        if workspace.showsDashboard {
+        if workspace.showsNativePage {
             // Keep typing away from the hidden terminal; menu shortcuts still reach us.
             window?.makeFirstResponder(nil)
             updateSessionFocus()
@@ -875,7 +982,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
     }
 
     private func updateSessionFocus() {
-        let key = (window?.isKeyWindow ?? false) && !workspace.showsDashboard
+        let key = (window?.isKeyWindow ?? false) && !workspace.showsNativePage
         for tab in workspace.tabs {
             for s in tab.sessions.values {
                 s.focusChanged(key && tab.id == workspace.selectedTabID && s.id == tab.focusedSessionID)
@@ -888,6 +995,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
 
     func windowDidBecomeKey(_ notification: Notification) {
         updateSessionFocus()
+        // Coming back to the GitHub tab catches up with what changed meanwhile.
+        if workspace.showsGitHub { workspace.githubBoard?.refreshIfNeeded() }
         AppDelegate.shared.lastFocusedController = self
     }
 
@@ -918,7 +1027,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
         // The SwiftUI chrome holds this controller, and the window (which this
         // controller owns) holds the chrome: take it out of the view tree so
         // the window, its panes and their transcripts are freed.
-        for view in [tabBarHost, sidebarHost, titleBarHost, explorerHost, dashboardHost].compactMap({ $0 as NSView? }) {
+        for view in [tabBarHost, sidebarHost, titleBarHost, explorerHost, dashboardHost, githubHost].compactMap({ $0 as NSView? }) {
             view.removeFromSuperview()
         }
         tabBarHost = nil
@@ -926,6 +1035,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
         titleBarHost = nil
         explorerHost = nil
         dashboardHost = nil
+        githubHost = nil
+        workspace.githubBoard = nil
         contentView.tabBar = nil
         contentView.sidebar = nil
         contentView.titleBar = nil
@@ -951,9 +1062,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
         // No GitHub polling for a window nobody can see.
         for m in pullRequestModels.values { m.isPaused = !visible }
         for m in actionsModels.values { m.isPaused = !visible }
+        if workspace.showsGitHub { workspace.githubBoard?.isPaused = !visible }
         guard let tab = workspace.selectedTab else { return }
-        // Terminals behind the dashboard stay paused.
-        for s in tab.sessions.values { s.surfaceView.setOcclusion(visible: visible && !workspace.showsDashboard) }
+        // Terminals behind the dashboard or GitHub tab stay paused.
+        for s in tab.sessions.values { s.surfaceView.setOcclusion(visible: visible && !workspace.showsNativePage) }
     }
 
     // MARK: Dialogs
@@ -1088,6 +1200,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
         case .toggleNotifications: toggleActivityPopover()
         case .toggleSidebar: toggleSidebar()
         case .claudeDashboard: toggleDashboard()
+        case .github: toggleGitHub()
         case .copy, .paste, .selectAll, .toggleFullScreen:
             break
         case .newWindow, .settings, .checkForUpdates, .commandPalette, .homebrew, .nodeSetup, .zshSetup, .mcpServers, .reloadConfig:
@@ -1134,6 +1247,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
         case .claudeDashboard:
             item.state = workspace.showsDashboard ? .on : .off
             return true
+        case .github:
+            item.state = workspace.showsGitHub ? .on : .off
+            return true
         case .findNext, .findPrevious:
             return true
         default:
@@ -1155,6 +1271,12 @@ struct TitleBarView: View {
                 if workspace.showsDashboard {
                     ClaudeLogo(size: 13)
                     Text("Claude Sessions").font(.system(size: 12, weight: .semibold)).foregroundStyle(palette.foreground)
+                } else if workspace.showsGitHub {
+                    Image(systemName: "arrow.triangle.pull").font(.system(size: 11, weight: .semibold)).foregroundStyle(palette.accent)
+                    Text("GitHub").font(.system(size: 12, weight: .semibold)).foregroundStyle(palette.foreground)
+                    if let board = workspace.githubBoard {
+                        Text(board.remote.slug).font(.system(size: 11)).foregroundStyle(palette.secondary).lineLimit(1)
+                    }
                 } else if let tab = workspace.selectedTab {
                     TabStatusIcon(tab: tab, palette: palette)
                     Text(tab.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(palette.foreground)
@@ -1184,7 +1306,7 @@ struct SidebarToggleButton: View {
     let palette: ChromePalette
 
     var body: some View {
-        if !workspace.showsDashboard, let session = workspace.selectedTab?.focusedSession,
+        if !workspace.showsNativePage, let session = workspace.selectedTab?.focusedSession,
            session.nativeClaude == nil, session.gitBranch != nil {
             let on = session.showSidebar
             Button { controller.toggleSidebar() } label: {
