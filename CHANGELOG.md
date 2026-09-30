@@ -14,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- Shell now requires macOS 26 (Tahoe) or later.
+- Shell now requires macOS 26 (Tahoe) or later. ([#12](https://github.com/arhea/Shell/pull/12), fixes [#11](https://github.com/arhea/Shell/issues/11))
 - **About Shell** has a cleaner, native layout modeled on macOS's About This Mac, with the libghostty version, a **View on GitHub** button and compact acknowledgements. ([#10](https://github.com/arhea/Shell/pull/10), fixes [#9](https://github.com/arhea/Shell/issues/9))
 
 ## [0.1.0]
