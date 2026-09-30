@@ -10,7 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The installer disk image opens to a styled, terminal-themed window: drag Shell onto Applications along a chevron trail, with the version shown in the corner and Shell's icon on the mounted volume. ([#6](https://github.com/arhea/Shell/pull/6), fixes [#5](https://github.com/arhea/Shell/issues/5))
 - Shell's app icon follows your appearance on macOS 26: a light icon in light mode, the dark icon in dark mode, and the Tinted and Clear icon styles. On macOS 15, Shell uses the light icon. ([#6](https://github.com/arhea/Shell/pull/6), fixes [#5](https://github.com/arhea/Shell/issues/5))
-- Automatic updates from GitHub releases. Shell checks every six hours, downloads and verifies a new release in the background (checksum, Developer ID team, notarization), notifies you, and installs it when you quit or from **Help › Restart to Update**. **Help › Check for Updates…** checks on demand, and Settings › General › Software Update turns either behavior off.
+- Automatic updates from GitHub releases. Shell checks every six hours, downloads and verifies a new release in the background (checksum, Developer ID team, notarization), notifies you, and installs it when you quit or from **Help › Restart to Update**. **Help › Check for Updates…** checks on demand, and Settings › General › Software Update turns either behavior off. ([#8](https://github.com/arhea/Shell/pull/8), fixes [#7](https://github.com/arhea/Shell/issues/7))
 
 ## [0.1.0]
 
