@@ -11,21 +11,67 @@ struct ClaudePaneView: View {
     var onToggleExplorer: () -> Void
     var onFocus: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     private var palette: ClaudePalette { .current }
     private var fontSize: CGFloat { ChatTypography.current.size }
-    /// Settings › Chat Text › Maximum width (nil = the full pane).
-    private var maxWidth: CGFloat? { ChatTypography.current.maxWidth }
+    /// Settings › Chat Text › Composer width (nil = the full pane).
+    private var columnWidth: CGFloat? { ChatTypography.current.columnWidth }
+    /// Settings › Chat Text › Maximum width, within the column (nil = the whole column).
+    private var readingWidth: CGFloat? { [ChatTypography.current.maxWidth, columnWidth].compactMap(\.self).min() }
+    /// The composer's width while it waits, centered, for the first message.
+    private static let emptyStateWidth: CGFloat = 680
 
     var body: some View {
         let p = palette
+        // Before the first message the composer sits in the middle of the pane
+        // with the welcome above it; sending moves it to the bottom. `bottom` stays
+        // at the same place in this builder, so the composer's text view (focus,
+        // caret, the text being sent) is the same view before and after.
+        let docked = claude.hasStarted
         VStack(spacing: 0) {
             ClaudeHeader(claude: claude, palette: p, onClose: onClose, onContinueInTerminal: onContinueInTerminal,
                          onToggleExplorer: onToggleExplorer)
-            transcript(p)
-            bottom(p)
+            if docked {
+                transcript(p)
+                    .transition(.opacity)
+            } else {
+                emptyState(p)
+                    .transition(.opacity)
+            }
+            bottom(p, docked: docked)
+            if !docked {
+                // Matches the space above, so the composer is centered.
+                Color.clear
+                    .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .onTapGesture { composer.focus() }
+            }
         }
+        .animation(reduceMotion ? nil : .spring(duration: 0.4, bounce: 0.12), value: docked)
         .background(p.background)
         .foregroundStyle(p.foreground)
+    }
+
+    // MARK: Empty state
+
+    private func emptyState(_ p: ClaudePalette) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if claude.needsTrust {
+                TrustGate(directory: claude.directory, palette: p, onTrust: { claude.trustAndStart() },
+                          onOpenTerminal: onContinueInTerminal, onClose: onClose)
+            } else if let login = claude.login {
+                LoginGate(login: login, palette: p, onClose: onClose)
+            } else {
+                ClaudeWelcome(claude: claude, palette: p)
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.bottom, 6)
+        .frame(maxWidth: Self.emptyStateWidth + 28, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .contentShape(Rectangle())
+        .onTapGesture { composer.focus() }
     }
 
     // MARK: Transcript
@@ -60,7 +106,7 @@ struct ClaudePaneView: View {
             .padding(.horizontal, 18)
             .padding(.vertical, 14)
             // A comfortable reading measure on wide windows (Settings › Chat Text).
-            .frame(maxWidth: maxWidth ?? .infinity, alignment: .leading)
+            .frame(maxWidth: readingWidth ?? .infinity, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
         .defaultScrollAnchor(.bottom)
@@ -70,8 +116,9 @@ struct ClaudePaneView: View {
 
     // MARK: Bottom: prompts, composer, status
 
-    private func bottom(_ p: ClaudePalette) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private func bottom(_ p: ClaudePalette, docked: Bool) -> some View {
+        let width = docked ? columnWidth : min(Self.emptyStateWidth, columnWidth ?? .infinity)
+        return VStack(alignment: .leading, spacing: 6) {
             if let req = claude.pending.first {
                 if req.isQuestion {
                     QuestionCard(request: req, palette: p, fontSize: fontSize, directory: claude.directory) { answers in
@@ -105,7 +152,7 @@ struct ClaudePaneView: View {
         .padding(.horizontal, 14)
         .padding(.top, 8)
         .padding(.bottom, 8)
-        .frame(maxWidth: maxWidth.map { $0 + 28 } ?? .infinity)
+        .frame(maxWidth: width.map { $0 + 28 } ?? .infinity)
         .frame(maxWidth: .infinity)
         .zIndex(1)
     }

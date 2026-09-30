@@ -10,7 +10,10 @@ struct ChatTypography: Equatable {
     var paragraphSpacing: CGFloat
     var codeFamily: String
     var codeSize: CGFloat
+    /// Reading width of transcript text (nil = the whole column).
     var maxWidth: CGFloat?
+    /// Width of the chat column the composer fills (nil = the full pane).
+    var columnWidth: CGFloat?
 
     /// System text is about 1.2× its size tall; the rest of the line height
     /// becomes extra spacing between lines.
@@ -35,7 +38,8 @@ struct ChatTypography: Equatable {
             paragraphSpacing: CGFloat(max(s.chatParagraphSpacing, 0)),
             codeFamily: s.chatCodeFontFamily.isEmpty ? s.fontFamily : s.chatCodeFontFamily,
             codeSize: s.chatCodeFontSize > 0 ? CGFloat(s.chatCodeFontSize) : size - 1.5,
-            maxWidth: s.chatMaxWidth > 0 ? CGFloat(s.chatMaxWidth) : nil)
+            maxWidth: s.chatMaxWidth > 0 ? CGFloat(s.chatMaxWidth) : nil,
+            columnWidth: s.chatComposerWidth == .centered ? ChatComposerWidth.centeredMaxWidth : nil)
     }
 
     /// This typography at another base size (cards and captions scale with it).
