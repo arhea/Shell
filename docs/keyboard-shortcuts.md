@@ -67,6 +67,7 @@ The source of truth is `ShortcutAction.defaultShortcut` in [`Sources/Shell/Setti
 | Focus Native Prompt | ⌥⌘L |
 | Toggle Files & Worktrees Sidebar | ⌃⌘B |
 | Claude Dashboard | ⌃⌘A |
+| Open GitHub (pull request board) | ⌃⌘H |
 | Toggle Full Screen | ⌘↩ |
 
 ## Other keys

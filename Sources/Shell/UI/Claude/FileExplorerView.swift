@@ -83,6 +83,8 @@ struct SidebarContext {
     var openTab: ((String, String?) -> Void)?
     /// Goes to a tab already in that directory (any window), else opens one.
     var switchTo: ((String) -> Void)?
+    /// Opens the GitHub tab on this repository.
+    var openGitHub: (() -> Void)?
 }
 
 /// The Files tab of the window's right sidebar.

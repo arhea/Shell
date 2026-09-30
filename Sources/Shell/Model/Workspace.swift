@@ -147,6 +147,15 @@ final class Workspace {
     var selectedTabID: UUID?
     /// The Claude dashboard is showing in place of the selected tab.
     var showsDashboard = false
+    /// The GitHub tab's board, while that tab is open (it stays in the tab
+    /// bar after you switch away, until closed).
+    var githubBoard: GitHubBoardModel?
+    /// The GitHub tab is open but has no repository to show yet.
+    var githubTabOpen = false
+    /// The GitHub tab is showing in place of the selected tab.
+    var showsGitHub = false
+    /// A native page (Claude dashboard or GitHub tab) covers the terminals.
+    var showsNativePage: Bool { showsDashboard || showsGitHub }
     /// Bumped whenever the pane layout of the selected tab changes so the
     /// AppKit split view knows to rebuild.
     private(set) var layoutRevision = 0

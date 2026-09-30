@@ -311,6 +311,8 @@ struct AppSettings: Codable, Equatable {
     var worktreeRoot = ""
     /// Pull Requests tab filter: all, review, mine.
     var pullRequestFilter = "all"
+    /// GitHub tab board filter: mine or all.
+    var githubBoardFilter = "all"
 
     // Go
     /// Notify when Go's caches together pass `goCacheWarningGB`.
@@ -501,6 +503,7 @@ extension AppSettings {
         s.worktreeCleanupDeleteMergedBranches = d.worktreeCleanupDeleteMergedBranches
         s.worktreeRoot = d.worktreeRoot
         s.pullRequestFilter = d.pullRequestFilter
+        s.githubBoardFilter = d.githubBoardFilter
         s.goCacheWarning = d.goCacheWarning
         s.goCacheWarningGB = d.goCacheWarningGB
         s.goAutoCleanBuildCache = d.goAutoCleanBuildCache

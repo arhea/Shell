@@ -56,6 +56,7 @@ Renditions: `Default`, `Dark`, `TintedLight`, `TintedDark`, `ClearLight`, `Clear
 | --- | --- |
 | `snapshot DIR` | Writes window PNGs plus a text report of tabs, panes, shell state and terminal contents |
 | `action newTab` | Runs any `ShortcutAction` by its raw value |
+| `github-select N` | Opens PR #N's detail pane in the GitHub tab (no number closes it) |
 | `type TEXT`, `submit`, `complete` | Drive the native prompt |
 | `key TEXT` | Send raw text to the focused terminal (for example `q` to quit a pager; `\r` for Return) |
 | `set key=value` | Change one of a handful of settings used in testing |

@@ -17,7 +17,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
     case jumpToPreviousPrompt, jumpToNextPrompt, scrollToTop, scrollToBottom, scrollPageUp, scrollPageDown
     case increaseFontSize, decreaseFontSize, resetFontSize
     case toggleInputEditor, toggleInputPosition, focusInput, toggleFullScreen
-    case toggleNotifications, toggleSidebar, claudeDashboard
+    case toggleNotifications, toggleSidebar, claudeDashboard, github
 
     var id: String { rawValue }
 
@@ -36,7 +36,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         case .copy, .copyLastCommand, .copyLastOutput, .paste, .selectAll, .clearBuffer, .find, .findNext, .findPrevious, .jumpToPreviousPrompt,
              .jumpToNextPrompt, .scrollToTop, .scrollToBottom, .scrollPageUp, .scrollPageDown: .terminal
         case .increaseFontSize, .decreaseFontSize, .resetFontSize, .toggleInputEditor, .toggleInputPosition,
-             .focusInput, .toggleFullScreen, .toggleSidebar, .claudeDashboard: .view
+             .focusInput, .toggleFullScreen, .toggleSidebar, .claudeDashboard, .github: .view
         }
     }
 
@@ -53,6 +53,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         case .toggleNotifications: "Agent Activity"
         case .toggleSidebar: "Toggle Files & Worktrees Sidebar"
         case .claudeDashboard: "Claude Dashboard"
+        case .github: "Open GitHub"
         case .newWindow: "New Window"
         case .newTab: "New Tab"
         case .closePane: "Close Pane"
@@ -121,6 +122,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         case .toggleNotifications: .cmdOpt("n")
         case .toggleSidebar: .cmdCtrl("b")
         case .claudeDashboard: .cmdCtrl("a")
+        case .github: .cmdCtrl("h")
         case .newWindow: .cmd("n")
         case .newTab: .cmd("t")
         case .closePane: .cmd("w")
