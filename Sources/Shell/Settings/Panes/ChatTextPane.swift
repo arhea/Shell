@@ -42,7 +42,12 @@ struct ChatTextSettingsPane: View {
                           unit: "pt", automatic: String(format: "%g pt, text − 1.5", Double(t.codeSize)))
             }
 
-            Section("Layout") {
+            Section {
+                Picker(selection: setting(\.chatComposerWidth)) {
+                    ForEach(ChatComposerWidth.allCases) { Text($0.title).tag($0) }
+                } label: {
+                    Text("Composer width").help("settings.json: chatComposerWidth")
+                }
                 Toggle("Limit the reading width", isOn: Binding(
                     get: { SettingsStore.shared.settings.chatMaxWidth > 0 },
                     set: { SettingsStore.shared.settings.chatMaxWidth = $0 ? AppSettings().chatMaxWidth : 0 }))
@@ -52,6 +57,11 @@ struct ChatTextSettingsPane: View {
                     Text("About \(Int(s.chatMaxWidth / (t.size * 0.5))) characters per line at this size. Long lines are harder to follow; 60–100 characters is comfortable.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+            } header: {
+                Text("Layout")
+            } footer: {
+                Text("Centered keeps the composer and transcript in a column up to \(Int(ChatComposerWidth.centeredMaxWidth)) pt wide; Full width fills the pane. The reading width limits transcript text within that column.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
             Section("Preview") {
@@ -94,6 +104,7 @@ struct ChatTextSettingsPane: View {
         s.chatCodeFontFamily = d.chatCodeFontFamily
         s.chatCodeFontSize = d.chatCodeFontSize
         s.chatMaxWidth = d.chatMaxWidth
+        s.chatComposerWidth = d.chatComposerWidth
         SettingsStore.shared.settings = s
     }
 

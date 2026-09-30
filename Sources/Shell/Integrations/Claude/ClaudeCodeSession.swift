@@ -234,6 +234,10 @@ final class ClaudeCodeSession {
     private(set) var hasExited = false
     /// Set when the folder hasn't been trusted in Claude Code; nothing was started.
     private(set) var needsTrust = false
+    /// The conversation has begun: something is in the transcript, or this
+    /// continues an earlier session. The view centers the composer until then.
+    /// Never goes back to false, so the composer doesn't jump back up.
+    private(set) var hasStarted: Bool
     private(set) var statusText: String?
     private(set) var sessionID: String?
 
@@ -290,6 +294,7 @@ final class ClaudeCodeSession {
     init(request: ClaudeLaunchRequest) {
         self.request = request
         directory = request.directory
+        hasStarted = request.arguments.continuesSession || request.arguments.resumeID != nil
         let s = SettingsStore.shared.settings
         model = request.arguments.model ?? (s.claudeModel.isEmpty ? "default" : s.claudeModel)
         effort = request.arguments.effort ?? s.claudeEffort
@@ -907,7 +912,10 @@ final class ClaudeCodeSession {
 
     // MARK: Helpers
 
-    private func append(_ item: ClaudeItem) { items.append(item) }
+    private func append(_ item: ClaudeItem) {
+        items.append(item)
+        if !hasStarted { hasStarted = true }
+    }
 
     private func toolItem(id: String, name: String) -> ClaudeItem {
         if let existing = toolItems[id] { return existing }

@@ -39,6 +39,8 @@ final class SettingsSync {
         "checkForUpdates", "installUpdatesAutomatically",
         // Claude
         "claudeLaunchMode", "claudeRemoteControl", "claudeModel", "claudeEffort",
+        // Chat text
+        "chatComposerWidth",
         // Hotkey window & shortcuts
         "hotkeyWindow", "hotkey", "shortcuts",
         // Advanced
