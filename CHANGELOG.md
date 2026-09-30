@@ -8,8 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- The Claude view starts with the composer centered in the pane, under the welcome, and moves it to the bottom when you send your first message. Continued and resumed sessions open with it at the bottom, and the move respects Reduce Motion. ([#17](https://github.com/arhea/Shell/issues/17))
-- Settings › Chat Text › **Composer width**: Centered (a column up to 1200 pt, the default) or Full width. The existing maximum width now sets the reading width of transcript text within that column; if you had turned it off, you get Full width. ([#17](https://github.com/arhea/Shell/issues/17))
+- The Claude view starts with the composer centered in the pane, under the welcome, and moves it to the bottom when you send your first message. Continued and resumed sessions open with it at the bottom, and the move respects Reduce Motion. ([#19](https://github.com/arhea/Shell/pull/19), fixes [#17](https://github.com/arhea/Shell/issues/17))
+- Settings › Chat Text › **Composer width**: Centered (a column up to 1200 pt, the default) or Full width. The existing maximum width now sets the reading width of transcript text within that column; if you had turned it off, you get Full width. ([#19](https://github.com/arhea/Shell/pull/19), fixes [#17](https://github.com/arhea/Shell/issues/17))
 
 ## [0.2.0] - 2026-09-30
 
