@@ -67,6 +67,20 @@ enum GitHubSection: String, Codable, CaseIterable {
     }
 }
 
+/// How wide the native Claude view's chat column (composer and transcript) gets.
+enum ChatComposerWidth: String, Codable, CaseIterable, Identifiable {
+    /// Capped at `centeredMaxWidth` and centered in the pane.
+    case centered
+    /// Fills the pane.
+    case full
+    static let centeredMaxWidth: CGFloat = 1200
+    var id: String { rawValue }
+    var title: String { self == .centered ? "Centered" : "Full width" }
+    init(from decoder: Decoder) throws {
+        self = ChatComposerWidth(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .centered
+    }
+}
+
 /// How the native Claude view draws file edits.
 enum DiffStyle: String, Codable, CaseIterable, Identifiable {
     /// Side by side when the pane is wide enough, else unified.
@@ -267,8 +281,10 @@ struct AppSettings: Codable, Equatable {
     var chatCodeFontFamily = ""
     /// Points; 0 = 1.5 pt smaller than the chat text.
     var chatCodeFontSize = 0.0
-    /// Maximum width of the transcript in points; 0 = the full pane.
+    /// Reading width of the transcript text in points; 0 = the whole chat column.
     var chatMaxWidth = 700.0
+    /// Width of the chat column the composer fills (and the transcript sits in).
+    var chatComposerWidth: ChatComposerWidth = .centered
     /// Turn on Remote Control for every interactive Claude Code session, so it
     /// can be continued from the Claude app (phone, web).
     var claudeRemoteControl = true
@@ -428,12 +444,22 @@ final class SettingsStore {
               var merged = try? JSONSerialization.jsonObject(with: defaultsData) as? [String: Any]
         else { return nil }
         for (k, v) in stored { merged[k] = v }
+        migrate(stored: stored, into: &merged)
         guard let mergedData = try? JSONSerialization.data(withJSONObject: merged) else { return nil }
         do {
             return try JSONDecoder().decode(AppSettings.self, from: mergedData)
         } catch {
             log.error("settings decode failed: \(error.localizedDescription, privacy: .public)")
             return nil
+        }
+    }
+
+    /// Carries older settings forward. Before `chatComposerWidth`, turning off
+    /// the reading width (`chatMaxWidth` 0) made the whole chat fill the pane;
+    /// keep that as Full width.
+    nonisolated static func migrate(stored: [String: Any], into merged: inout [String: Any]) {
+        if stored["chatComposerWidth"] == nil, let width = stored["chatMaxWidth"] as? Double, width <= 0 {
+            merged["chatComposerWidth"] = ChatComposerWidth.full.rawValue
         }
     }
 
