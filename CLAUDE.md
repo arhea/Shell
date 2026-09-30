@@ -96,6 +96,7 @@ All work is tracked on GitHub (`arhea/Shell`), not Linear. The flow is always **
 - **Pull requests** use the `github-pull-requests` skill (`.claude/skills/github-pull-requests/`): a Conventional Commits title, `Closes #N`, a specific list of changes, testing evidence, and the issue's labels.
 - **Labels** are defined in `scripts/labels.sh` (re-run it after changing them). Issue forms live in `.github/ISSUE_TEMPLATE/`.
 - **CI**: `.github/workflows/test.yml` runs the unit tests on macOS 26 (Apple Silicon) for every pull request to `main` and every push to `main`. It signs ad hoc and needs no secrets. libghostty is cached by the pinned `GHOSTTY_COMMIT`, so the first run after a Ghostty bump takes longer. Don't merge a PR with a red **Tests** check.
+- **Merging**: `main` is protected by the *Protect main* ruleset: changes land only through pull requests, **squash merge only** (the PR title becomes the commit subject, so it must be a good Conventional Commits line), the **Build and test** check must pass on a branch that's up to date with `main`, review threads must be resolved, history stays linear, and force pushes and deletion are blocked. Merged branches are deleted automatically.
 
 ## Releasing a new version
 
@@ -103,9 +104,9 @@ A release is a `v<version>` tag on `main`, a GitHub Release whose notes are the 
 
 - Signing and notarization use Alex's **personal** Apple developer account (alex.rhea@gmail.com, team `T9PCKZ42NK`, keychain profile `shell-notary`), never the Takt account.
 - Versions follow SemVer. Before 1.0, breaking changes to settings or behavior bump the minor version.
-- The release commit goes straight to `main`. **Confirm with Alex before pushing to `main` and before publishing the release.**
+- `main` is protected: the release commit lands through a squash-merged release PR like any other change (release PRs are the one kind of PR that doesn't need an issue). **Confirm with Alex before merging the release PR and before publishing the release.**
 
-The order is deliberate: build and notarize the DMG *before* anything is public, so a failed build or a notarization rejection never leaves a half-made release or a tag behind.
+The order is deliberate: build and notarize the DMG *before* the release PR merges, so a failed build or a notarization rejection never leaves a half-made release or a tag behind.
 
 ### Preconditions
 
@@ -142,7 +143,7 @@ Cross-check against `CHANGELOG.md` › Unreleased. Anything user-visible that's 
 
 ### 2. Write the changelog
 
-Edit `CHANGELOG.md`: rename `## [Unreleased]` to `## [$VERSION] - YYYY-MM-DD` and add a fresh, empty `## [Unreleased]` above it. The new section becomes the release notes verbatim, so it must be good:
+Branch for the release first: `git switch -c release/v$VERSION`. Then edit `CHANGELOG.md`: rename `## [Unreleased]` to `## [$VERSION] - YYYY-MM-DD` and add a fresh, empty `## [Unreleased]` above it. The new section becomes the release notes verbatim, so it must be good:
 
 - **Open with one or two sentences** saying what the release is about, before the first heading. Lead with the change a user most cares about.
 - **Group entries** under Keep a Changelog headings, in this order, omitting empty ones: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`.
@@ -169,7 +170,7 @@ Update the link references at the bottom of the file:
 
 ### 3. Bump the version
 
-In `project.yml`, set `CFBundleShortVersionString` to `$VERSION` and increment `CFBundleVersion` by one, for **both** the `Shell` and `ShellWidgets` targets (they must match). Then commit locally:
+In `project.yml`, set `CFBundleShortVersionString` to `$VERSION` and increment `CFBundleVersion` by one, for **both** the `Shell` and `ShellWidgets` targets (they must match). Then commit on the release branch:
 
 ```bash
 git commit -am "chore: release v$VERSION"
@@ -188,19 +189,28 @@ Output:
 - `build/dist/Shell-$VERSION.dmg`
 - `build/dist/Shell-$VERSION.dmg.sha256`
 
-If notarization fails, the script prints Apple's log. Fix the cause, amend the release commit if needed, and re-run. Never use `--skip-notarize` for a release. Before moving on, confirm:
+The DMG is built from the release branch; the squash merge in step 5 puts the identical tree on `main`. If notarization fails, the script prints Apple's log. Fix the cause, amend the release commit if needed, and re-run. Never use `--skip-notarize` for a release. Before moving on, confirm:
 
 ```bash
 spctl --assess --type open --context context:primary-signature --verbose=2 "build/dist/Shell-$VERSION.dmg"
 xcrun stapler validate "build/dist/Shell-$VERSION.dmg"
 ```
 
-### 5. Push the release commit
-
-After Alex confirms:
+### 5. Merge the release PR
 
 ```bash
-git push origin main
+git push -u origin HEAD
+gh pr create --repo arhea/Shell --base main --title "chore: release v$VERSION" \
+  --body "Release v$VERSION. Changelog: see CHANGELOG.md. DMG built, notarized and verified locally from this branch." \
+  --label chore
+```
+
+Wait for the **Build and test** check to pass. After Alex confirms, squash-merge it and record the resulting commit on `main`:
+
+```bash
+gh pr merge --repo arhea/Shell --squash --delete-branch
+git switch main && git pull --ff-only
+RELEASE_SHA=$(git rev-parse HEAD)
 ```
 
 ### 6. Create the release
@@ -229,7 +239,7 @@ EOF
 Read `build/release-notes.md` and fix anything that reads badly before continuing. Then:
 
 ```bash
-gh release create "v$VERSION" --repo arhea/Shell --draft --target main \
+gh release create "v$VERSION" --repo arhea/Shell --draft --target "$RELEASE_SHA" \
   --title "Shell $VERSION" --notes-file build/release-notes.md
 ```
 
@@ -253,10 +263,10 @@ After Alex confirms:
 gh release edit "v$VERSION" --repo arhea/Shell --draft=false --latest
 ```
 
-Publishing creates the `v$VERSION` tag on the pushed release commit. Then check:
+Publishing creates the `v$VERSION` tag on the release commit. Tags matching `v*` are protected: they can't be moved or deleted (admins can bypass in an emergency). Then check:
 
 - `gh release view "v$VERSION" --repo arhea/Shell` shows the notes and exactly two assets: the `.dmg` and the `.sha256`.
-- `git fetch --tags && [[ $(git rev-parse "v$VERSION^{commit}") == $(git rev-parse origin/main) ]] && echo tag-ok`
+- `git fetch --tags && [[ $(git rev-parse "v$VERSION^{commit}") == "$RELEASE_SHA" ]] && echo tag-ok`
 - Download the DMG from the release page on a Mac (or user account) that has never run a dev build, open it, and launch Shell. Gatekeeper must open it with no warning.
 - Every link in the published notes resolves.
 
@@ -264,8 +274,8 @@ Publishing creates the `v$VERSION` tag on the pushed release commit. Then check:
 
 | Where it failed | What to do |
 | --- | --- |
-| Before step 5 (build, notarization) | Nothing is public. Fix, `git commit --amend`, re-run from step 4. |
-| After step 5, before publishing | Fix forward with a new commit on `main`, rebuild, delete and recreate the draft (`gh release delete "v$VERSION" --repo arhea/Shell`). |
+| Before step 5 merges (build, notarization, CI) | Nothing is on `main`. Fix on the release branch, re-run from step 4. |
+| After step 5, before publishing | Fix forward with a new PR, rebuild from `main`, delete and recreate the draft (`gh release delete "v$VERSION" --repo arhea/Shell`) targeting the new commit. |
 | After publishing | Don't move or delete the tag. Ship `$VERSION` + 1 patch release with the fix. If the artifact itself is bad, `gh release edit --draft=true` to pull it while the fix ships. |
 
 Full signing setup, entitlements and Time Sensitive notification notes are in `docs/releasing.md`.

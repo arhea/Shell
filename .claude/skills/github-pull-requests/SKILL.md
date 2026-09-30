@@ -131,6 +131,7 @@ gh pr create --repo arhea/Shell --base main \
 - Check CI with `gh pr checks <N> --repo arhea/Shell`. If the `Tests` job fails, read the log (`gh run view <run-id> --log-failed`), fix on the branch and push. Don't merge red.
 - Address review comments with focused commits, reply to each thread with what changed, and update the PR body if the scope moved (`gh pr edit <N> --body-file …`).
 - Keep the branch current with `main` when it falls behind or conflicts (`git fetch origin && git rebase origin/main`, then `git push --force-with-lease`).
+- `main` only accepts **squash merges** (ruleset *Protect main*). Before merge: **Build and test** green, branch up to date with `main` (`gh pr update-branch <N>`), review threads resolved. The squash commit's subject is the PR title, so re-check it's accurate after scope changes.
 - Merging is the maintainer's call. Never merge, close or force-push someone else's PR without being asked.
 
 ## Quality bar

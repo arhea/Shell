@@ -104,7 +104,9 @@ Example: `fix: keep ghost text when the completion menu closes`.
 
 ## Review
 
-A maintainer reviews every pull request. Expect questions; they're about the code, not you. Keep the PR title in Conventional Commits form, since it may become the merge commit message.
+A maintainer reviews every pull request. Expect questions; they're about the code, not you.
+
+Pull requests are **squash-merged** into `main`, so the PR title becomes the commit message on `main`: keep it in Conventional Commits form. Before merging, the **Tests** check must pass, the branch must be up to date with `main` (use *Update branch* on the PR), and all review conversations must be resolved. Your branch is deleted after merge.
 
 ## Licensing
 
