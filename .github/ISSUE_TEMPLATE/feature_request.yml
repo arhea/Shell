@@ -1,11 +1,14 @@
 name: Feature request
 description: Suggest an idea or improvement for Shell.
-labels: ["enhancement"]
+title: "feature: "
+labels: ["feature", "needs-triage"]
 body:
   - type: markdown
     attributes:
       value: |
         Thanks for the idea. For anything larger than a small tweak, agreeing on the approach in this issue before writing code saves everyone time.
+
+        Keep the `feature: ` prefix and name the capability, e.g. `feature: Show CI status for each worktree in the sidebar`.
   - type: textarea
     id: problem
     attributes:
@@ -19,6 +22,14 @@ body:
       label: What would you like Shell to do?
     validations:
       required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How will we know it's done? One checkable item per line.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
   - type: textarea
     id: alternatives
     attributes:

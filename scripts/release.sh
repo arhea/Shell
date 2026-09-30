@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# Builds a Developer ID-signed, notarized Shell.app.
+# Builds a Developer ID-signed, notarized Shell.app and packages it as a
+# signed, notarized, stapled disk image for GitHub Releases.
 #
-#   ./scripts/release.sh               build, sign, notarize, staple, zip
+#   ./scripts/release.sh               build, sign, notarize, staple, dmg
 #   ./scripts/release.sh --install     …and copy to /Applications
 #   ./scripts/release.sh --skip-notarize
+#
+# Output: build/dist/Shell-<version>.dmg and its .sha256.
 #
 # One-time setup: a "Developer ID Application" certificate for the team in
 # project.yml (DEVELOPMENT_TEAM) in the login keychain, and notarization
@@ -29,6 +32,20 @@ done
 
 step() { printf '\n==> %s\n' "$*"; }
 
+# Submits a file to Apple's notary service and waits. notarytool exits 0 even
+# when Apple rejects the upload, so check the status and show the rejection
+# log instead of failing later at stapling.
+notarize_file() {
+    local result id
+    result=$(xcrun notarytool submit "$1" --keychain-profile "$PROFILE" --wait 2>&1 | tee /dev/stderr)
+    if ! grep -q "status: Accepted" <<<"$result"; then
+        id=$(awk '/^  id:/ { print $2; exit }' <<<"$result")
+        echo "notarization failed; Apple's log:" >&2
+        [[ -n $id ]] && xcrun notarytool log "$id" --keychain-profile "$PROFILE" >&2
+        exit 1
+    fi
+}
+
 step "Building Release"
 xcodegen generate --quiet
 xcodebuild -project Shell.xcodeproj -scheme Shell -configuration Release \
@@ -53,31 +70,48 @@ while IFS= read -r bin; do
     fi
 done < <(find "$APP" -type f -perm -u+x -path "*/MacOS/*")
 
+# Sign the disk image with the same Developer ID identity as the app.
+TEAM=$(awk -F= '/^TeamIdentifier=/ { print $2 }' <<<"$info")
+IDENTITY=$(security find-identity -v -p codesigning | awk -F'"' -v t="($TEAM)" 'index($2, "Developer ID Application") && index($2, t) { print $2; exit }')
+[[ -n $IDENTITY ]] || { echo "no Developer ID Application identity for team $TEAM in the keychain" >&2; exit 1; }
+
 mkdir -p "$DIST"
-ZIP="$DIST/Shell-$VERSION-$BUILD.zip"
-rm -f "$ZIP"
 
 if (( notarize )); then
-    step "Notarizing (this usually takes a few minutes)"
+    # Notarize and staple the app itself first, so the copy a user drags out
+    # of the disk image carries its own ticket and opens offline.
+    step "Notarizing Shell.app (this usually takes a few minutes)"
     ditto -c -k --keepParent "$APP" "$DIST/notarize.zip"
-    # notarytool exits 0 even when Apple rejects the upload; check the status
-    # and show the rejection log instead of failing later at stapling.
-    result=$(xcrun notarytool submit "$DIST/notarize.zip" --keychain-profile "$PROFILE" --wait 2>&1 | tee /dev/stderr)
+    notarize_file "$DIST/notarize.zip"
     rm -f "$DIST/notarize.zip"
-    if ! grep -q "status: Accepted" <<<"$result"; then
-        id=$(awk '/^  id:/ { print $2; exit }' <<<"$result")
-        echo "notarization failed; Apple's log:" >&2
-        [[ -n $id ]] && xcrun notarytool log "$id" --keychain-profile "$PROFILE" >&2
-        exit 1
-    fi
-    step "Stapling"
+    step "Stapling Shell.app"
     xcrun stapler staple "$APP"
     spctl --assess --type execute --verbose=2 "$APP"
 fi
 
-step "Packaging"
-ditto -c -k --keepParent "$APP" "$ZIP"
-echo "$ZIP"
+step "Creating disk image"
+DMG="$DIST/Shell-$VERSION.dmg"
+STAGE=$(mktemp -d)
+trap 'rm -rf "$STAGE"' EXIT
+ditto "$APP" "$STAGE/Shell.app"
+ln -s /Applications "$STAGE/Applications"
+rm -f "$DMG"
+hdiutil create -quiet -volname "Shell $VERSION" -srcfolder "$STAGE" -fs HFS+ -format UDZO -ov "$DMG"
+codesign --sign "$IDENTITY" --timestamp "$DMG"
+codesign --verify --verbose=1 "$DMG"
+
+if (( notarize )); then
+    step "Notarizing disk image"
+    notarize_file "$DMG"
+    step "Stapling disk image"
+    xcrun stapler staple "$DMG"
+    spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
+fi
+
+(cd "$DIST" && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256")
+step "Done: Shell $VERSION (build $BUILD)"
+echo "$DMG"
+echo "$DMG.sha256"
 
 if (( install )); then
     step "Installing to /Applications"

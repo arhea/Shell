@@ -28,8 +28,8 @@ Shell has no account, no sign-in and no telemetry. Features that need an externa
 
 ### Download a release
 
-1. Download the latest `Shell-<version>-<build>.zip` from the [Releases page](../../../releases).
-2. Unzip it and drag `Shell.app` to `/Applications`.
+1. Download `Shell-<version>.dmg` from the latest release on the [Releases page](../../../releases). (Ignore the "Source code" archives; those are the source, not the app.)
+2. Open the disk image and drag `Shell` onto the `Applications` shortcut.
 3. Open it. Release builds are signed with a Developer ID and notarized by Apple, so Gatekeeper opens them without a warning.
 
 ### Build from source

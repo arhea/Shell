@@ -23,14 +23,14 @@ xcrun notarytool store-credentials shell-notary --apple-id <your-apple-id> --tea
 make dist
 ```
 
-[`scripts/release.sh`](../scripts/release.sh) builds Release for arm64 and verifies the signature, including hardened runtime and secure timestamp. It then notarizes, staples, checks with `spctl`, and writes `build/dist/Shell-<version>-<build>.zip`.
+[`scripts/release.sh`](../scripts/release.sh) builds Release for arm64 and verifies the signature, including hardened runtime and secure timestamp. It then notarizes and staples the app, packages it into a disk image with an `/Applications` shortcut, signs, notarizes and staples the disk image, and writes `build/dist/Shell-<version>.dmg` plus a `.sha256` checksum.
 
 | Flag | Effect |
 | --- | --- |
 | `--install` | Also copy the app to `/Applications` |
 | `--skip-notarize` | Sign only (for local testing) |
 
-3. Publish it with `gh release`: create a draft release from the changelog, attach the zip and its SHA-256 checksum, push the release commit to `main`, then publish the draft so it tags `v<version>`. The exact commands are in the **Releasing a new version** section of [`CLAUDE.md`](../CLAUDE.md).
+3. Publish it with `gh release`: create a draft release from the changelog, attach the `.dmg` and its SHA-256 checksum as release assets (`gh release upload`), push the release commit to `main`, then publish the draft so it tags `v<version>`. The exact commands are in the **Releasing a new version** section of [`CLAUDE.md`](../CLAUDE.md).
 
 ## Time Sensitive notifications
 

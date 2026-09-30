@@ -13,14 +13,8 @@ SRC="$VENDOR/ghostty"
 FORCE="${1:-}"
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "error: '$1' is required ($2)" >&2; exit 1; }; }
-need zig "brew install zig"
 need xcodegen "brew install xcodegen"
 need git "xcode-select --install"
-
-if ! xcrun -sdk macosx metal --version >/dev/null 2>&1; then
-  echo "==> Installing the Metal toolchain (required to compile Ghostty's shaders)"
-  xcodebuild -downloadComponent MetalToolchain
-fi
 
 if [[ ! -d "$SRC/.git" ]]; then
   echo "==> Fetching Ghostty @ ${GHOSTTY_COMMIT:0:10}"
@@ -37,6 +31,14 @@ STAMP="$VENDOR/.ghostty-built-$GHOSTTY_COMMIT"
 if [[ -f "$STAMP" && -d "$VENDOR/GhosttyKit.xcframework" && "$FORCE" != "--force" ]]; then
   echo "==> libghostty already built for ${GHOSTTY_COMMIT:0:10} (use --force to rebuild)"
 else
+  # Zig and the Metal toolchain are only needed to build libghostty, so a
+  # cached build (CI, or a re-run) skips them.
+  need zig "brew install zig"
+  if ! xcrun -sdk macosx metal --version >/dev/null 2>&1; then
+    echo "==> Installing the Metal toolchain (required to compile Ghostty's shaders)"
+    xcodebuild -downloadComponent MetalToolchain
+  fi
+
   echo "==> Prefetching Zig dependencies"
   # Zig's own fetcher occasionally fails TLS setup when many downloads run in
   # parallel, so warm the global cache one package at a time with retries.
