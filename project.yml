@@ -71,8 +71,8 @@ targets:
       properties:
         CFBundleName: Shell
         CFBundleDisplayName: Shell
-        CFBundleShortVersionString: "0.3.0"
-        CFBundleVersion: "3"
+        CFBundleShortVersionString: "0.4.0"
+        CFBundleVersion: "4"
         CFBundleIconName: AppIcon
         LSApplicationCategoryType: public.app-category.developer-tools
         LSMinimumSystemVersion: "26.0"
@@ -160,8 +160,8 @@ targets:
       properties:
         CFBundleDisplayName: Shell
         # Keep in step with the app's versions.
-        CFBundleShortVersionString: "0.3.0"
-        CFBundleVersion: "3"
+        CFBundleShortVersionString: "0.4.0"
+        CFBundleVersion: "4"
         LSMinimumSystemVersion: "26.0"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
