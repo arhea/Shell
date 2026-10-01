@@ -352,6 +352,9 @@ struct AppSettings: Codable, Equatable {
     var pullRequestFilter = "all"
     /// GitHub tab board filter: mine or all.
     var githubBoardFilter = "all"
+    /// When a check fails on a branch open in a Claude session, send the job
+    /// log to that session and start a fix (opt-in).
+    var sendCheckFailuresToClaude = false
 
     // Go
     /// Notify when Go's caches together pass `goCacheWarningGB`.
@@ -559,6 +562,7 @@ extension AppSettings {
         s.worktreeRoot = d.worktreeRoot
         s.pullRequestFilter = d.pullRequestFilter
         s.githubBoardFilter = d.githubBoardFilter
+        s.sendCheckFailuresToClaude = d.sendCheckFailuresToClaude
         s.goCacheWarning = d.goCacheWarning
         s.goCacheWarningGB = d.goCacheWarningGB
         s.goAutoCleanBuildCache = d.goAutoCleanBuildCache
