@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Shell's Dock icon follows the active theme instead of the system appearance: with Appearance set to Dark on a light Mac (or a light theme in the dark slot), the Dock shows the dark icon, and vice versa. When the theme matches the system, macOS draws the native icon as before. ([#26](https://github.com/arhea/Shell/pull/26), fixes [#25](https://github.com/arhea/Shell/issues/25))
+
 ## [0.3.0] - 2026-09-30
 
 Shell adds a GitHub tab: a kanban board of your repository's pull requests, with stacked PRs grouped together and review, checks, merge and checkout built in. The native Claude Code view also gets a centered composer, sign-in from inside the view, and image paste.

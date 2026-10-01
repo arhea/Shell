@@ -40,6 +40,19 @@ targets:
       # Icon Composer document: light, dark, tinted and clear variants.
       - path: Resources/AppIcon.icon
         buildPhase: resources
+    preBuildScripts:
+      # Light and dark PNGs of AppIcon.icon for the theme-matched Dock icon.
+      - name: Render app icon variants
+        script: exec "$SRCROOT/scripts/render-app-icons.sh"
+        basedOnDependencyAnalysis: true
+        inputFiles:
+          - $(SRCROOT)/scripts/render-app-icons.sh
+          - $(SRCROOT)/Resources/AppIcon.icon/icon.json
+          - $(SRCROOT)/Resources/AppIcon.icon/Assets/chevron.svg
+          - $(SRCROOT)/Resources/AppIcon.icon/Assets/cursor.svg
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AppIconLight.png
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AppIconDark.png
     dependencies:
       # Embedded in Contents/PlugIns.
       - target: ShellWidgets
