@@ -11,6 +11,8 @@ enum ClaudeDashboard {
         let controller: TerminalWindowController
         /// "Window 2 · Tab 3 · Pane 2", trimmed to what's ambiguous.
         let location: String
+        /// Zero-based index of the tab in its window, for "Open ⌘3".
+        var tabIndex = 0
         var id: UUID { session.id }
     }
 
@@ -78,7 +80,7 @@ enum ClaudeDashboard {
                     if windows.count > 1 { parts.append(controller === HotkeyWindow.shared.controller ? "Hotkey Window" : "Window \(w + 1)") }
                     parts.append("Tab \(t + 1)")
                     if panes.count > 1 { parts.append("Pane \(p + 1)") }
-                    result.append(Entry(session: session, tab: tab, controller: controller, location: parts.joined(separator: " · ")))
+                    result.append(Entry(session: session, tab: tab, controller: controller, location: parts.joined(separator: " · "), tabIndex: t))
                 }
             }
         }
@@ -110,7 +112,10 @@ enum ClaudeDashboard {
     static func summary(of entries: [Entry]) -> Summary {
         var s = Summary(total: entries.count)
         for e in entries {
-            switch activity(for: e.session) {
+            let activity = activity(for: e.session)
+            // Remember when each session entered its state, for "waiting 4 min".
+            ActivityClock.shared.note(e.session.id, section: section(for: activity))
+            switch activity {
             case .needsInput: s.needsInput += 1
             case .working, .starting: s.working += 1
             case .finished: s.finished += 1
@@ -446,476 +451,6 @@ struct DashboardCountBadge: View {
     }
 }
 
-// MARK: - Dashboard
-
-/// Tiles for every Claude session; shown in place of the terminal area.
-struct ClaudeDashboardView: View {
-    let controller: TerminalWindowController
-    /// App-wide model (observed through property access; not state this view owns).
-    private let agents = AgentIntegrations.shared
-
-    private let columns = [GridItem(.adaptive(minimum: 320, maximum: 560), spacing: 12, alignment: .top)]
-
-    var body: some View {
-        let palette = ChromePalette.current
-        let entries = ClaudeDashboard.entries()
-        let summary = ClaudeDashboard.summary(of: entries)
-        let showsHistory = SettingsStore.shared.settings.claudeSessionsHistory
-        HStack(spacing: 0) {
-            ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: 16) {
-                    header(summary, showsHistory: showsHistory, palette: palette)
-                    if agents.claude != .installed { hooksBanner(palette) }
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
-                        ClaudeUsageTile(palette: palette)
-                        ForEach(entries) { entry in
-                            ClaudeSessionTile(entry: entry, palette: palette) {
-                                entry.controller.reveal(entry.session)
-                            }
-                        }
-                        if entries.isEmpty { emptyState(palette) }
-                    }
-                    RunningElsewhereSection(controller: controller, palette: palette)
-                }
-                .padding(20)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if showsHistory {
-                PastSessionsDrawer(controller: controller, live: entries)
-                    .frame(width: 340)
-                    .transition(.move(edge: .trailing))
-            }
-        }
-        .background(palette.background)
-    }
-
-    private func header(_ summary: ClaudeDashboard.Summary, showsHistory: Bool, palette: ChromePalette) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text("Claude Sessions").font(.system(size: 18, weight: .semibold)).foregroundStyle(palette.foreground)
-            Text(summary.detail).font(.system(size: 12)).foregroundStyle(palette.secondary)
-            Spacer()
-            Button("Back to Tab") { controller.hideDashboard() }
-                .buttonStyle(.plain)
-                .font(.system(size: 12))
-                .foregroundStyle(palette.secondary)
-                .help("Return to the selected tab (\(ShortcutAction.claudeDashboard.shortcut?.displayString ?? "⌃⌘A"))")
-            if !showsHistory {
-                ChromeIconButton(symbol: "clock.arrow.circlepath", help: "Show Past Sessions", palette: palette) {
-                    withAnimation(.easeOut(duration: 0.2)) { SettingsStore.shared.settings.claudeSessionsHistory = true }
-                }
-            }
-        }
-    }
-
-    private func hooksBanner(_ palette: ChromePalette) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "info.circle").foregroundStyle(palette.accent)
-            Text("Install the Claude Code hooks to see when terminal sessions are working, waiting on you, or done.")
-                .font(.system(size: 12))
-                .foregroundStyle(palette.foreground.opacity(0.85))
-            Spacer()
-            Button("Install Hooks") { agents.installClaude() }
-        }
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: 8).fill(palette.bar))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(palette.border))
-    }
-
-    private func emptyState(_ palette: ChromePalette) -> some View {
-        VStack(spacing: 8) {
-            ClaudeLogo(size: 28)
-            Text("No Claude sessions are running in Shell").foregroundStyle(palette.foreground)
-            Text("Run `claude` in any tab and it shows up here.").font(.system(size: 12)).foregroundStyle(palette.secondary)
-        }
-        .frame(maxWidth: .infinity, minHeight: 250)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(palette.border, style: StrokeStyle(lineWidth: 1, dash: [4, 4])))
-    }
-}
-
-struct ClaudeSessionTile: View {
-    let entry: ClaudeDashboard.Entry
-    let palette: ChromePalette
-    let open: () -> Void
-    @State private var hovering = false
-
-    private var session: TerminalSession { entry.session }
-
-    var body: some View {
-        let activity = ClaudeDashboard.activity(for: session)
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                activityLabel(activity)
-                Spacer()
-                pill(session.nativeClaude != nil ? "Native" : "Terminal")
-            }
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(palette.foreground)
-                    .lineLimit(1)
-                if let summary = SessionSummaries.shared.line(for: session) {
-                    Label(summary, systemImage: "sparkles")
-                        .font(.system(size: 12))
-                        .foregroundStyle(palette.foreground.opacity(0.85))
-                        .lineLimit(1)
-                        .help("Summarized by Apple Intelligence on this Mac")
-                }
-                if let command = session.nativeClaude == nil ? session.runningCommand : nil {
-                    Text("$ " + command.replacingOccurrences(of: "\n", with: " "))
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(palette.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                info("folder", directory)
-                if let branch {
-                    HStack(spacing: 8) {
-                        info("arrow.triangle.branch", branch)
-                        if let pr = DashboardRepos.shared.repository(for: session)?.pullRequest {
-                            PullRequestLink(pr: pr, palette: palette)
-                        }
-                    }
-                }
-            }
-            if let message = activity.message {
-                Text(message)
-                    .font(.system(size: 12))
-                    .foregroundStyle(color(for: activity))
-                    .lineLimit(2)
-            }
-            live
-            footer
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, minHeight: 250, alignment: .topLeading)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(hovering ? palette.hover : palette.bar))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(borderColor(activity), lineWidth: isUrgent(activity) ? 1.5 : 1))
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .onTapGesture(perform: open)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(title), \(ClaudeDashboard.activity(for: session).title), \(directory)")
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAction(named: "Show Session", open)
-        .task(id: session.workingDirectory) { await DashboardRepos.shared.refresh(session) }
-        .task(id: session.id) {
-            while !Task.isCancelled {
-                await SessionSummaries.shared.refresh(session)
-                try? await Task.sleep(for: .seconds(5))
-            }
-        }
-        .contextMenu {
-            Button("Show Session") { open() }
-            if let pr = DashboardRepos.shared.repository(for: session)?.pullRequest {
-                Button("Open PR #\(pr.number)") { NSWorkspace.shared.open(pr.url) }
-            }
-            Divider()
-            Button("Copy Path") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(fullDirectory, forType: .string)
-            }
-            Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: fullDirectory)]) }
-        }
-        .help("Show this session")
-    }
-
-    // MARK: Parts
-
-    private var title: String { ClaudeDashboard.title(for: entry) }
-    private var fullDirectory: String { ClaudeDashboard.fullDirectory(for: session) }
-    private var directory: String { ClaudeDashboard.directory(for: session) }
-    private var branch: String? { ClaudeDashboard.branch(for: session) }
-
-    private func info(_ symbol: String, _ text: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: symbol).font(.system(size: 10)).frame(width: 14)
-            Text(text).lineLimit(1).truncationMode(.head)
-        }
-        .font(.system(size: 12))
-        .foregroundStyle(palette.secondary)
-    }
-
-    private func pill(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 10, weight: .medium))
-            .foregroundStyle(palette.secondary)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 2)
-            .background(Capsule().strokeBorder(palette.border))
-    }
-
-    @ViewBuilder private func activityLabel(_ activity: ClaudeDashboard.Activity) -> some View {
-        HStack(spacing: 6) {
-            switch activity {
-            case .working, .starting:
-                ProgressView().controlSize(.mini).tint(palette.purple)
-            case .needsInput:
-                Image(systemName: "exclamationmark.bubble.fill")
-            case .finished:
-                Image(systemName: "checkmark.circle.fill")
-            case .idle:
-                Circle().fill(palette.secondary).frame(width: 7, height: 7)
-            case .exited:
-                Image(systemName: "xmark.octagon.fill")
-            }
-            Text(activity.title)
-        }
-        .font(.system(size: 11, weight: .semibold))
-        .foregroundStyle(color(for: activity))
-        .frame(height: 16)
-    }
-
-    /// Live snapshot of the conversation, refreshed while the dashboard is up.
-    /// Approval or live preview. Native sessions update through Observation;
-    /// terminal sessions read the viewport once per tick for both.
-    @ViewBuilder private var live: some View {
-        if let claude = session.nativeClaude {
-            DashboardApproval(session: session, palette: palette)
-            if claude.pending.isEmpty { previewBox(ClaudeDashboard.nativePreview(claude)) }
-        } else {
-            TimelineView(.periodic(from: .now, by: 1.5)) { _ in
-                let viewport = session.surfaceView.readText()
-                if let prompt = ClaudeDashboard.terminalPrompt(fromViewport: viewport) {
-                    DashboardApproval(session: session, palette: palette, terminalPrompt: prompt)
-                } else {
-                    previewBox(ClaudeDashboard.previewLines(fromViewport: viewport))
-                }
-            }
-        }
-    }
-
-    private func previewBox(_ lines: [String]) -> some View {
-        Text(lines.isEmpty ? " " : lines.joined(separator: "\n"))
-            .font(.system(size: 11, design: .monospaced))
-            .foregroundStyle(palette.foreground.opacity(0.75))
-            .lineLimit(6)
-            .frame(maxWidth: .infinity, minHeight: 84, alignment: .topLeading)
-            .padding(8)
-            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(palette.background))
-    }
-
-    private var footer: some View {
-        HStack(spacing: 6) {
-                Text(entry.location)
-                if let group = entry.tab.groupID.flatMap({ entry.controller.workspace.group($0) }) {
-                    Circle().fill(group.color.color).frame(width: 6, height: 6)
-                    Text(group.name.isEmpty ? "Group" : group.name)
-                }
-                Spacer()
-                if let claude = session.nativeClaude {
-                    Text(claude.modelTitle)
-                    if claude.totalCost > 0 { Text(String(format: "$%.2f", claude.totalCost)) }
-                } else if let started = session.commandStartedAt {
-                    Image(systemName: "clock").font(.system(size: 9))
-                    // Updated by the system each second without re-rendering the tile.
-                    Text(started, style: .timer).monospacedDigit()
-                }
-        }
-        .font(.system(size: 11))
-        .foregroundStyle(palette.secondary)
-        .lineLimit(1)
-    }
-
-    private func isUrgent(_ activity: ClaudeDashboard.Activity) -> Bool {
-        if case .needsInput = activity { return true }
-        return false
-    }
-
-    private func color(for activity: ClaudeDashboard.Activity) -> Color {
-        switch activity {
-        case .needsInput: palette.yellow
-        case .working, .starting: palette.purple
-        case .finished: palette.green
-        case .idle: palette.secondary
-        case .exited: palette.red
-        }
-    }
-
-    private func borderColor(_ activity: ClaudeDashboard.Activity) -> Color {
-        isUrgent(activity) ? palette.yellow.opacity(0.8) : palette.border
-    }
-}
-
-// MARK: - Usage
-
-/// The dashboard's first tile: plan limits and local token totals.
-struct ClaudeUsageTile: View {
-    let palette: ChromePalette
-    /// App-wide model (observed through property access; not state this view owns).
-    var usage: ClaudeUsage = .shared
-    /// Rescans transcripts while the tile is on screen. Off in unit tests, so
-    /// rendering the tile never reads the user's ~/.claude/projects.
-    static let refreshesUsage = !AppEnvironment.isRunningTests
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                ClaudeLogo(size: 16)
-                Text("Claude Usage").font(.system(size: 14, weight: .semibold)).foregroundStyle(palette.foreground)
-                Spacer()
-                if usage.isScanning && usage.tokens == nil { ProgressView().controlSize(.mini) }
-            }
-            limits
-            palette.border.frame(height: 1)
-            ClaudeUsageTokens(stats: usage.tokens, palette: palette)
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, minHeight: 250, alignment: .topLeading)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(palette.bar))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(palette.border))
-        .task {
-            while !Task.isCancelled {
-                if Self.refreshesUsage { usage.refreshIfNeeded() }
-                try? await Task.sleep(for: .seconds(60))
-            }
-        }
-    }
-
-    // MARK: Plan limits
-
-    @ViewBuilder private var limits: some View {
-        if let limits = usage.limits, limits.fiveHour != nil || limits.sevenDay != nil {
-            VStack(alignment: .leading, spacing: 8) {
-                if let w = limits.fiveHour { meter("Current session", w, weekly: false) }
-                if let w = limits.sevenDay { meter("Weekly", w, weekly: true) }
-                TimelineView(.periodic(from: .now, by: 30)) { context in
-                    Text("Plan limits as of \(Self.relative(limits.updatedAt, now: context.date))")
-                        .font(.system(size: 10))
-                        .foregroundStyle(palette.secondary)
-                }
-            }
-        } else {
-            Text("Plan limits appear here once a Claude session in the native view reports them.")
-                .font(.system(size: 11))
-                .foregroundStyle(palette.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private func meter(_ label: String, _ window: ClaudeUsage.LimitWindow, weekly: Bool) -> some View {
-        let fraction = min(max(window.utilization, 0), 1)
-        let color = fraction >= 0.9 ? palette.red : fraction >= 0.7 ? palette.yellow : palette.green
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Text(label).foregroundStyle(palette.foreground.opacity(0.9))
-                Text("\(Int((fraction * 100).rounded()))% used").fontWeight(.semibold).foregroundStyle(palette.foreground).monospacedDigit()
-                Spacer()
-                if let reset = window.resetsAt {
-                    Text("Resets \(Self.resetText(reset, weekly: weekly))").foregroundStyle(palette.secondary)
-                }
-            }
-            .font(.system(size: 11))
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(palette.hover)
-                    Capsule().fill(color).frame(width: max(4, geo.size.width * fraction))
-                }
-            }
-            .frame(height: 6)
-        }
-        .help("\(label): \(Int((fraction * 100).rounded()))% of your plan's limit used")
-    }
-
-    // MARK: Formatting
-
-    static func compact(_ n: Int) -> String {
-        let v = Double(n)
-        switch v {
-        case 1_000_000_000...: return String(format: "%.1fB", v / 1_000_000_000)
-        case 1_000_000...: return String(format: "%.1fM", v / 1_000_000)
-        case 1_000...: return String(format: "%.1fK", v / 1_000)
-        default: return "\(n)"
-        }
-    }
-
-    /// "claude-opus-5-5" → "Opus 5.5".
-    static func modelName(_ id: String) -> String { ClaudeModelName.format(id) }
-
-    static func weekday(_ date: Date) -> String {
-        String(date.formatted(.dateTime.weekday(.narrow)))
-    }
-
-    private static func resetText(_ date: Date, weekly: Bool) -> String {
-        if weekly && !Calendar.current.isDateInToday(date) {
-            return date.formatted(.dateTime.weekday(.abbreviated).hour().minute())
-        }
-        return date.formatted(.dateTime.hour().minute())
-    }
-
-    private static func relative(_ date: Date, now: Date) -> String {
-        let seconds = now.timeIntervalSince(date)
-        if seconds < 60 { return "just now" }
-        return date.formatted(.relative(presentation: .named))
-    }
-}
-
-/// The usage tile's token totals: today, the last five hours and the last week.
-struct ClaudeUsageTokens: View {
-    let stats: ClaudeUsage.TokenStats?
-    let palette: ChromePalette
-
-    var body: some View {
-        if let stats {
-            HStack(alignment: .top, spacing: 16) {
-                stat("Today", stats.today.total, detail: "\(stats.sessionsToday) session\(stats.sessionsToday == 1 ? "" : "s")")
-                stat("Last 5 hours", stats.lastFiveHours.total, detail: "\(ClaudeUsageTile.compact(stats.lastFiveHours.output)) output")
-                Spacer(minLength: 0)
-                dailyBars(stats.days)
-            }
-            HStack(spacing: 10) {
-                Text("in \(ClaudeUsageTile.compact(stats.today.input)) · out \(ClaudeUsageTile.compact(stats.today.output)) · cache \(ClaudeUsageTile.compact(stats.today.cacheWrite + stats.today.cacheRead))")
-                Spacer()
-                if let (model, count) = stats.modelsToday.first, stats.today.total > 0 {
-                    Text("\(ClaudeUsageTile.modelName(model)) \(Int((Double(count) / Double(stats.today.total) * 100).rounded()))%")
-                }
-            }
-            .font(.system(size: 11).monospacedDigit())
-            .foregroundStyle(palette.secondary)
-            .lineLimit(1)
-        } else {
-            Text("Reading token usage from ~/.claude/projects…")
-                .font(.system(size: 11))
-                .foregroundStyle(palette.secondary)
-        }
-    }
-
-    private func stat(_ label: String, _ value: Int, detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.system(size: 11)).foregroundStyle(palette.secondary)
-            Text(ClaudeUsageTile.compact(value)).font(.system(size: 20, weight: .semibold).monospacedDigit()).foregroundStyle(palette.foreground)
-            Text(detail).font(.system(size: 10)).foregroundStyle(palette.secondary)
-        }
-        .help("\(value.formatted()) tokens, including cache reads and writes")
-    }
-
-    /// Tokens per day for the last week, today last.
-    private func dailyBars(_ days: [ClaudeUsage.DayTotal]) -> some View {
-        let peak = max(days.map(\.tokens).max() ?? 0, 1)
-        let height: CGFloat = 44
-        return VStack(alignment: .trailing, spacing: 3) {
-            Text("7 days").font(.system(size: 10)).foregroundStyle(palette.secondary)
-            HStack(alignment: .bottom, spacing: 2) {
-                ForEach(days) { day in
-                    VStack(spacing: 3) {
-                        UnevenRoundedRectangle(topLeadingRadius: 3, topTrailingRadius: 3)
-                            .fill(ClaudeLogo.color.opacity(Calendar.current.isDateInToday(day.day) ? 1 : 0.55))
-                            .frame(width: 9, height: day.tokens == 0 ? 1 : max(3, height * CGFloat(day.tokens) / CGFloat(peak)))
-                            .frame(height: height, alignment: .bottom)
-                        Text(ClaudeUsageTile.weekday(day.day)).font(.system(size: 9)).foregroundStyle(palette.secondary)
-                    }
-                    .frame(width: 13)
-                    .contentShape(Rectangle())
-                    .help("\(day.day.formatted(.dateTime.weekday(.abbreviated).month().day())): \(day.tokens.formatted()) tokens")
-                }
-            }
-        }
-    }
-}
-
 // MARK: - Pull requests for terminal sessions
 
 /// The repository behind each terminal Claude session on the dashboard (the
@@ -958,13 +493,30 @@ final class DashboardRepos {
     }
 }
 
-/// "PR #123" linking to the pull request, colored by state.
+/// "PR #123" linking to the pull request, colored by state. `plain` drops
+/// the capsule and icon, for inline use in a subtitle.
 struct PullRequestLink: View {
     let pr: PullRequestInfo
     let palette: ChromePalette
+    var plain = false
 
     var body: some View {
         let color: Color = pr.state == .merged ? palette.purple : pr.state == .closed ? palette.red : pr.isDraft ? palette.secondary : palette.green
+        if plain {
+            Button { NSWorkspace.shared.open(pr.url) } label: {
+                Text("PR #\(pr.number)\(pr.isDraft ? " draft" : "")\(pr.state != .open ? " " + pr.state.rawValue.lowercased() : "")")
+                    .font(.system(size: DS.Size.subtitle, weight: .semibold))
+                    .foregroundStyle(color)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("\(pr.title)\n\(pr.url.absoluteString)")
+        } else {
+            capsule(color)
+        }
+    }
+
+    private func capsule(_ color: Color) -> some View {
         Button { NSWorkspace.shared.open(pr.url) } label: {
             HStack(spacing: 4) {
                 Image(systemName: pr.state == .merged ? "arrow.triangle.merge" : "arrow.triangle.pull")
@@ -981,81 +533,6 @@ struct PullRequestLink: View {
         }
         .buttonStyle(.plain)
         .help("\(pr.title)\n\(pr.url.absoluteString)")
-    }
-}
-
-/// Approve or answer from a dashboard tile: the native view's own cards, or
-/// the options of a prompt in Claude Code's terminal UI.
-struct DashboardApproval: View {
-    let session: TerminalSession
-    let palette: ChromePalette
-    /// For terminal sessions: the prompt the tile found in the viewport.
-    var terminalPrompt: ClaudeDashboard.TerminalPrompt?
-
-    var body: some View {
-        if let claude = session.nativeClaude {
-            if let req = claude.pending.first {
-                let p = ClaudePalette.current
-                Group {
-                    if req.isQuestion {
-                        QuestionCard(request: req, palette: p, fontSize: 12, directory: claude.directory) { answers in
-                            claude.answer(req, answers: answers)
-                        } onDeny: {
-                            claude.respond(req, allow: false, message: "The user declined to answer.")
-                        }
-                    } else if req.isPlan {
-                        PlanCard(request: req, palette: p, fontSize: 12, directory: claude.directory) { mode in
-                            if let mode { claude.approvePlan(req, mode: mode) } else { claude.keepPlanning(req, feedback: "") }
-                        }
-                    } else {
-                        PermissionCard(request: req, palette: p, fontSize: 12, showsKeyHint: false) { allow, always in
-                            claude.respond(req, allow: allow, always: always)
-                        }
-                    }
-                }
-                .id(req.id)
-                .contentShape(Rectangle())
-                .onTapGesture {} // keep clicks inside the card from opening the session
-            }
-        } else if let terminalPrompt {
-            promptView(terminalPrompt)
-        }
-    }
-
-    private func promptView(_ prompt: ClaudeDashboard.TerminalPrompt) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if !prompt.context.isEmpty {
-                Text(prompt.context.joined(separator: "\n"))
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(palette.foreground.opacity(0.85))
-                    .lineLimit(5)
-            }
-            Text(prompt.question).font(.system(size: 12, weight: .semibold)).foregroundStyle(palette.foreground)
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(prompt.options, id: \.key) { option in
-                    Button { ClaudeDashboard.choose(option, in: session) } label: {
-                        HStack(spacing: 6) {
-                            Text(option.key).font(.system(size: 10, weight: .bold).monospacedDigit())
-                                .frame(width: 16, height: 16)
-                                .background(RoundedRectangle(cornerRadius: 4).fill(option.key == "1" ? ClaudeLogo.color : palette.hover))
-                                .foregroundStyle(option.key == "1" ? Color.white : palette.foreground)
-                            Text(option.label).font(.system(size: 12)).foregroundStyle(palette.foreground).lineLimit(2)
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 4)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(palette.background))
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: 8).fill(palette.bar))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(palette.yellow.opacity(0.6)))
-        .contentShape(Rectangle())
-        .onTapGesture {}
     }
 }
 

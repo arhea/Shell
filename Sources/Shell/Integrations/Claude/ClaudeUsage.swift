@@ -15,6 +15,16 @@ final class ClaudeUsage {
         /// 0…1 of the window used.
         var utilization: Double
         var resetsAt: Date?
+
+        enum Level: Equatable { case normal, warning, critical }
+
+        /// Green up to 70%, yellow above, red above 90%.
+        var level: Level {
+            utilization > 0.9 ? .critical : utilization > 0.7 ? .warning : .normal
+        }
+
+        /// Whole percent used, clamped to 0…100.
+        var percent: Int { Int((min(max(utilization, 0), 1) * 100).rounded()) }
     }
 
     struct Limits: Codable, Equatable {
@@ -50,6 +60,13 @@ final class ClaudeUsage {
         var cacheWrite = 0
         var cacheRead = 0
         var total: Int { input + output + cacheWrite + cacheRead }
+
+        /// The share of input-side tokens served from the prompt cache (0…1),
+        /// nil before any input.
+        var cacheShare: Double? {
+            let inputSide = input + cacheWrite + cacheRead
+            return inputSide > 0 ? Double(cacheRead) / Double(inputSide) : nil
+        }
 
         mutating func add(_ r: UsageRecord) {
             input += r.input
@@ -131,6 +148,25 @@ final class ClaudeUsage {
                 usage.isScanning = false
                 if usage.tokens != stats { usage.tokens = stats }
             }
+        }
+    }
+
+    /// One bar of the dashboard's 7-day sparkline.
+    struct SparkBar: Equatable, Identifiable {
+        var day: Date
+        var tokens: Int
+        /// Height relative to the busiest day, 0…1.
+        var fraction: Double
+        var isToday: Bool
+        var id: Date { day }
+    }
+
+    /// Bars for `days`, scaled to the busiest one (all zero when nothing ran).
+    nonisolated static func sparkline(_ days: [DayTotal], now: Date = Date(), calendar: Calendar = .current) -> [SparkBar] {
+        let peak = days.map(\.tokens).max() ?? 0
+        return days.map { d in
+            SparkBar(day: d.day, tokens: d.tokens, fraction: peak > 0 ? Double(d.tokens) / Double(peak) : 0,
+                     isToday: calendar.isDate(d.day, inSameDayAs: now))
         }
     }
 
