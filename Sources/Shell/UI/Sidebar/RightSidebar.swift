@@ -63,6 +63,11 @@ struct RightSidebarView: View {
         }
         .background(p.surface)
         .foregroundStyle(p.foreground)
+        // The toolbar's failing-checks capsule asks for the Checks view.
+        .onReceive(NotificationCenter.default.publisher(for: BranchChecksRequest.notification)) { note in
+            guard note.object == nil || (note.object as AnyObject?) === repo, available.contains(.checks) else { return }
+            select(.checks)
+        }
     }
 
     @ViewBuilder

@@ -421,7 +421,20 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
                     } else if let session {
                         session.sidebarChoice = false
                     }
-                })
+                },
+                session: claude.map { claude in { [weak claude] in
+                    claude.map { InspectorSessionInputs(session: $0) } ?? InspectorSessionInputs()
+                } },
+                openTabs: { [weak self] in self?.openTabStates() ?? [:] },
+                fixingChecks: { [weak claude] in claude?.checksBeingFixed ?? [] },
+                onFixCheck: claude.map { claude in { [weak claude] job in
+                    guard let claude, let repo = claude.repository else { return }
+                    Task { @MainActor in
+                        let log = await BranchChecksModel.shared(for: repo).failedLog(for: job)
+                        claude.fixCheckFailure(job, log: log)
+                    }
+                } },
+                onNewWorktree: { [weak self] in self?.startClaudeInNewWorktree() })
             let host = NSHostingView(rootView: AnyView(view))
             host.sizingOptions = []
             contentView.addSubview(host)
@@ -432,6 +445,23 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
         }
         contentView.explorerWidth = CGFloat(SettingsStore.shared.settings.claudeExplorerWidth)
         contentView.needsLayout = true
+    }
+
+    /// Every open pane's directory (all windows) → its agent state, for the
+    /// inspector's "Open in tabs" worktree group.
+    private func openTabStates() -> [String: WorktreeTabState] {
+        var result: [String: WorktreeTabState] = [:]
+        for controller in AppDelegate.shared.controllers {
+            for session in controller.workspace.tabs.flatMap({ $0.sessions.values }) {
+                guard let dir = session.nativeClaude?.directory ?? session.workingDirectory else { continue }
+                let key = URL(fileURLWithPath: dir).standardizedFileURL.path
+                let state = WorktreeTabState(session.agent)
+                // Prefer the most urgent state when two panes share a folder.
+                if let existing = result[key], existing.agent.priority <= state.agent.priority { continue }
+                result[key] = state
+            }
+        }
+        return result
     }
 
     private func hideExplorer() {

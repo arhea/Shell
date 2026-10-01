@@ -84,8 +84,21 @@ final class BranchChecksModel {
         set { SettingsStore.shared.settings.sendCheckFailuresToClaude = newValue }
     }
     /// Called with each job that newly fails while Shell is watching (not for
-    /// failures that were already there on the first load).
-    @ObservationIgnored var onNewFailure: ((CheckJob) -> Void)?
+    /// failures that were already there on the first load). Keyed by the
+    /// observer, so several sessions on one branch each hear about it.
+    @ObservationIgnored private var failureObservers: [ObjectIdentifier: (CheckJob) -> Void] = [:]
+
+    /// Starts watching (as `start()`) and calls `handler` for new failures
+    /// until `removeFailureObserver(_:)`.
+    func addFailureObserver(_ owner: AnyObject, _ handler: @escaping (CheckJob) -> Void) {
+        failureObservers[ObjectIdentifier(owner)] = handler
+        start()
+    }
+
+    func removeFailureObserver(_ owner: AnyObject) {
+        guard failureObservers.removeValue(forKey: ObjectIdentifier(owner)) != nil else { return }
+        stop()
+    }
 
     @ObservationIgnored private var refreshedAt: Date?
     @ObservationIgnored private var pollTask: Task<Void, Never>?
@@ -167,7 +180,7 @@ final class BranchChecksModel {
         if let previous {
             let before = Dictionary(previous.jobs.map { ($0.id, $0.state) }, uniquingKeysWith: { a, _ in a })
             for job in next.jobs where job.state == .failed && before[job.id] != .failed {
-                onNewFailure?(job)
+                for handler in failureObservers.values { handler(job) }
             }
         }
         schedulePoll(active: !next.running.isEmpty)

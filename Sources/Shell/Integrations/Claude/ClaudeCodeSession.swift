@@ -524,7 +524,7 @@ final class ClaudeCodeSession {
         Task { [weak self, directory, env = request.environment] in
             let repo = await GitRepository.discover(from: directory, environment: env)
             guard let self else { repo?.stop(); return }
-            if self.hasExited || self.closed { repo?.stop() } else { self.repository = repo }
+            if self.hasExited || self.closed { repo?.stop() } else { self.repository = repo; self.watchChecks() }
             self.repositoryChecked = true
             self.syncSessionName()
         }
@@ -637,6 +637,7 @@ final class ClaudeCodeSession {
         if let mcpObserver { NotificationCenter.default.removeObserver(mcpObserver) }
         mcpObserver = nil
         // Release our share of the repository once (it's shared with other views).
+        if let repository, repository.github != nil { BranchChecksModel.shared(for: repository).removeFailureObserver(self) }
         repository?.stop()
         repository = nil
         try? stdin?.close()
@@ -799,6 +800,28 @@ final class ClaudeCodeSession {
         send("Fix the failing check: \(failure.title).", attachments: attachments)
         turnTitle = "Fixing \(job.name)"
         return true
+    }
+
+    /// Check jobs Claude is fixing in the current turn ("Claude is fixing").
+    var checksBeingFixed: Set<String> {
+        guard isRunning else { return [] }
+        return Set(items.lazy.filter { $0.kind == .checkFailure && $0.checkFixRequested }.compactMap { $0.checkFailure?.job.id })
+    }
+
+    /// Follows CI for the session's branch: a check that newly fails lands in
+    /// the transcript, and with "Send failures to Claude" on, Claude starts
+    /// fixing it when it isn't busy.
+    private func watchChecks() {
+        guard let repo = repository, repo.github != nil else { return }
+        let checks = BranchChecksModel.shared(for: repo)
+        checks.addFailureObserver(self) { [weak self, weak checks] job in
+            guard let self, let checks, !self.closed else { return }
+            Task { @MainActor in
+                let log = await checks.failedLog(for: job)
+                self.appendCheckFailure(job, log: log)
+                if checks.sendFailuresToClaude, !self.isRunning { self.fixCheckFailure(job, log: log) }
+            }
+        }
     }
 
     private func checkHeadSHA() -> String? {
