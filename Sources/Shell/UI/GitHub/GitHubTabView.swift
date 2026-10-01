@@ -1014,9 +1014,9 @@ struct GitHubSidebarRow: View {
     /// PRs waiting on the viewer's review, and those that are theirs or wait
     /// on them ("for you"). Zero until the viewer's login is known.
     static func counts(_ prs: [OpenPullRequest], login: String?) -> (toReview: Int, forYou: Int) {
-        guard let login else { return (0, 0) }
-        let review = prs.filter { $0.reviewRequestedLogins.contains(login) }.count
-        let forYou = prs.filter { $0.author == login || $0.reviewRequestedLogins.contains(login) }.count
-        return (review, forYou)
+        // Same definition as the board's For you filter.
+        guard login != nil else { return (0, 0) }
+        let c = PullRequestBoard.counts(prs, login: login)
+        return (c.reviewRequested, c.forYou)
     }
 }
