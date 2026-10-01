@@ -83,6 +83,7 @@ See [Claude Code and Codex](claude-code.md) for the full guide.
   - Replies render as GitHub Flavored Markdown: tables with alignment, task lists, strikethrough, autolinks, footnotes, nested quotes, `> [!NOTE]`-style alerts, `<details>` and images. File references such as `[App.swift:42](Sources/App.swift:42)` or a backticked path open in your editor at that line.
   - Claude's questions appear as a card: pick an option (or press 1–9), choose several for multi-select, or type your own answer. Option previews show beside the choices, and the transcript keeps each question with the answer you gave.
   - In plan mode, the plan renders as markdown for review: approve with auto-accept edits (1), approve and keep asking before edits (2), or keep planning (3). Type feedback and press Return to send it back. Todo lists show as a live checklist.
+- **Review changes.** A VS Code-style review of the working tree: split or unified diffs, Stage, Unstage and Revert per hunk, Viewed checkboxes, line comments sent to Claude, and Commit or Commit & Push with an optional on-device commit message draft. See [Review changes](claude-code.md#review-changes).
 - **MCP manager** (Shell › MCP Servers…): status, sign in and out, enable and disable, add and remove, and browse each server's tools.
 - **Agent storage** (Settings › Agent Storage): see and reclaim the disk Claude Code and Codex use.
 
@@ -145,6 +146,7 @@ Optional features that use Apple's on-device model (FoundationModels). They need
 | Command fixes | After a command fails, a corrected command appears as ghost text in the native prompt and in the fix bar above it. Press → to take it, click **Run it** to run it, or Esc to dismiss it. Shell doesn't ask about ^C or other signals, or about silent failures such as `grep` finding nothing. A suggestion is dropped if it adds a destructive word (`rm`, `--force`, `reset --hard`, and so on) that your command didn't have, or `sudo` when the error wasn't about permissions. |
 | Session summaries | Each tile on the Claude dashboard gets a one-line summary of what Claude is doing. It updates at most every 20 seconds per session, and only while the dashboard is open and the session's activity changes. |
 | Tab names | *Rename Tab*, *New Tab Group* and *Rename Group* fill in a suggested name based on each pane's folder, branch and commands. Anything you type wins. |
+| Commit messages | In Review changes, **Write for me** drafts a commit message (a subject and a short body) from the staged changes, in the style of the repository's recent commits. It only fills in the message field; nothing is committed until you click Commit. |
 
 The first time Shell sees that Apple Intelligence is available, it shows a one-time banner pointing to these settings.
 

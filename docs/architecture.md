@@ -57,6 +57,7 @@ Tests/ShellTests     XCTest unit tests
 | `SystemIntegration` | `App/SystemIntegration.swift` | `openTab`, Finder services, Dock menu, recent folders |
 | `Intelligence` | `Integrations/Intelligence/Intelligence.swift` | Optional Apple Intelligence features: availability, per-feature gating, prompts and output checks |
 | `OnDeviceModel` | `Integrations/Intelligence/OnDeviceModel.swift` | FoundationModels calls, one fresh session per request, with a timeout |
+| `ReviewChangesModel` | `UI/Review/ReviewChangesModel.swift` | Review changes: loads `WorkingTreeDiff` (unstaged, staged and untracked diffs parsed by `UnifiedDiffParser`), flattens it into `ReviewRows` for one lazy list, and stages, reverts and commits through `GitStaging` (single-hunk patches for `git apply`) |
 
 ## Data flow for a command
 

@@ -59,7 +59,7 @@ The full model, with defaults, is `AppSettings` in [`Sources/Shell/Settings/AppS
 | `iCloudSync` | `false` | Sync portable settings through iCloud Drive (below) |
 | `checkForUpdates` | `true` | Check GitHub for a new release every six hours |
 | `installUpdatesAutomatically` | `true` | Download new releases in the background and install them when Shell quits |
-| `intelligenceBranchNames`, `intelligencePaletteIntents`, `intelligenceCommandFixes`, `intelligenceSessionSummaries`, `intelligenceTabNames` | `false` | Apple Intelligence features. See [Features](features.md#apple-intelligence). |
+| `intelligenceBranchNames`, `intelligencePaletteIntents`, `intelligenceCommandFixes`, `intelligenceSessionSummaries`, `intelligenceTabNames`, `intelligenceCommitMessages` | `false` | Apple Intelligence features. See [Features](features.md#apple-intelligence). |
 | `intelligenceAnnouncementShown` | `false` | Set once the one-time Apple Intelligence banner has been shown |
 
 ## iCloud settings sync

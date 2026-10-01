@@ -3,7 +3,7 @@ import AppKit
 /// An optional feature backed by Apple's on-device language model. Each one
 /// is off until the user turns it on in Settings › Apple Intelligence.
 enum IntelligenceFeature: String, CaseIterable, Identifiable {
-    case branchNames, paletteIntents, commandFixes, sessionSummaries, tabNames
+    case branchNames, paletteIntents, commandFixes, sessionSummaries, tabNames, commitMessages
 
     var id: String { rawValue }
 
@@ -14,6 +14,7 @@ enum IntelligenceFeature: String, CaseIterable, Identifiable {
         case .commandFixes: \.intelligenceCommandFixes
         case .sessionSummaries: \.intelligenceSessionSummaries
         case .tabNames: \.intelligenceTabNames
+        case .commitMessages: \.intelligenceCommitMessages
         }
     }
 
@@ -24,6 +25,7 @@ enum IntelligenceFeature: String, CaseIterable, Identifiable {
         case .commandFixes: "Suggest a fix when a command fails"
         case .sessionSummaries: "Summarize Claude sessions on the dashboard"
         case .tabNames: "Suggest tab and tab group names"
+        case .commitMessages: "Draft commit messages"
         }
     }
 
@@ -39,6 +41,8 @@ enum IntelligenceFeature: String, CaseIterable, Identifiable {
             "Each session tile gets a one-line summary of what Claude is doing right now."
         case .tabNames:
             "Rename Tab and New Tab Group fill in a name based on the tab's folder, branch and recent commands."
+        case .commitMessages:
+            "In Review Changes, Write for me drafts a commit message from the staged changes. You edit it before committing."
         }
     }
 }
