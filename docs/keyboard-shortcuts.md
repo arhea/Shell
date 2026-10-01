@@ -70,6 +70,7 @@ The source of truth is `ShortcutAction.defaultShortcut` in [`Sources/Shell/Setti
 | Toggle Files & Worktrees Sidebar | ⌃⌘B |
 | Claude Dashboard | ⌃⌘A |
 | Open GitHub (pull request board) | ⌃⌘H |
+| Review Changes (native Claude view) | ⇧⌘R |
 | Toggle Full Screen | ⌘↩ |
 
 ## Other keys
