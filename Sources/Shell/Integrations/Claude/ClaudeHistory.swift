@@ -10,8 +10,8 @@ struct ClaudePastSession: Identifiable, Equatable, Sendable {
     var directory: String
     /// The `/rename` title, else Claude's own title, else the first prompt.
     var title: String
-    /// The first prompt, when the title is something else (a `/rename` name
-    /// such as Shell's random `brisk-wren` doesn't say what the session was).
+    /// The first prompt: with the repository and branch, the best clue to what
+    /// the session was (titles are often Shell's random `brisk-wren` names).
     var prompt: String?
     /// The branch the session last reported.
     var branch: String?
@@ -185,7 +185,7 @@ final class ClaudeTranscriptIndex: @unchecked Sendable {
         guard let cwd, !isTemporary(cwd) else { return nil }
         let shownPrompt = firstPrompt.map(oneLine)
         guard let title = customTitle ?? aiTitle ?? summary ?? shownPrompt else { return nil }
-        return ClaudePastSession(id: id, directory: cwd, title: title, prompt: shownPrompt == title ? nil : shownPrompt,
+        return ClaudePastSession(id: id, directory: cwd, title: title, prompt: shownPrompt,
                                  branch: branch, lastActive: modified)
     }
 

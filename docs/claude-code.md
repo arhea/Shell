@@ -90,7 +90,7 @@ Click a session tile to jump to that pane. Selecting any tab (or ⌃⌘A again) 
 
 A drawer on the right of the dashboard lists your past Claude Code conversations, newest first, read from the transcripts in `~/.claude/projects` (up to the 200 most recent; sessions in temporary folders are left out). Hide it with its sidebar button and bring it back with the clock button in the dashboard's header. Type in the filter box to search by title, prompt, folder or branch.
 
-Each card shows the session's title (its `/rename` name, Claude's own title, or the first prompt) with the first prompt underneath, when it was last active, and the same worktree details as the Worktrees sidebar: the worktree folder (marked **main** for the main checkout), the branch with ahead/behind or **not pushed**, the branch's pull request, and whether the worktree is clean or has changes. Git details are read only for cards on screen, and pull requests come from your `gh`, once per repository.
+Each card leads with the repository and branch (with ahead/behind or **not pushed**, and **main** for the main checkout), then the session's first prompt. The `/rename` or Claude-generated title stands in when there's no prompt. Below that are the branch's pull request, whether the worktree is clean or has changes, the folder, and when the session was last active, the same details as the Worktrees sidebar. Git details are read only for cards on screen, and pull requests come from your `gh`, once per repository.
 
 Hover a card for its actions, or right-click it:
 

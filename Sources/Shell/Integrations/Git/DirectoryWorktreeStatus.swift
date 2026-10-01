@@ -15,7 +15,8 @@ final class DirectoryWorktreeStatus {
     enum State: Equatable {
         case missing
         case notRepository
-        case worktree(WorktreeInfo)
+        /// `repo` is the main checkout's folder name, the same from any worktree.
+        case worktree(WorktreeInfo, repo: String)
     }
 
     private var states: [String: State] = [:]
@@ -58,6 +59,7 @@ final class DirectoryWorktreeStatus {
         let toplevel = lines[0]
         let common = URL(fileURLWithPath: lines[1])
         let mainCheckout = common.lastPathComponent == ".git" ? common.deletingLastPathComponent().path : toplevel
+        let repo = (mainCheckout as NSString).lastPathComponent
         let head = await run(["rev-parse", "--abbrev-ref", "HEAD"])
 
         var wt = WorktreeInfo(path: toplevel)
@@ -69,17 +71,17 @@ final class DirectoryWorktreeStatus {
             wt.branch = head
         }
         // Show what's known right away; tracking and the PR fill in after.
-        if case .worktree(let old)? = states[directory], old.path == wt.path, old.branch == wt.branch {
+        if case .worktree(let old, _)? = states[directory], old.path == wt.path, old.branch == wt.branch {
             wt.changes = old.changes; wt.lastActivity = old.lastActivity
             wt.upstream = old.upstream; wt.ahead = old.ahead; wt.behind = old.behind
             wt.upstreamGone = old.upstreamGone; wt.trackingKnown = old.trackingKnown; wt.pullRequest = old.pullRequest
         }
-        states[directory] = .worktree(wt)
+        states[directory] = .worktree(wt, repo: repo)
 
         let inspected = await WorktreeService.inspect(wt, git: git)
         wt.changes = inspected.changes
         wt.lastActivity = inspected.lastActivity
-        states[directory] = .worktree(wt)
+        states[directory] = .worktree(wt, repo: repo)
 
         let info = await branchInfo(repo: mainCheckout, git: git, environment: env)
         if let branch = wt.branch {
@@ -89,7 +91,7 @@ final class DirectoryWorktreeStatus {
             }
             wt.pullRequest = info.pullRequests[branch]
         }
-        states[directory] = .worktree(wt)
+        states[directory] = .worktree(wt, repo: repo)
     }
 
     /// Branch tracking and PRs for a repository, shared by every card in it

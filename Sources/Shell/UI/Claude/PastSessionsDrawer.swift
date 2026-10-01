@@ -162,50 +162,39 @@ struct PastSessionCard: View {
     var body: some View {
         let p = palette
         let state = status.state(for: session.directory)
-        let wt: WorktreeInfo? = if case .worktree(let w)? = state { w } else { nil }
+        let (wt, repo): (WorktreeInfo?, String?) = if case .worktree(let w, let r)? = state { (w, r) } else { (nil, nil) }
         let missing = state == .missing
+        let branch = wt?.branch ?? (wt?.isDetached == true ? "detached @ \(wt?.head ?? "?")" : session.branch)
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(session.title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .lineLimit(2)
-                    .truncationMode(.tail)
-                Spacer(minLength: 4)
-                if liveEntry != nil { WorktreeLabels.badge("open", p.claude) }
-            }
-            if let prompt = session.prompt {
-                Text(prompt)
-                    .font(.system(size: 11))
-                    .foregroundStyle(p.dim)
-                    .lineLimit(2)
-                    .truncationMode(.tail)
-            }
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 Image(systemName: wt?.isMain == true ? "shippingbox" : "square.stack.3d.up")
                     .foregroundStyle(missing ? p.red : wt?.isMain == true ? p.cyan : p.dim)
                     .font(.system(size: 10))
                     .frame(width: 12)
-                Text(wt?.name ?? (session.directory as NSString).lastPathComponent)
+                Text(repo ?? (session.directory as NSString).lastPathComponent)
+                    .font(.system(size: 12, weight: .semibold))
                     .lineLimit(1).truncationMode(.middle)
+                if let branch {
+                    Text("/").foregroundStyle(p.dim)
+                    Text(branch)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(p.magenta)
+                        .lineLimit(1).truncationMode(.middle)
+                        .layoutPriority(1)
+                }
+                if let wt, wt.branch != nil, !wt.isMain || wt.ahead + wt.behind > 0 {
+                    WorktreeLabels.tracking(wt, p).font(.system(size: 11)).fixedSize()
+                }
+                Spacer(minLength: 4)
+                if liveEntry != nil { WorktreeLabels.badge("open", p.claude) }
                 if wt?.isMain == true { WorktreeLabels.badge("main", p.cyan) }
                 if missing { WorktreeLabels.badge("missing", p.red) }
-                Spacer(minLength: 4)
-                Text(session.lastActive.formatted(.relative(presentation: .named)))
-                    .foregroundStyle(p.dim)
-                    .fixedSize()
             }
-            .font(.system(size: 11))
-            if let branch = wt?.branch ?? (wt?.isDetached == true ? "detached @ \(wt?.head ?? "?")" : session.branch) {
-                HStack(spacing: 5) {
-                    Image(systemName: "arrow.triangle.branch").foregroundStyle(p.magenta).font(.system(size: 9))
-                    Text(branch).lineLimit(1).truncationMode(.middle).layoutPriority(1)
-                    if let wt, wt.branch != nil, !wt.isMain || wt.ahead + wt.behind > 0 {
-                        WorktreeLabels.tracking(wt, p).fixedSize()
-                    }
-                }
-                .font(.system(size: 11))
-                .foregroundStyle(p.foreground.opacity(0.85))
-            }
+            Text(session.prompt ?? session.title)
+                .font(.system(size: 12))
+                .foregroundStyle(p.foreground.opacity(0.9))
+                .lineLimit(2)
+                .truncationMode(.tail)
             if let wt, let pr = wt.pullRequest, !wt.isMain {
                 WorktreeLabels.pullRequest(pr, p)
             }
@@ -220,6 +209,8 @@ struct PastSessionCard: View {
                     Text("checking…")
                 }
                 Text(Self.homeRelative(session.directory)).lineLimit(1).truncationMode(.head)
+                Spacer(minLength: 4)
+                Text(session.lastActive.formatted(.relative(presentation: .named))).fixedSize()
             }
             .font(.system(size: 10.5))
             .foregroundStyle(p.dim)
@@ -234,9 +225,9 @@ struct PastSessionCard: View {
         .onTapGesture(count: 2) { if !missing { perform(primaryAction) } }
         .contextMenu { menu(missing: missing) }
         .task(id: session.directory) { await status.refresh(session.directory) }
-        .help("\(session.title)\n\(session.directory)\nDouble-click to \(liveEntry != nil ? "show" : "resume")")
+        .help("\(session.title)\n\(session.prompt ?? "")\n\(session.directory)\nDouble-click to \(liveEntry != nil ? "show" : "resume")")
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(session.title), \(wt?.name ?? session.directory)")
+        .accessibilityLabel("\(repo ?? session.directory)\(branch.map { ", " + $0 } ?? ""): \(session.prompt ?? session.title)")
     }
 
     private var primaryAction: PastSessionAction { liveEntry.map { .show($0) } ?? .resume }

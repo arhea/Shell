@@ -23,7 +23,7 @@ final class ClaudeHistoryTests: XCTestCase {
         let session = ClaudeTranscriptIndex.parse(id: id, head: renamed, tail: Data(), modified: date)
         XCTAssertEqual(session?.title, "fix-login")
         XCTAssertEqual(session?.prompt, "Fix the login bug")
-        XCTAssertNil(ClaudeTranscriptIndex.parse(id: id, head: prompt, tail: Data(), modified: date)?.prompt, "no subtitle repeating the title")
+        XCTAssertEqual(ClaudeTranscriptIndex.parse(id: id, head: prompt, tail: Data(), modified: date)?.prompt, "Fix the login bug")
         XCTAssertEqual(session?.id, id)
         XCTAssertEqual(session?.directory, "/Users/me/code/repo")
         XCTAssertEqual(session?.branch, "main")

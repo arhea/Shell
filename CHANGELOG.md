@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- **Past sessions** on the Claude Sessions page: a drawer lists your earlier Claude Code conversations with their worktree, branch, ahead/behind, pull request and changes, like the Worktrees sidebar. Resume one, start a new session in its folder, or open a terminal there. ([#30](https://github.com/arhea/Shell/pull/30), fixes [#29](https://github.com/arhea/Shell/issues/29))
+- **Past sessions** on the Claude Sessions page: a drawer lists your earlier Claude Code conversations by repository, branch and first prompt, with ahead/behind, pull request and changes like the Worktrees sidebar. Resume one, start a new session in its folder, or open a terminal there. ([#30](https://github.com/arhea/Shell/pull/30), fixes [#29](https://github.com/arhea/Shell/issues/29))
 
 ### Changed
 
