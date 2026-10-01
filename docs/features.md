@@ -29,6 +29,10 @@ There is one place to type: a native editor pinned to the top or bottom of each 
 
 - Mouse selection, multi-line editing, syntax highlighting, ghost-text history suggestions and ⌃R history search.
 - The terminal shows output only. zsh's own prompt is hidden while idle. Each command is recorded in scrollback as a `header ❯ command` block, using either Shell's compact header or your theme's prompt.
+- **Command blocks.** Each block's header line shows how it went at the right edge: `✓ 3.2s · 13:52` when it succeeded, a red **Exit 65** and its duration when it failed. Failed blocks get a red tint and border, plus **Copy output** (that block's output, from the scrollback) and **Rerun** (runs the command again through the prompt). The buttons never take keyboard focus or change the terminal selection. Blocks are found by their header lines, so decorations disappear for output that was cleared or trimmed from the scrollback. Turn them off in Settings › Prompt & Completions (*Show command block status and actions*).
+- **After a failure**, a bar above the prompt offers **✻ Fix with Claude**: it starts Claude in this pane's folder with the failing command and its output (saved to a temporary file) as the prompt. With Apple Intelligence command fixes on, the bar also shows the corrected command with **Run it** (the same suggestion is still ghost text, → to accept). Esc or ✕ dismisses it. It isn't shown for ^C and other signals, or for failures that printed nothing.
+- **Context chips** above the input: the directory (click to reveal in Finder), the git branch with a green ✓ when clean or an orange dot and count of changed files, the folder's runtime (`node 22.9` from `.nvmrc`, `.node-version` or `package.json` resolved with `node --version`; `python 3.12` from `.python-version`; `go 1.23` from `go.mod`), and the last command's exit status and duration. When the branch has a pull request, **PR #212 ↗** opens it and a **Checks** chip shows failing, running or passing CI; click it for each job with a per-job **Fix**, **Fix N failing with Claude**, **Re-run failed** and **Open on GitHub**. Git status, the PR lookup and `node --version` run in the background when the prompt returns, never while you type.
+- On the right: **✻ Start Claude ▾** and **Copy output ▾**. While the input is focused and empty (or showing a suggestion), dim hints below it list → accept, ⇥ completions and ⌃R history.
 - Turn it off in Settings › Prompt & Completions, or with ⌃⌘E, to type straight into zsh like iTerm2. The switch applies live to every open tab.
 
 ## Completions
@@ -63,15 +67,16 @@ There is one place to type: a native editor pinned to the top or bottom of each 
 
 ## Copying commands and output
 
-- The native prompt has a Copy button. A click copies the command you're typing, or the last command if the box is empty.
-- Its menu adds **Copy Last Command** (⇧⌘C) and **Copy Last Output** (⌥⇧⌘C). Last output is taken from the scrollback between the command's header and the next prompt.
+- The native prompt has a **Copy output** button. A click copies the last command's output, taken from the scrollback between the command's header and the next prompt.
+- Its menu adds **Copy Command** (what you're typing, or the last command if the box is empty), **Copy Last Command** (⇧⌘C) and **Copy Last Output** (⌥⇧⌘C).
+- A failed command block has its own **Copy output** button.
 
 ## Claude Code and Codex
 
 See [Claude Code and Codex](claude-code.md) for the full guide.
 
 - **Agent status per tab.** A one-click hook install gives each tab a spinner while an agent works, a badge when it needs you, and a native notification when it finishes. Clicking the notification jumps to that pane.
-- **Start Claude from the prompt.** A split button next to *Copy* starts Claude in a new tab: here, or (in a git repository) in a worktree: pick an existing branch or name a new one off the default branch in a searchable branch picker.
+- **Start Claude from the prompt.** A split button next to *Copy output* starts Claude in a new tab: here, or (in a git repository) in a worktree: pick an existing branch or name a new one off the default branch in a searchable branch picker.
 - **Claude Sessions.** When Claude Code is installed, a *Claude Sessions* entry is pinned to the top of the sidebar (the front of the tab bar with horizontal tabs); Settings › Claude & Codex can show it always, only while sessions run, or never. It opens a dashboard (⌃⌘A) that tiles every session across your windows with its status (working, needs input, done, idle), directory, branch, how long it has been running and a live preview of the conversation. Click a tile to jump to that pane. Sessions running outside Shell are listed too: click a background session to attach to it in a new tab. The first tile shows plan limits (5-hour and weekly) and token usage from your local transcripts. A drawer on the right lists past sessions with their worktree, branch, PR and changes, so you can resume one, start a new session in its folder, or open a terminal there.
 - **Native Claude Code view.** Shell can open a native transcript and composer instead of Claude Code's terminal UI. It drives the same `claude` binary, so your settings, CLAUDE.md, skills, hooks, plugins and MCP servers all apply.
   - Attach files and images with the paperclip, ⌘V or drag and drop, with previews above the text box.
@@ -135,7 +140,7 @@ Optional features that use Apple's on-device model (FoundationModels). They need
 | --- | --- |
 | Branch names | In *Start in Worktree…*, describe the work ("fix login redirect on expired session") and pick from up to three suggested branch names. The suggestions follow the style of the repository's recent branches, and each one is checked against git's naming rules. |
 | Command palette | A request of three or more words ("make the text bigger") adds the matching command, or Settings pane, to the top of the palette. |
-| Command fixes | After a command fails, a corrected command appears as ghost text in the native prompt. Press → to take it, or Esc to dismiss it. Shell doesn't ask about ^C or other signals, or about silent failures such as `grep` finding nothing. A suggestion is dropped if it adds a destructive word (`rm`, `--force`, `reset --hard`, and so on) that your command didn't have, or `sudo` when the error wasn't about permissions. |
+| Command fixes | After a command fails, a corrected command appears as ghost text in the native prompt and in the fix bar above it. Press → to take it, click **Run it** to run it, or Esc to dismiss it. Shell doesn't ask about ^C or other signals, or about silent failures such as `grep` finding nothing. A suggestion is dropped if it adds a destructive word (`rm`, `--force`, `reset --hard`, and so on) that your command didn't have, or `sudo` when the error wasn't about permissions. |
 | Session summaries | Each tile on the Claude dashboard gets a one-line summary of what Claude is doing. It updates at most every 20 seconds per session, and only while the dashboard is open and the session's activity changes. |
 | Tab names | *Rename Tab*, *New Tab Group* and *Rename Group* fill in a suggested name based on each pane's folder, branch and commands. Anything you type wins. |
 

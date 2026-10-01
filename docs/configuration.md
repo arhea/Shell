@@ -37,6 +37,8 @@ The full model, with defaults, is `AppSettings` in [`Sources/Shell/Settings/AppS
 | `inputEditor` | `true` | The native prompt. Toggle it live with ⌃⌘E. |
 | `inputPosition` | `"bottom"` | `top` or `bottom` |
 | `promptStyle` | `"compact"` | `compact` (Shell's header) or `shell` (your theme's prompt) |
+| `showContextBar` | `true` | Context chips above the native prompt: directory, branch, runtime, pull request, checks, last exit status |
+| `showCommandBlocks` | `true` | Status, failure tint, Copy output / Rerun on command blocks, and the Fix with Claude bar after a failure |
 | `completions`, `completionsWhileTyping`, `historySuggestions`, `syntaxHighlighting` | `true` | |
 | `tabBarStyle` | `"horizontal"` | `horizontal` or `vertical` |
 | `newTabDirectory` | `"inherit"` | `inherit`, `home` or `custom` (with `customDirectory`) |

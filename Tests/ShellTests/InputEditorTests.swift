@@ -708,6 +708,6 @@ final class InputEditorTests: XCTestCase {
         var picked: [InputEditorView.CopyKind] = []
         let w = claudeWindow(CopyMenuButton(palette: .current, copied: false, onCopy: { picked.append($0) }), width: 140, height: 24)
         w.press(0)
-        XCTAssertEqual(picked.first, .command)
+        XCTAssertEqual(picked.first, .lastOutput, "the main action copies the last output")
     }
 }
