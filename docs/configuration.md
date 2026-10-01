@@ -21,7 +21,7 @@ The full model, with defaults, is `AppSettings` in [`Sources/Shell/Settings/AppS
 
 | Key | Default | Notes |
 | --- | --- | --- |
-| `appearance` | `"system"` | `system`, `light` or `dark` |
+| `appearance` | `"system"` | `system`, `light` or `dark`. While Shell runs, its Dock icon uses the light or dark variant that matches the active theme, even when that differs from the system appearance. |
 | `lightTheme` / `darkTheme` | `"Shell Light"` / `"Shell Dark"` | Any bundled Ghostty theme name |
 | `lightOverrides` / `darkOverrides` | `{}` | `background`, `foreground`, `cursor`, `selectionBackground`, `selectionForeground`, and `palette` (index → hex) |
 | `fontFamily` / `fontSize` | `""` / `13` | An empty family uses JetBrains Mono |

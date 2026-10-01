@@ -66,6 +66,7 @@ final class ConfigController {
         // Assign only on change so views reading `theme` don't re-render.
         let resolved = ThemeLibrary.shared.resolved(dark: dark, settings: SettingsStore.shared.settings)
         if resolved != theme { theme = resolved }
+        AppIcon.update()
     }
 
     /// Reapplies the theme after the theme library finishes loading.

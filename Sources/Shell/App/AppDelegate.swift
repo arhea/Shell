@@ -39,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShortcutActionHandling
         ShellIntegration.start()
         // Resolves appearance + theme and writes the libghostty config.
         ConfigController.shared.start()
+        AppIcon.start()
         guard GhosttyRuntime.shared.start(configPath: ConfigController.configURL.path) else {
             let alert = NSAlert()
             alert.messageText = "Shell couldn't start the terminal engine"
