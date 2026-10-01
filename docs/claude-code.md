@@ -86,6 +86,17 @@ In the terminal UI, clicking an option presses its number key, then Return if th
 
 Click a session tile to jump to that pane. Selecting any tab (or ⌃⌘A again) closes the dashboard.
 
+### Running elsewhere
+
+Below the tiles, **Running Elsewhere** lists live Claude Code sessions that aren't in a Shell tab, from `claude agents --json`. Each one shows its name, status (working, waiting on a permission prompt, idle), folder, start time, and where it runs:
+
+| Where it runs | Click it to |
+| --- | --- |
+| **Background** (`claude --bg`, or moved to the background) | Open a tab in its folder and run `claude attach <id>`. It's the same live session. Close the tab (or press ← / Ctrl+Z in Claude Code) and it keeps running |
+| **Claude desktop** or **Other terminal** | Nothing: Claude Code won't open a session another terminal holds. The tile says where to find it. Right-click to copy its session ID or path |
+
+Sessions running in Shell (in the terminal or the native view) and background sessions already attached in a Shell tab aren't listed twice. The list refreshes every 5 seconds while the dashboard is open, and nothing runs while it's closed. It needs a Claude Code version with `claude agents --json`; with older versions the section stays hidden.
+
 ### Past sessions
 
 A drawer on the right of the dashboard lists your past Claude Code conversations, newest first, read from the transcripts in `~/.claude/projects` (up to the 200 most recent; sessions in temporary folders are left out). Hide it with its sidebar button and bring it back with the clock button in the dashboard's header. Type in the filter box to search by title, prompt, folder or branch.
