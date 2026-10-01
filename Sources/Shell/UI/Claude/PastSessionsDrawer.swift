@@ -1,9 +1,9 @@
 import AppKit
 import SwiftUI
 
-/// The Claude Sessions page's right-hand drawer: past Claude Code sessions,
-/// newest first, each with its worktree, branch and status. Resume one, start
-/// a new session in its directory, or open a terminal there.
+/// The Claude Sessions page's Recent drawer: past Claude Code sessions,
+/// newest first and grouped by day, each with its repository, branch, PR and
+/// working-tree state. Hovering a row shows Resume, New and Terminal.
 struct PastSessionsDrawer: View {
     let controller: TerminalWindowController
     /// Sessions open in Shell right now, to mark (and jump to) the live ones.
@@ -17,27 +17,35 @@ struct PastSessionsDrawer: View {
 
     var body: some View {
         let p = ClaudePalette.current
-        let sessions = filtered
+        let groups = Self.dayGroups(Self.filter(history.sessions, query: query))
         HStack(spacing: 0) {
-            p.border.frame(width: 1)
+            Color.primary.opacity(0.08).frame(width: 0.5)
             VStack(spacing: 0) {
-                header(p)
-                p.border.frame(height: 1)
+                header
                 ScrollView {
-                    LazyVStack(spacing: 6) {
-                        ForEach(sessions) { session in
-                            PastSessionCard(session: session, liveEntry: liveEntry(for: session), palette: p) { action in
-                                PastSessionAction.perform(action, session: session, controller: controller)
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(groups) { group in
+                            Text(group.title)
+                                .font(.system(size: DS.Size.small, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 10)
+                                .padding(.top, 10)
+                                .padding(.bottom, 2)
+                                .accessibilityAddTraits(.isHeader)
+                            ForEach(group.sessions) { session in
+                                PastSessionCard(session: session, liveEntry: liveEntry(for: session), palette: p) { action in
+                                    PastSessionAction.perform(action, session: session, controller: controller)
+                                }
                             }
                         }
-                        if sessions.isEmpty && !history.isLoading { emptyState(p) }
+                        if groups.isEmpty && !history.isLoading { emptyState }
                     }
-                    .padding(8)
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 12)
                 }
             }
         }
         .background(p.surface)
-        .foregroundStyle(p.foreground)
         .task {
             // Pick up sessions that finish while the page is open.
             while !Task.isCancelled {
@@ -46,8 +54,6 @@ struct PastSessionsDrawer: View {
             }
         }
     }
-
-    private var filtered: [ClaudePastSession] { Self.filter(history.sessions, query: query) }
 
     /// Sessions whose title, first prompt, folder or branch contains `query`.
     static func filter(_ sessions: [ClaudePastSession], query: String) -> [ClaudePastSession] {
@@ -60,61 +66,96 @@ struct PastSessionsDrawer: View {
         }
     }
 
+    struct DayGroup: Identifiable, Equatable {
+        var title: String
+        var sessions: [ClaudePastSession]
+        var id: String { title }
+    }
+
+    /// Sessions by the day they were last active, newest first: "Today",
+    /// "Yesterday", a weekday within the last week, else the date.
+    static func dayGroups(_ sessions: [ClaudePastSession], now: Date = Date(), calendar: Calendar = .current) -> [DayGroup] {
+        var groups: [DayGroup] = []
+        var index: [Date: Int] = [:]
+        for s in sessions.sorted(by: { $0.lastActive > $1.lastActive }) {
+            let day = calendar.startOfDay(for: s.lastActive)
+            if let i = index[day] {
+                groups[i].sessions.append(s)
+            } else {
+                index[day] = groups.count
+                groups.append(DayGroup(title: dayTitle(day, now: now, calendar: calendar), sessions: [s]))
+            }
+        }
+        return groups
+    }
+
+    static func dayTitle(_ day: Date, now: Date, calendar: Calendar) -> String {
+        let today = calendar.startOfDay(for: now)
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: day), to: today).day ?? 0
+        switch days {
+        case ...0: return "Today"
+        case 1: return "Yesterday"
+        case 2...6:
+            var style = Date.FormatStyle.dateTime.weekday(.wide)
+            style.calendar = calendar
+            style.timeZone = calendar.timeZone
+            return day.formatted(style)
+        default:
+            var style = calendar.isDate(day, equalTo: now, toGranularity: .year)
+                ? Date.FormatStyle.dateTime.month(.abbreviated).day()
+                : Date.FormatStyle.dateTime.month(.abbreviated).day().year()
+            style.calendar = calendar
+            style.timeZone = calendar.timeZone
+            return day.formatted(style)
+        }
+    }
+
     /// A native session open in Shell that is this conversation.
     private func liveEntry(for session: ClaudePastSession) -> ClaudeDashboard.Entry? {
         live.first { $0.session.nativeClaude?.sessionID == session.id }
     }
 
-    private func header(_ p: ClaudePalette) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
-                Image(systemName: "clock.arrow.circlepath").foregroundStyle(p.claude)
-                Text("Past Sessions").font(.system(size: 12, weight: .semibold))
-                if !history.sessions.isEmpty {
-                    Text("\(history.sessions.count)").font(.system(size: 11).monospacedDigit()).foregroundStyle(p.dim)
-                }
+                Text("Recent").font(.system(size: DS.Size.title, weight: .semibold))
                 Spacer()
                 if history.isLoading { ProgressView().controlSize(.mini) }
-                Button {
-                    DirectoryWorktreeStatus.shared.invalidate()
-                    history.refresh(force: true)
-                } label: { Image(systemName: "arrow.clockwise") }
-                    .buttonStyle(HeaderButtonStyle(palette: p, active: false))
-                    .help("Refresh")
-                Button {
-                    withAnimation(.easeOut(duration: 0.2)) { SettingsStore.shared.settings.claudeSessionsHistory = false }
-                } label: { Image(systemName: "sidebar.right") }
-                    .buttonStyle(HeaderButtonStyle(palette: p, active: true))
-                    .help("Hide Past Sessions")
-            }
-            HStack(spacing: 5) {
-                Image(systemName: "magnifyingglass").foregroundStyle(p.dim).font(.system(size: 11))
-                TextField("Filter by title, prompt, folder or branch", text: $query)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 12))
-                if !query.isEmpty {
-                    Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(p.dim)
-                        .help("Clear filter")
+                if !history.sessions.isEmpty {
+                    Text("\(history.sessions.count) session\(history.sessions.count == 1 ? "" : "s")")
+                        .font(.system(size: DS.Size.small).monospacedDigit())
+                        .foregroundStyle(.secondary)
                 }
+                Menu {
+                    Button("Refresh") {
+                        DirectoryWorktreeStatus.shared.invalidate()
+                        history.refresh(force: true)
+                    }
+                    Button("Hide Recent Sessions") {
+                        withAnimation(.easeOut(duration: 0.2)) { SettingsStore.shared.settings.claudeSessionsHistory = false }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Refresh or hide recent sessions")
             }
-            .padding(.horizontal, 7)
-            .padding(.vertical, 5)
-            .background(RoundedRectangle(cornerRadius: 6).fill(p.background.opacity(0.6)))
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(p.border, lineWidth: 0.5))
+            DashboardSearchField(placeholder: "Title, prompt, folder or branch", text: $query)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 14)
+        .padding(.top, 14)
+        .padding(.bottom, 4)
     }
 
-    private func emptyState(_ p: ClaudePalette) -> some View {
+    private var emptyState: some View {
         VStack(spacing: 6) {
-            Text(query.isEmpty ? "No past sessions" : "No matching sessions").font(.system(size: 12))
+            Text(query.isEmpty ? "No recent sessions" : "No matching sessions").font(.system(size: DS.Size.body))
             if query.isEmpty {
                 Text("Claude Code conversations from ~/.claude/projects show up here.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(p.dim)
+                    .font(.system(size: DS.Size.small))
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
         }
@@ -123,7 +164,7 @@ struct PastSessionsDrawer: View {
     }
 }
 
-/// What a past session card can do.
+/// What a past session row can do.
 enum PastSessionAction {
     case resume
     case newSession
@@ -156,6 +197,8 @@ enum PastSessionAction {
     }
 }
 
+/// A Recent row: "repo / ⎇ branch", the title in bold (two lines), and
+/// "#674 open · clean · 20 min ago". Hover highlights it and shows its actions.
 struct PastSessionCard: View {
     let session: ClaudePastSession
     let liveEntry: ClaudeDashboard.Entry?
@@ -166,66 +209,41 @@ struct PastSessionCard: View {
     private var status: DirectoryWorktreeStatus { DirectoryWorktreeStatus.shared }
 
     var body: some View {
-        let p = palette
         let state = status.state(for: session.directory)
         let (wt, repo): (WorktreeInfo?, String?) = if case .worktree(let w, let r)? = state { (w, r) } else { (nil, nil) }
         let missing = state == .missing
         let branch = wt?.branch ?? (wt?.isDetached == true ? "detached @ \(wt?.head ?? "?")" : session.branch)
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 5) {
-                Image(systemName: wt?.isMain == true ? "shippingbox" : "square.stack.3d.up")
-                    .foregroundStyle(missing ? p.red : wt?.isMain == true ? p.cyan : p.dim)
-                    .font(.system(size: 10))
-                    .frame(width: 12)
-                Text(repo ?? (session.directory as NSString).lastPathComponent)
-                    .font(.system(size: 12, weight: .semibold))
-                    .lineLimit(1).truncationMode(.middle)
-                if let branch {
-                    Text("/").foregroundStyle(p.dim)
-                    Text(branch)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(p.magenta)
-                        .lineLimit(1).truncationMode(.middle)
-                        .layoutPriority(1)
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Group {
+                    if let branch {
+                        Text("\(repo ?? (session.directory as NSString).lastPathComponent) / \(Image(systemName: "arrow.triangle.branch")) \(branch)")
+                    } else {
+                        Text(repo ?? (session.directory as NSString).lastPathComponent)
+                    }
                 }
-                if let wt, wt.branch != nil, !wt.isMain || wt.ahead + wt.behind > 0 {
-                    WorktreeLabels.tracking(wt, p).font(.system(size: 11)).fixedSize()
-                }
+                .font(.system(size: DS.Size.subtitle))
+                .foregroundStyle(.secondary)
+                .lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 4)
-                if liveEntry != nil { WorktreeLabels.badge("open", p.claude) }
-                if wt?.isMain == true { WorktreeLabels.badge("main", p.cyan) }
-                if missing { WorktreeLabels.badge("missing", p.red) }
+                if liveEntry != nil { Pill("Open", color: DS.claude) }
+                if missing { Pill("Missing", color: DS.Status.failed) }
             }
             Text(session.prompt ?? session.title)
-                .font(.system(size: 12))
-                .foregroundStyle(p.foreground.opacity(0.9))
+                .font(.system(size: DS.Size.title, weight: .semibold))
                 .lineLimit(2)
                 .truncationMode(.tail)
-            if let wt, let pr = wt.pullRequest, !wt.isMain {
-                WorktreeLabels.pullRequest(pr, p)
+                .fixedSize(horizontal: false, vertical: true)
+            if hovering {
+                actions(missing: missing).padding(.top, 5)
+            } else {
+                meta(wt: wt, state: state)
             }
-            HStack(spacing: 8) {
-                if let wt {
-                    WorktreeLabels.changes(wt, p)
-                } else if state == .notRepository {
-                    Text("not a git repository")
-                } else if missing {
-                    Text("folder missing").foregroundStyle(p.red)
-                } else {
-                    Text("checking…")
-                }
-                Text(Self.homeRelative(session.directory)).lineLimit(1).truncationMode(.head)
-                Spacer(minLength: 4)
-                Text(session.lastActive.formatted(.relative(presentation: .named))).fixedSize()
-            }
-            .font(.system(size: 10.5))
-            .foregroundStyle(p.dim)
-            if hovering { actions(missing: missing) }
         }
-        .padding(9)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(hovering ? p.raised : p.background.opacity(0.4)))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(liveEntry != nil ? p.claude.opacity(0.45) : p.border, lineWidth: liveEntry != nil ? 1 : 0.5))
+        .rowBackground(selected: false, hovering: hovering)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(count: 2) { if !missing { perform(primaryAction) } }
@@ -238,29 +256,66 @@ struct PastSessionCard: View {
 
     private var primaryAction: PastSessionAction { liveEntry.map { .show($0) } ?? .resume }
 
+    /// "#674 open · clean · 20 min ago".
+    private func meta(wt: WorktreeInfo?, state: DirectoryWorktreeStatus.State?) -> some View {
+        HStack(spacing: 4) {
+            if let pr = wt?.pullRequest, wt?.isMain == false {
+                let (label, color) = Self.pullRequestLabel(pr)
+                Text(label).foregroundStyle(color)
+                Text("·")
+            }
+            if let wt {
+                if let n = wt.changes {
+                    if n == 0 { Text("clean") } else { Text("\(n) change\(n == 1 ? "" : "s")").foregroundStyle(DS.Status.working) }
+                } else {
+                    Text("checking…")
+                }
+            } else if state == .notRepository {
+                Text("not a git repository")
+            } else if state == .missing {
+                Text("folder missing").foregroundStyle(DS.Status.failed)
+            } else {
+                Text("checking…")
+            }
+            Text("·")
+            Text(session.lastActive.formatted(.relative(presentation: .named))).fixedSize()
+        }
+        .font(.system(size: DS.Size.small))
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+    }
+
+    /// "#674 open" in green, "#37 merged" in purple, "#4 draft" in gray, "#9 closed" in red.
+    static func pullRequestLabel(_ pr: PullRequestInfo) -> (String, Color) {
+        switch pr.state {
+        case .merged: ("#\(pr.number) merged", DS.Status.review)
+        case .closed: ("#\(pr.number) closed", DS.Status.failed)
+        case .open: pr.isDraft ? ("#\(pr.number) draft", .secondary) : ("#\(pr.number) open", DS.Status.done)
+        }
+    }
+
     private func actions(missing: Bool) -> some View {
         HStack(spacing: 6) {
             if let liveEntry {
-                Button { perform(.show(liveEntry)) } label: { Label("Show", systemImage: "arrow.up.forward.square") }
+                Button("Show") { perform(.show(liveEntry)) }
+                    .buttonStyle(.labeled(.primary, compact: true))
                     .help("Go to the pane where this session is open")
             } else {
-                Button { perform(.resume) } label: { Label("Resume", systemImage: "arrow.uturn.forward") }
+                Button("Resume") { perform(.resume) }
+                    .buttonStyle(.labeled(.primary, compact: true))
                     .help("Resume this conversation in a new tab (claude --resume)")
                     .disabled(missing)
             }
-            Button { perform(.newSession) } label: { Label("New", systemImage: "sparkle") }
+            Button("New") { perform(.newSession) }
+                .buttonStyle(.labeled(.neutral, compact: true))
                 .help("Start a new Claude session in this folder")
                 .disabled(missing)
-            Button { perform(.terminal) } label: { Label("Terminal", systemImage: "terminal") }
+            Button("Terminal") { perform(.terminal) }
+                .buttonStyle(.labeled(.neutral, compact: true))
                 .help("Open a terminal tab in this folder")
                 .disabled(missing)
-            Spacer()
+            Spacer(minLength: 0)
         }
-        .labelStyle(.titleAndIcon)
-        .buttonStyle(.bordered)
-        .controlSize(.mini)
-        .font(.system(size: 10.5))
-        .padding(.top, 2)
     }
 
     @ViewBuilder
