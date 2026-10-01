@@ -141,9 +141,25 @@ final class NodeService {
     private(set) var lastActionLog: String?
     private var releasesFetchedAt: Date?
 
-    private var home: String { NSHomeDirectory() }
+    /// Where NodeService looks and how it reaches the outside world.
+    /// Injectable for unit tests; the defaults are the user's real setup.
+    struct System {
+        var zsh = "/bin/zsh"
+        var home = NSHomeDirectory()
+        /// Standard n locations, checked when n isn't on PATH.
+        var nLocations = ["/opt/homebrew/bin/n", "/usr/local/bin/n"]
+        /// n's install prefix when N_PREFIX isn't set.
+        var defaultNPrefix = "/usr/local"
+        var fetch: @Sendable (String) async -> Data? = { await NodeService.fetch($0) }
+        var zshrcURL: @MainActor () -> URL = { ZshService.shared.zshrcURL }
+        var terminal: @MainActor (_ command: String, _ title: String) -> Void = { AppDelegate.shared.runInTerminal($0, title: $1) }
+        var brew: @MainActor () -> BrewService = { BrewService.shared }
+    }
 
-    private init() {}
+    @ObservationIgnored private let system: System
+    private var home: String { system.home }
+
+    init(system: System = System()) { self.system = system }
 
     // MARK: Derived
 
@@ -162,7 +178,7 @@ final class NodeService {
 
     var nodeBinDirectory: String? {
         switch manager {
-        case .n: return "\(nPrefix ?? "/usr/local")/bin"
+        case .n: return "\(nPrefix ?? system.defaultNPrefix)/bin"
         case .nvm: return activeVersion.map { "\(nvmDir ?? home + "/.nvm")/versions/node/\($0.tag)/bin" }
         case nil: return nodeOnPath.first.map { ($0 as NSString).deletingLastPathComponent }
         }
@@ -248,7 +264,7 @@ final class NodeService {
     /// way a new terminal tab would see them.
     private func captureShellEnvironment() async {
         let script = #"print -r -- "__SHELLAPP_BEGIN__"; print -r -- "PATH=$PATH"; print -r -- "N_PREFIX=${N_PREFIX:-}"; print -r -- "NVM_DIR=${NVM_DIR:-}"; print -r -- "NODE=${(j.:.)${(f)$(whence -ap node 2>/dev/null)}}"; print -r -- "__SHELLAPP_END__""#
-        let r = await ProcessRunner.run("/bin/zsh", ["-lic", script], environment: ["TERM": "dumb"])
+        let r = await ProcessRunner.run(system.zsh, ["-lic", script], environment: ["TERM": "dumb"])
         let text = String(decoding: r.stdout, as: UTF8.self)
         guard let begin = text.range(of: "__SHELLAPP_BEGIN__"), let end = text.range(of: "__SHELLAPP_END__") else { return }
         for line in text[begin.upperBound..<end.lowerBound].split(separator: "\n") {
@@ -275,7 +291,7 @@ final class NodeService {
 
     private func detectManagers() async {
         let fm = FileManager.default
-        nBinary = which("n") ?? ["/opt/homebrew/bin/n", "/usr/local/bin/n", "\(nPrefix ?? home + "/.n")/bin/n"].first { fm.isExecutableFile(atPath: $0) }
+        nBinary = which("n") ?? (system.nLocations + ["\(nPrefix ?? home + "/.n")/bin/n"]).first { fm.isExecutableFile(atPath: $0) }
         nFromHomebrew = nBinary.map { ($0 as NSString).resolvingSymlinksInPath.contains("/Cellar/") || $0.hasPrefix("/opt/homebrew/") } ?? false
         if let n = nBinary {
             let r = await ProcessRunner.run(n, ["--version"])
@@ -287,7 +303,7 @@ final class NodeService {
         let dir = nvmDir ?? "\(home)/.nvm"
         if fm.fileExists(atPath: "\(dir)/nvm.sh") {
             if nvmDir == nil { nvmDir = dir }
-            let r = await ProcessRunner.run("/bin/zsh", ["-c", "source \"$NVM_DIR/nvm.sh\" --no-use && nvm --version"], environment: ["NVM_DIR": dir])
+            let r = await ProcessRunner.run(system.zsh, ["-c", "source \"$NVM_DIR/nvm.sh\" --no-use && nvm --version"], environment: ["NVM_DIR": dir])
             nvmVersion = String(decoding: r.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
             if nvmVersion?.isEmpty ?? true { nvmVersion = "?" }
         } else {
@@ -306,14 +322,14 @@ final class NodeService {
         let fm = FileManager.default
         switch manager {
         case .n:
-            let prefix = nPrefix ?? "/usr/local"
+            let prefix = nPrefix ?? system.defaultNPrefix
             let cache = "\(prefix)/n/versions/node"
             installed = ((try? fm.contentsOfDirectory(atPath: cache)) ?? []).compactMap(SemVer.init).sorted(by: >)
             activeVersion = await nodeVersion(at: "\(prefix)/bin/node")
         case .nvm:
             let dir = nvmDir ?? "\(home)/.nvm"
             installed = ((try? fm.contentsOfDirectory(atPath: "\(dir)/versions/node")) ?? []).compactMap(SemVer.init).sorted(by: >)
-            let r = await ProcessRunner.run("/bin/zsh", ["-c", "source \"$NVM_DIR/nvm.sh\" --no-use && nvm version default"], environment: ["NVM_DIR": dir])
+            let r = await ProcessRunner.run(system.zsh, ["-c", "source \"$NVM_DIR/nvm.sh\" --no-use && nvm version default"], environment: ["NVM_DIR": dir])
             activeVersion = SemVer(String(decoding: r.stdout, as: UTF8.self))
         case nil:
             installed = []
@@ -329,8 +345,9 @@ final class NodeService {
 
     private func loadReleases() async {
         // Download concurrently (Data is Sendable), then decode here.
-        async let indexData = Self.fetch("https://nodejs.org/dist/index.json")
-        async let scheduleData = Self.fetch("https://raw.githubusercontent.com/nodejs/Release/main/schedule.json")
+        let fetch = system.fetch
+        async let indexData = fetch("https://nodejs.org/dist/index.json")
+        async let scheduleData = fetch("https://raw.githubusercontent.com/nodejs/Release/main/schedule.json")
         let index = await indexData.flatMap { try? JSONSerialization.jsonObject(with: $0) }
         let schedule = await scheduleData.flatMap { try? JSONSerialization.jsonObject(with: $0) }
         if let list = index as? [[String: Any]] {
@@ -371,7 +388,7 @@ final class NodeService {
     }
 
     private func latestFromRegistry(_ package: String) async -> SemVer? {
-        let obj = await Self.fetch("https://registry.npmjs.org/\(package)/latest").flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
+        let obj = await system.fetch("https://registry.npmjs.org/\(package)/latest").flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
         return (obj?["version"] as? String).flatMap(SemVer.init)
     }
 
@@ -513,7 +530,7 @@ final class NodeService {
             var cmd = "nvm install \(version.description)"
             if let current, current != version { cmd += " --reinstall-packages-from=\(current.description)" }
             cmd += " && nvm alias default \(version.description)"
-            return [(cmd, "/bin/zsh", ["-c", "source \"$NVM_DIR/nvm.sh\" --no-use && \(cmd)"])]
+            return [(cmd, system.zsh, ["-c", "source \"$NVM_DIR/nvm.sh\" --no-use && \(cmd)"])]
         case nil:
             return []
         }
@@ -522,7 +539,7 @@ final class NodeService {
     func uninstallCommand(_ version: SemVer) -> (title: String, exe: String, args: [String])? {
         switch manager {
         case .n: nBinary.map { ("n rm \(version.description)", $0, ["rm", version.description]) }
-        case .nvm: ("nvm uninstall \(version.description)", "/bin/zsh", ["-c", "source \"$NVM_DIR/nvm.sh\" --no-use && nvm uninstall \(version.description)"])
+        case .nvm: ("nvm uninstall \(version.description)", system.zsh, ["-c", "source \"$NVM_DIR/nvm.sh\" --no-use && nvm uninstall \(version.description)"])
         case nil: nil
         }
     }
@@ -535,7 +552,7 @@ final class NodeService {
         case ("npm", _):
             return ("npm install -g npm@latest", npm, ["install", "-g", "npm@latest"])
         case ("bun", .homebrew?):
-            return BrewService.shared.brewPath.map { ("brew upgrade bun", $0, ["upgrade", "oven-sh/bun/bun"]) }
+            return system.brew().brewPath.map { ("brew upgrade bun", $0, ["upgrade", "oven-sh/bun/bun"]) }
         case ("bun", _):
             return pm.path.map { ("bun upgrade", $0, ["upgrade"]) }
         case (let name, .corepack?) where (activeVersion?.major ?? 0) < 25:
@@ -606,8 +623,8 @@ final class NodeService {
         if !wanted.contains(name) { wanted.append(name) }
         SettingsStore.shared.settings.nodePackageManagers = wanted
         if name == "bun" {
-            let cmd = BrewService.shared.isInstalled ? "brew install oven-sh/bun/bun" : #"curl -fsSL https://bun.sh/install | bash"#
-            AppDelegate.shared.runInTerminal(cmd, title: "Install bun")
+            let cmd = system.brew().isInstalled ? "brew install oven-sh/bun/bun" : #"curl -fsSL https://bun.sh/install | bash"#
+            system.terminal(cmd, "Install bun")
             return
         }
         guard let bin = nodeBinDirectory else { return }
@@ -626,42 +643,42 @@ final class NodeService {
 
     func installN() {
         ensureNPrefixInZshrc()
-        let install = BrewService.shared.isInstalled
+        let install = system.brew().isInstalled
             ? "brew install n && N_PREFIX=\"$HOME/.n\" n lts"
             : #"curl -fsSL https://raw.githubusercontent.com/tj/n/master/bin/n | N_PREFIX="$HOME/.n" bash -s lts && N_PREFIX="$HOME/.n" "$HOME/.n/bin/npm" install -g n"#
-        AppDelegate.shared.runInTerminal(install, title: "Install n")
+        system.terminal(install, "Install n")
     }
 
     func installNvm() async {
         let tag = await latestNvmTag() ?? "v0.40.3"
         let cmd = #"curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/\#(tag)/install.sh | bash && export NVM_DIR="$HOME/.nvm" && . "$NVM_DIR/nvm.sh" && nvm install --lts && nvm alias default 'lts/*'"#
-        AppDelegate.shared.runInTerminal(cmd, title: "Install nvm")
+        system.terminal(cmd, "Install nvm")
     }
 
     func updateManager() async {
         switch manager {
         case .n:
             if nFromHomebrew {
-                AppDelegate.shared.runInTerminal("brew upgrade n", title: "Update n")
+                system.terminal("brew upgrade n", "Update n")
             } else if let bin = nodeBinDirectory {
                 await perform("Updating n…", [("npm install -g n@latest", "\(bin)/npm", ["install", "-g", "n@latest"])])
             }
         case .nvm:
             let tag = await latestNvmTag() ?? "v0.40.3"
-            AppDelegate.shared.runInTerminal("curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/\(tag)/install.sh | bash", title: "Update nvm")
+            system.terminal("curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/\(tag)/install.sh | bash", "Update nvm")
         case nil:
             break
         }
     }
 
     private func latestNvmTag() async -> String? {
-        let obj = await Self.fetch("https://api.github.com/repos/nvm-sh/nvm/releases/latest").flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
+        let obj = await system.fetch("https://api.github.com/repos/nvm-sh/nvm/releases/latest").flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
         return obj?["tag_name"] as? String
     }
 
     /// Adds N_PREFIX to ~/.zshrc (once, with a backup) so n works without sudo.
     func ensureNPrefixInZshrc() {
-        let url = ZshService.shared.zshrcURL
+        let url = system.zshrcURL()
         let rc = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
         guard !rc.contains("N_PREFIX") else { return }
         let backup = url.deletingLastPathComponent().appendingPathComponent(".zshrc.shell-backup")

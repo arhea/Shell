@@ -3,9 +3,16 @@ import SwiftUI
 
 struct ZshSettingsPane: View {
     /// App-wide model (observed through property access; not state this view owns).
-    private let zsh = ZshService.shared
-    @State private var pluginFilter = ""
-    @State private var changed = false
+    private let zsh: ZshService
+    @State private var pluginFilter: String
+    @State private var changed: Bool
+
+    /// The parameters let unit tests render each state.
+    init(zsh: ZshService = .shared, pluginFilter: String = "", changed: Bool = false) {
+        self.zsh = zsh
+        _pluginFilter = State(initialValue: pluginFilter)
+        _changed = State(initialValue: changed)
+    }
 
     static let recommended = ["git", "brew", "macos", "z", "fzf", "docker", "kubectl", "npm", "golang", "python",
                               "gcloud", "aws", "terraform", "sudo", "extract", "colored-man-pages", "copypath", "history"]
