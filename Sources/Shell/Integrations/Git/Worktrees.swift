@@ -279,6 +279,19 @@ final class WorktreesModel {
     var staleDays: Int { max(1, SettingsStore.shared.settings.worktreeStaleDays) }
     var stale: [WorktreeInfo] { worktrees.filter { $0.isStale(days: staleDays) } }
     var totalSize: Int64 { worktrees.compactMap(\.sizeBytes).reduce(0, +) }
+    /// Disk used by the stale worktrees (measured ones only).
+    var staleSize: Int64 { stale.compactMap(\.sizeBytes).reduce(0, +) }
+
+    /// `git pull --ff-only` in a worktree (the main checkout's Pull button).
+    func pull(_ wt: WorktreeInfo) async {
+        busy.insert(wt.path)
+        defer { busy.remove(wt.path) }
+        if let err = await WorktreeService.runReportingError(git, ["pull", "--ff-only"], in: wt.path, environment: environment) {
+            lastError = "Couldn't pull \(wt.branch ?? wt.name): \(err)"
+        }
+        loadedAt = nil
+        refresh()
+    }
 
     func refreshIfNeeded() {
         if let loadedAt, Date().timeIntervalSince(loadedAt) < 20 { return }
@@ -477,4 +490,78 @@ final class WorktreeCleanupJob: MaintenanceJob {
     }
 
     func didFinish() async {}
+}
+
+// MARK: - Inspector grouping and filters
+
+/// The Worktrees inspector's filter chips.
+enum WorktreeFilter: String, CaseIterable, Identifiable, Sendable {
+    case all, changes, notPushed, stale
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: "All"
+        case .changes: "Changes"
+        case .notPushed: "Not pushed"
+        case .stale: "Stale"
+        }
+    }
+
+    func matches(_ wt: WorktreeInfo, staleDays: Int, now: Date = Date()) -> Bool {
+        switch self {
+        case .all: true
+        case .changes: (wt.changes ?? 0) > 0
+        case .notPushed: wt.isNotPushed
+        case .stale: wt.isStale(days: staleDays, now: now)
+        }
+    }
+
+    /// How many worktrees each chip matches.
+    static func counts(_ worktrees: [WorktreeInfo], staleDays: Int, now: Date = Date()) -> [WorktreeFilter: Int] {
+        Dictionary(uniqueKeysWithValues: allCases.map { f in (f, worktrees.filter { f.matches($0, staleDays: staleDays, now: now) }.count) })
+    }
+}
+
+extension WorktreeInfo {
+    /// A branch with commits that exist only locally: no upstream, or ahead of it.
+    var isNotPushed: Bool {
+        guard branch != nil, !isBare, !isPrunable else { return false }
+        if upstream == nil { return trackingKnown && !upstreamGone }
+        return ahead > 0
+    }
+}
+
+/// Worktrees split the way the inspector shows them: those open in a tab,
+/// the main checkout, and the rest.
+struct WorktreeGroups: Equatable {
+    var open: [WorktreeInfo] = []
+    var main: WorktreeInfo?
+    var others: [WorktreeInfo] = []
+
+    /// `openPaths` are tabs' working directories. Each belongs to the
+    /// worktree with the longest path containing it, so a worktree nested
+    /// inside the main checkout (`.claude/worktrees/…`) isn't taken for the main one.
+    static func group(_ worktrees: [WorktreeInfo], openPaths: some Sequence<String>) -> WorktreeGroups {
+        let open = Set(openPaths.compactMap { owner(of: $0, in: worktrees) })
+        var g = WorktreeGroups()
+        for wt in worktrees {
+            if wt.isMain { g.main = wt } else if open.contains(wt.path) { g.open.append(wt) } else { g.others.append(wt) }
+        }
+        // Most recent activity first among the rest.
+        g.others.sort { ($0.lastActivity ?? .distantPast) > ($1.lastActivity ?? .distantPast) }
+        return g
+    }
+
+    /// The path of the worktree containing `directory`, or nil.
+    static func owner(of directory: String, in worktrees: [WorktreeInfo]) -> String? {
+        let dir = standardized(directory)
+        return worktrees
+            .map { ($0.path, standardized($0.path)) }
+            .filter { dir == $0.1 || dir.hasPrefix($0.1.hasSuffix("/") ? $0.1 : $0.1 + "/") }
+            .max { $0.1.count < $1.1.count }?.0
+    }
+
+    static func standardized(_ path: String) -> String { URL(fileURLWithPath: path).standardizedFileURL.path }
 }

@@ -126,7 +126,7 @@ The [Claude Code and Codex](claude-code.md) guide covers the native view, the MC
 
 ## Set up GitHub
 
-The sidebar's GitHub, pull request and Actions views use the [GitHub CLI](https://cli.github.com). Install it and sign in once:
+The inspector's Checks tab and the pull requests board use the [GitHub CLI](https://cli.github.com). Install it and sign in once:
 
 ```bash
 brew install gh
@@ -136,7 +136,7 @@ brew install gh
 gh auth login
 ```
 
-Then open a tab in a GitHub repository and press ⌃⌘B. The sidebar shows the file tree with git status, every worktree with its PR state, and the repository's open pull requests and recent Actions runs. Click a pull request to check it out into its own worktree.
+Then open a tab in a GitHub repository and press ⌃⌘B. The inspector shows every worktree with its PR state, the checks on your branch's pull request (and the repository's recent Actions runs), and the file tree with git status. Press ⌃⌘H for the board of open pull requests, where you can check one out into its own worktree.
 
 Worktrees go in `~/code/worktrees/<repo>/<branch>` by default. Change it in Settings › Worktrees, or set `$WORKTREES_HOME`.
 

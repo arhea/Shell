@@ -319,7 +319,7 @@ struct FileRow: View {
                 .foregroundStyle(isDirectory ? p.blue.opacity(status == .ignored ? 0.5 : 0.9) : p.dim)
                 .frame(width: 14)
             Text(name)
-                .font(.system(size: 12))
+                .font(.system(size: DS.Size.body))
                 .foregroundStyle(nameColor(p))
                 .strikethrough(status == .deleted)
                 .lineLimit(1)
@@ -330,7 +330,7 @@ struct FileRow: View {
             Spacer(minLength: 2)
             if let letter, status != .ignored {
                 Text(letter)
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .font(.system(size: DS.Size.small, weight: .bold, design: .monospaced))
                     .foregroundStyle(FileRow.color(status, p))
                     .help(staged ? "Staged" : "Not staged")
                     .overlay(alignment: .bottom) {
@@ -340,26 +340,29 @@ struct FileRow: View {
                 Circle().fill(FileRow.color(dirKind, p)).frame(width: 5, height: 5)
             }
         }
-        .padding(.leading, 8 + CGFloat(depth) * 12)
-        .padding(.trailing, 10)
-        .frame(height: 22)
-        .background(selected ? p.claude.opacity(0.16) : hovered ? p.raised : .clear)
+        .padding(.leading, 6 + CGFloat(depth) * 12)
+        .padding(.trailing, 8)
+        .frame(height: 24)
+        .rowBackground(selected: selected, hovering: hovered)
+        .padding(.horizontal, 4)
         .contentShape(Rectangle())
         .onHover { hovered = $0 }
     }
 
+    /// Names stay readable; only the trailing letter carries the status color.
     private func nameColor(_ p: ClaudePalette) -> Color {
         guard let status else { return p.foreground }
         if status == .ignored { return p.dim.opacity(0.8) }
-        return FileRow.color(status, p)
+        return status == .deleted ? p.dim : p.foreground
     }
 
+    /// The same letters and colors as the inspector's Session › Changes:
+    /// M orange, A/U green, D red.
     static func color(_ kind: GitFileStatus.Kind?, _ p: ClaudePalette) -> Color {
         switch kind {
-        case .modified: p.yellow
-        case .added, .untracked: p.green
-        case .deleted, .conflicted: p.red
-        case .renamed: p.blue
+        case .modified, .renamed: DS.Status.working
+        case .added, .untracked: DS.Status.done
+        case .deleted, .conflicted: DS.Status.failed
         case .ignored: p.dim
         case nil: p.foreground
         }

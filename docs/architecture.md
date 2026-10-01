@@ -23,7 +23,7 @@ Sources/Shell
 ├── Ghostty/        libghostty runtime + callbacks, TerminalSurfaceView (keys/IME/mouse), config generation
 ├── Model/          TerminalSession, PaneTree (splits), TerminalTab / TabGroup / Workspace, session restore
 ├── UI/             Window controller, tabs + sidebar, split container, panes, input editor, palette,
-│                   hotkey window, Claude view, MCP manager, right sidebar (files, worktrees, GitHub)
+│                   hotkey window, Claude view, MCP manager, right inspector (session, worktrees, checks, files)
 ├── Settings/       AppSettings (JSON), themes, shortcuts, Settings window panes
 ├── Integrations/   Control socket, zsh integration glue, history, notifications, Claude/Codex,
 │                   Git/GitHub, MCP, Homebrew, Node.js, Zsh, Go, scheduled maintenance

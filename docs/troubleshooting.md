@@ -74,7 +74,7 @@ Shell must be running for the widget to update. If it is running and you built S
 
 ## Git and GitHub
 
-**The GitHub sidebar or pull requests list is empty.**
+**The inspector's Checks tab or the pull requests board is empty.**
 Those views use the GitHub CLI. Install it and sign in:
 
 ```bash
