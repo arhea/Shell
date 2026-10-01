@@ -89,8 +89,7 @@ struct UnifiedToolbar: View {
             let summary = ClaudeDashboard.summary(of: ClaudeDashboard.entries())
             ToolbarTitle(title: "Claude Sessions", subtitle: Text(summary.detail.isEmpty ? "No sessions" : summary.detail))
         } else if workspace.showsGitHub {
-            ToolbarTitle(title: "Pull Requests",
-                         subtitle: Text(workspace.githubBoard.map { "\($0.remote.slug) · \($0.pullRequests.count) open" } ?? "GitHub"))
+            GitHubToolbarTitle(model: workspace.githubBoard, controller: controller)
         } else if let tab = workspace.selectedTab, let session = tab.focusedSession {
             let repo = session.nativeClaude?.repository ?? chrome.repository
             let directory = session.nativeClaude?.directory ?? session.workingDirectory ?? NSHomeDirectory()
@@ -105,7 +104,9 @@ struct UnifiedToolbar: View {
     }
 
     @ViewBuilder private var trailing: some View {
-        if !workspace.showsNativePage, let session = workspace.selectedTab?.focusedSession {
+        if workspace.showsGitHub, let board = workspace.githubBoard {
+            GitHubToolbarControls(model: board)
+        } else if !workspace.showsNativePage, let session = workspace.selectedTab?.focusedSession {
             if let claude = session.nativeClaude {
                 ClaudeToolbarControls(
                     claude: claude,
@@ -575,5 +576,108 @@ struct TerminalToolbarControls: View {
         Divider()
         LocationMenu(repo: controller.repository(for: session), directory: session.workingDirectory ?? NSHomeDirectory())
         WindowMenuItems(controller: controller)
+    }
+}
+
+// MARK: - GitHub controls
+
+/// "Pull Requests" over "arhea/Shell ▾ · 14 open · updated 40s ago". The
+/// repository switches to another GitHub repository open in this window.
+struct GitHubToolbarTitle: View {
+    let model: GitHubBoardModel?
+    let controller: TerminalWindowController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Pull Requests").font(.system(size: DS.Size.title, weight: .semibold)).lineLimit(1)
+            Group {
+                if let model {
+                    HStack(spacing: 4) {
+                        repository(model)
+                        Text("· \(model.pullRequests.count) open")
+                        if let updated = model.lastUpdated {
+                            TimelineView(.periodic(from: .now, by: 15)) { _ in
+                                Text("· updated \(ActionsView.ago(updated))")
+                            }
+                            .help("Refreshes every 2 minutes while this tab is showing")
+                        }
+                        if model.isLoading { ProgressView().controlSize(.mini) }
+                    }
+                } else {
+                    Text("GitHub")
+                }
+            }
+            .font(.system(size: DS.Size.subtitle))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+        .layoutPriority(1)
+    }
+
+    @ViewBuilder private func repository(_ model: GitHubBoardModel) -> some View {
+        let others = controller.githubRepositories.filter { $0.root != model.repoRoot }
+        if others.isEmpty {
+            Text(model.remote.slug)
+        } else {
+            Menu {
+                ForEach(others, id: \.root) { repo in
+                    Button(repo.remote.slug) { controller.showGitHub(repoRoot: repo.root, remote: repo.remote) }
+                }
+            } label: {
+                HStack(spacing: 3) {
+                    Text(model.remote.slug)
+                    Image(systemName: "chevron.down").font(.system(size: 7, weight: .bold))
+                }
+                .font(.system(size: DS.Size.subtitle))
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Show another repository open in this window")
+        }
+    }
+}
+
+/// For you / Mine / All, the search field, refresh and "Open on GitHub ↗".
+struct GitHubToolbarControls: View {
+    @Bindable var model: GitHubBoardModel
+
+    var body: some View {
+        let counts = model.layout.counts
+        HStack(spacing: 8) {
+            SegmentedTabs(items: PullRequestBoard.Filter.allCases.map { .init(id: $0, title: $0.title, count: counts.count($0)) },
+                          selection: $model.filter)
+                .fixedSize()
+                .help("For you: assigned to you or waiting on your review. Mine: opened by you. Stacks come along whole.")
+            HStack(spacing: 5) {
+                Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(.secondary)
+                TextField("Title, branch, author, label", text: $model.searchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: DS.Size.body))
+                if !model.searchText.isEmpty {
+                    Button { model.searchText = "" } label: { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .help("Clear the search")
+                }
+            }
+            .padding(.horizontal, 8)
+            .frame(minWidth: 120, idealWidth: 230, maxWidth: 240, minHeight: 26, maxHeight: 26)
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.row))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.row).strokeBorder(Color.primary.opacity(0.09), lineWidth: 0.5))
+            ToolbarCapsule {
+                ToolbarIconButton(symbol: "arrow.clockwise", help: "Refresh (⌘R)") { model.refresh() }
+                    .keyboardShortcut("r", modifiers: .command)
+            }
+            Button { NSWorkspace.shared.open(model.remote.url.appendingPathComponent("pulls")) } label: {
+                HStack(spacing: 4) {
+                    Text("Open on GitHub")
+                    Image(systemName: "arrow.up.right").font(.system(size: 9, weight: .bold))
+                }
+            }
+            .buttonStyle(.labeled(.neutral))
+            .fixedSize()
+            .help("Open \(model.remote.slug)'s pull requests on github.com")
+        }
     }
 }

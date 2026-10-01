@@ -44,7 +44,8 @@ struct GitHubBoardFixture {
     ] }
 
     /// PR 1 (mine, failing checks, the base of a stack with 2), 2 (stacked on
-    /// 1), 3 (draft), 4 (approved, someone else's), 5 (changes requested).
+    /// 1), 3 (draft), 4 (approved, someone else's, assigned to me), 5 (changes
+    /// requested, waiting on my review).
     static var nodes: [[String: Any]] {
         [
             GitFixturePR.node(1, head: "feature-1", decision: "REVIEW_REQUIRED",
@@ -55,7 +56,8 @@ struct GitHubBoardFixture {
                               checks: [["__typename": "StatusContext", "context": "ci", "state": "PENDING"]]),
             GitFixturePR.node(3, head: "feature-3", draft: true),
             GitFixturePR.node(4, head: "feature-4", author: "hubot", decision: "APPROVED",
-                              checks: [["__typename": "CheckRun", "name": "b", "status": "COMPLETED", "conclusion": "SUCCESS"]]),
+                              checks: [["__typename": "CheckRun", "name": "b", "status": "COMPLETED", "conclusion": "SUCCESS"]],
+                              assignees: ["octocat"]),
             GitFixturePR.node(5, head: "feature-5", author: "hubot", decision: "CHANGES_REQUESTED",
                               requested: [["requestedReviewer": ["login": "octocat"]]]),
         ]
@@ -110,6 +112,50 @@ final class GitHubBoardModelTests: GitAreaTestCase {
         // Fresh boards don't refetch.
         m.refreshIfNeeded()
         XCTAssertFalse(m.isLoading)
+    }
+
+    func testForYouSearchChipsAndStackExpansion() async throws {
+        let f = try GitHubBoardFixture(in: gitTempDirectory())
+        let m = f.model
+        try await loaded(f)
+        func shown() -> [Int] { m.columns.values.flatMap { $0 }.flatMap(\.pullRequests).map(\.number).sorted() }
+
+        m.filter = .forYou
+        XCTAssertEqual(SettingsStore.shared.settings.githubBoardFilter, "forYou", "the filter is remembered")
+        XCTAssertEqual(shown(), [4, 5])
+        XCTAssertEqual(m.layout.counts, .init(forYou: 2, mine: 3, all: 5, reviewRequested: 1, assigned: 1))
+        XCTAssertEqual(m.reasons(m.pullRequest(5)!), .reviewRequested)
+
+        m.toggleNarrowing(.assigned)
+        XCTAssertEqual(m.narrowing, .assigned)
+        XCTAssertEqual(shown(), [4])
+        m.toggleNarrowing(.assigned)
+        XCTAssertEqual(m.narrowing, [])
+        XCTAssertEqual(shown(), [4, 5])
+
+        m.filter = .all
+        m.searchText = "feature-2"
+        XCTAssertEqual(shown(), [1, 2], "the search keeps the matching PR's stack")
+        m.searchText = ""
+        XCTAssertEqual(shown(), [1, 2, 3, 4, 5])
+
+        // Stacks start collapsed; Expand flips one, unchecking "Collapse stacks" flips them all.
+        let stack = try XCTUnwrap(m.columns.values.flatMap { $0 }.first { $0.layers.count > 1 })
+        XCTAssertFalse(m.isExpanded(stack))
+        m.setExpanded(stack, true)
+        XCTAssertTrue(m.isExpanded(stack))
+        m.setExpanded(stack, true)
+        XCTAssertTrue(m.isExpanded(stack))
+        m.collapseStacks = false
+        XCTAssertTrue(m.isExpanded(stack), "every stack expanded")
+        m.setExpanded(stack, false)
+        XCTAssertFalse(m.isExpanded(stack))
+        m.collapseStacks = true
+        XCTAssertFalse(m.isExpanded(stack))
+
+        // Where a checkout goes, and an existing worktree wins.
+        let pr = m.pullRequest(4)!
+        XCTAssertTrue(m.plannedWorktreePath(for: pr).hasSuffix("/widgets/feature-4"))
     }
 
     func testCachedModelPerRepository() {

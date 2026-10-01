@@ -34,6 +34,14 @@ struct OpenPullRequest: Identifiable, Equatable {
     var unresolvedThreads = 0
     /// Actions run IDs behind failing checks, for "re-run failed".
     var failedRunIDs: [Int] = []
+    /// Logins the PR is assigned to.
+    var assignees: [String] = []
+    /// The author's display name, when GitHub has one (for avatar initials).
+    var authorName: String?
+    /// Check contexts on the head commit: total, passing (incl. skipped) and failing.
+    var checksTotal = 0
+    var checksPassing = 0
+    var checksFailing = 0
 
     var id: Int { number }
 
@@ -41,7 +49,8 @@ struct OpenPullRequest: Identifiable, Equatable {
         a.number == b.number && a.title == b.title && a.updatedAt == b.updatedAt && a.checks == b.checks
             && a.reviewDecision == b.reviewDecision && a.isDraft == b.isDraft && a.head == b.head && a.base == b.base
             && a.checksSummary == b.checksSummary && a.reviews == b.reviews && a.unresolvedThreads == b.unresolvedThreads
-            && a.reviewRequestedLogins == b.reviewRequestedLogins
+            && a.reviewRequestedLogins == b.reviewRequestedLogins && a.assignees == b.assignees
+            && a.checksTotal == b.checksTotal && a.checksPassing == b.checksPassing && a.checksFailing == b.checksFailing
     }
 
     static func parse(_ o: [String: Any]) -> OpenPullRequest? {
