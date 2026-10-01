@@ -162,6 +162,8 @@ final class MCPManager {
     @ObservationIgnored private let binary: String
     @ObservationIgnored private var environment: [String: String]
     @ObservationIgnored private var initialized = false
+    /// Whether Claude Code trusts a directory; replaceable so tests don't read ~/.claude.json.
+    @ObservationIgnored var isTrusted: (String) -> Bool = { ClaudeTrust.isTrusted($0) }
 
     init(directory: String, binary: String? = nil, environment: [String: String]? = nil) {
         self.directory = directory
@@ -226,7 +228,7 @@ final class MCPManager {
         if let client, client.isRunning, initialized { return client }
         client?.stop()
         // In an untrusted folder, ask from home so the repo's .mcp.json never starts.
-        trusted = ClaudeTrust.isTrusted(directory)
+        trusted = isTrusted(directory)
         let c = ClaudeControlClient(binary: binary, directory: trusted ? directory : NSHomeDirectory(), environment: environment)
         c.onExit = { [weak self, weak c] in
             guard let self, self.client === c else { return }
