@@ -14,6 +14,8 @@ final class ClaudeToolGroupTests: XCTestCase {
             switch $0 {
             case .item(let i): "\(i.kind)"
             case .tools(let items): "tools(\(items.count))"
+            case .run(let items): "run(\(items.count))"
+            case .summary: "summary"
             }
         }
     }
