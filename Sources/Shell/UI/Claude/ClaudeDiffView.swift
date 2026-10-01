@@ -9,6 +9,10 @@ struct DiffView: View {
     let palette: ClaudePalette
     let fontSize: CGFloat
     var collapsedLimit: Int?
+    /// Side by side (true) or unified (false) regardless of the setting; nil follows it.
+    var split: Bool?
+    /// Draws its own background and border; off inside a card that has them.
+    var framed = true
 
     /// Below this width side by side becomes unified.
     static let sideBySideMinWidth: CGFloat = 640
@@ -18,7 +22,7 @@ struct DiffView: View {
         let style = ChatPreferences.shared.diffStyle
         // A new file has nothing on the left.
         let canSplit = lines.contains { $0.kind == .removed || $0.kind == .context }
-        let split = canSplit && (style == .sideBySide || (style == .automatic && width >= Self.sideBySideMinWidth))
+        let split = canSplit && (self.split ?? (style == .sideBySide || (style == .automatic && width >= Self.sideBySideMinWidth)))
         VStack(alignment: .leading, spacing: 0) {
             if split {
                 SideBySideDiff(rows: shownRows, palette: palette, font: font)
@@ -32,9 +36,9 @@ struct DiffView: View {
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-        .background(RoundedRectangle(cornerRadius: 6).fill(palette.surface))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(palette.border.opacity(0.6)))
+        .background(RoundedRectangle(cornerRadius: 6).fill(framed ? palette.surface : .clear))
+        .clipShape(RoundedRectangle(cornerRadius: framed ? 6 : 0))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(framed ? palette.border.opacity(0.6) : .clear))
     }
 
     private var font: Font { ChatTypography.current.codeFont(size: fontSize) }

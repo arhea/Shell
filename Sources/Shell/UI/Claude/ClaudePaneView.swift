@@ -51,6 +51,9 @@ struct ClaudePaneView: View {
         .animation(reduceMotion ? nil : .spring(duration: 0.4, bounce: 0.12), value: docked)
         .background(p.background)
         .foregroundStyle(p.foreground)
+        // System colors (status, labeled buttons, .primary) follow the terminal
+        // theme, not the system appearance, so they read on its background.
+        .environment(\.colorScheme, p.isDark ? .dark : .light)
     }
 
     // MARK: Empty state
@@ -87,20 +90,11 @@ struct ClaudePaneView: View {
                 } else if claude.items.isEmpty && claude.login == nil {
                     ClaudeWelcome(claude: claude, palette: p)
                 }
-                ForEach(ClaudeTranscript.rows(claude.items, mode: ChatPreferences.shared.toolCalls)) { row in
-                    switch row {
-                    case .item(let item):
-                        ClaudeItemView(item: item, palette: p, mentions: mentions, fontSize: fontSize, directory: claude.directory)
-                            .equatable()
-                    case .tools(let items):
-                        ToolGroupView(items: items, palette: p, mentions: mentions, fontSize: fontSize, directory: claude.directory)
-                    }
+                ForEach(ClaudeTranscript.rows(claude.items, mode: ChatPreferences.shared.toolCalls, turnRunning: claude.isRunning)) { row in
+                    ClaudeRowView(row: row, palette: p, mentions: mentions, fontSize: fontSize, directory: claude.directory, session: claude)
                 }
                 if let login = claude.login {
                     LoginGate(login: login, palette: p, onClose: onClose)
-                }
-                if claude.isRunning && claude.pending.isEmpty {
-                    WorkingIndicator(text: claude.statusText ?? "Working…", palette: p)
                 }
             }
             .padding(.horizontal, 18)
@@ -114,11 +108,11 @@ struct ClaudePaneView: View {
         .onTapGesture { composer.focus() }
     }
 
-    // MARK: Bottom: prompts, composer, status
+    // MARK: Bottom: prompts, status, composer, hints
 
     private func bottom(_ p: ClaudePalette, docked: Bool) -> some View {
         let width = docked ? columnWidth : min(Self.emptyStateWidth, columnWidth ?? .infinity)
-        return VStack(alignment: .leading, spacing: 6) {
+        return VStack(alignment: .leading, spacing: 8) {
             if let req = claude.pending.first {
                 if req.isQuestion {
                     QuestionCard(request: req, palette: p, fontSize: fontSize, directory: claude.directory) { answers in
@@ -135,7 +129,12 @@ struct ClaudePaneView: View {
                     }
                 } else {
                     PermissionCard(request: req, palette: p, fontSize: fontSize) { allow, always in
-                        claude.respond(req, allow: allow, always: always)
+                        if !allow, let coordinator = composer.textView?.delegate as? ClaudeComposerField.Coordinator,
+                           coordinator.denyWithTypedInstructions(req) {
+                            // "Deny, and tell Claude what to do instead" with instructions typed.
+                        } else {
+                            claude.respond(req, allow: allow, always: always)
+                        }
                         composer.focus()
                     }
                 }
@@ -146,33 +145,40 @@ struct ClaudePaneView: View {
                 }
                 .frame(maxWidth: 720, alignment: .leading)
             }
+            ClaudeActivityLine(claude: claude, palette: p)
             composerBox(p)
-            ClaudeStatusLine(claude: claude, palette: p)
+            ClaudeComposerFooter(claude: claude, palette: p)
         }
         .padding(.horizontal, 14)
-        .padding(.top, 8)
-        .padding(.bottom, 8)
+        .padding(.top, 6)
+        .padding(.bottom, 10)
         .frame(maxWidth: width.map { $0 + 28 } ?? .infinity)
         .frame(maxWidth: .infinity)
         .zIndex(1)
     }
 
     private func composerBox(_ p: ClaudePalette) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             if !claude.draftAttachments.isEmpty {
                 ClaudeAttachmentStrip(attachments: claude.draftAttachments, palette: p) { a in
                     claude.draftAttachments.removeAll { $0.id == a.id }
                     composer.focus()
                 }
             }
-            composerRow(p)
+            ClaudeComposerField(claude: claude, model: composer, palette: p, fontSize: fontSize, onExit: onClose, onFocus: onFocus)
+                .frame(height: composer.height)
+                .padding(.leading, 2)
+            composerControls(p)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(RoundedRectangle(cornerRadius: 10).fill(composer.dropTargeted ? p.blue.opacity(0.1) : p.surface))
-        .overlay(RoundedRectangle(cornerRadius: 10)
+        .padding(.leading, 14)
+        .padding(.trailing, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+        .background(RoundedRectangle(cornerRadius: 14).fill(composer.dropTargeted ? p.blue.opacity(0.1) : p.raised))
+        .overlay(RoundedRectangle(cornerRadius: 14)
             .strokeBorder(composer.dropTargeted ? p.blue : borderColor(p), style: StrokeStyle(lineWidth: composer.dropTargeted ? 2 : 1,
                                                                                           dash: composer.dropTargeted ? [6, 4] : [])))
+        .shadow(color: .black.opacity(p.isDark ? 0.25 : 0.08), radius: 12, y: 6)
         .overlay(alignment: .topTrailing) {
             if composer.dropTargeted {
                 Label("Drop to attach", systemImage: "paperclip")
@@ -196,49 +202,68 @@ struct ClaudePaneView: View {
         }
     }
 
-    private func composerRow(_ p: ClaudePalette) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text("❯")
-                .font(.system(size: fontSize, weight: .bold))
-                .foregroundStyle(p.claude)
-                .padding(.top, 3)
-            ClaudeComposerField(claude: claude, model: composer, palette: p, fontSize: fontSize, onExit: onClose, onFocus: onFocus)
-                .frame(height: composer.height)
+    /// "+", "@ Context", "/ Skills & commands", then stop or send.
+    private func composerControls(_ p: ClaudePalette) -> some View {
+        HStack(spacing: 4) {
             Button {
                 ClaudeAttachmentPicker.choose(in: composer.textView?.window, directory: claude.directory) { new in
                     claude.draftAttachments += new
                     composer.focus()
                 }
             } label: {
-                Image(systemName: "paperclip").font(.system(size: 15))
+                Image(systemName: "plus").font(.system(size: 14, weight: .medium)).frame(width: 28, height: 28)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(p.dim)
-            .padding(.top, 1)
+            .buttonStyle(ComposerToolButtonStyle(palette: p))
             .disabled(claude.hasExited)
             .help("Attach files or images (or paste / drop them here)")
             .accessibilityLabel("Attach files")
+            Button { composer.beginToken("@") } label: {
+                HStack(spacing: 5) {
+                    Text("@").foregroundStyle(p.dim)
+                    Text("Context")
+                }
+                .padding(.horizontal, 9).frame(height: 26)
+            }
+            .buttonStyle(ComposerToolButtonStyle(palette: p))
+            .help("Mention files, MCP servers or subagents (@)")
+            Button { composer.beginToken("/") } label: {
+                HStack(spacing: 5) {
+                    Text("/").foregroundStyle(p.dim)
+                    Text("Skills & commands")
+                }
+                .padding(.horizontal, 9).frame(height: 26)
+            }
+            .buttonStyle(ComposerToolButtonStyle(palette: p))
+            .help("Run a skill or slash command (/)")
+            Spacer(minLength: 4)
             if claude.isRunning {
                 Button { claude.interrupt() } label: {
-                    Image(systemName: "stop.circle.fill").font(.system(size: 17))
+                    RoundedRectangle(cornerRadius: 2).fill(p.background).frame(width: 9, height: 9)
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(p.foreground))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(p.dim)
                 .help("Interrupt (Esc)")
                 .accessibilityLabel("Interrupt Claude")
             } else {
+                let empty = composer.isEmpty && claude.draftAttachments.isEmpty
                 Button {
                     (composer.textView?.delegate as? ClaudeComposerField.Coordinator)?.submit()
                 } label: {
-                    Image(systemName: "arrow.up.circle.fill").font(.system(size: 17))
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(empty ? p.dim : Color.white)
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(empty ? p.foreground.opacity(0.12) : p.claude))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(composer.isEmpty && claude.draftAttachments.isEmpty ? p.dim : p.claude)
-                .disabled((composer.isEmpty && claude.draftAttachments.isEmpty) || !claude.canSend)
+                .disabled(empty || !claude.canSend)
                 .help("Send (Return)")
                 .accessibilityLabel("Send")
             }
         }
+        .font(.system(size: 12))
+        .foregroundStyle(p.foreground.opacity(0.8))
     }
 
     private func borderColor(_ p: ClaudePalette) -> Color {
@@ -249,6 +274,78 @@ struct ClaudePaneView: View {
         case .bypassPermissions: p.red.opacity(0.7)
         default: p.border
         }
+    }
+}
+
+/// The composer's "+", "@ Context" and "/ Skills & commands": quiet until hovered.
+private struct ComposerToolButtonStyle: ButtonStyle {
+    let palette: ClaudePalette
+
+    func makeBody(configuration: Configuration) -> some View {
+        ComposerToolButton(configuration: configuration, palette: palette)
+    }
+
+    private struct ComposerToolButton: View {
+        let configuration: ButtonStyleConfiguration
+        let palette: ClaudePalette
+        @State private var hovering = false
+
+        var body: some View {
+            configuration.label
+                .background(RoundedRectangle(cornerRadius: 7)
+                    .fill(configuration.isPressed ? palette.foreground.opacity(0.12) : hovering ? palette.foreground.opacity(0.07) : .clear))
+                .contentShape(Rectangle())
+                .onHover { hovering = $0 }
+        }
+    }
+}
+
+/// Under the composer: key hints, then the context meter and the session's cost.
+struct ClaudeComposerFooter: View {
+    let claude: ClaudeCodeSession
+    let palette: ClaudePalette
+
+    var body: some View {
+        let p = palette
+        HStack(spacing: 12) {
+            Text("⏎ send · ⇧⏎ new line · ↑ previous prompt").lineLimit(1).truncationMode(.tail)
+            Spacer(minLength: 8)
+            if let tokens = claude.contextTokens {
+                let window = claude.contextWindow
+                HStack(spacing: 6) {
+                    Text("Context")
+                    ContextMeter(fraction: Double(tokens) / Double(max(window, 1)), palette: p)
+                    Text("\(ClaudeFormat.tokens(tokens)) / \(ClaudeFormat.tokens(window))").monospacedDigit()
+                }
+                .help("\(tokens.formatted()) of \(window.formatted()) tokens of context in use")
+                .fixedSize()
+            }
+            if claude.totalCost > 0 {
+                Text(String(format: "$%.2f", claude.totalCost))
+                    .monospacedDigit()
+                    .help("Cost reported by Claude Code for this session")
+                    .fixedSize()
+            }
+        }
+        .font(.system(size: 11.5))
+        .foregroundStyle(p.dim)
+        .padding(.horizontal, 6)
+    }
+}
+
+/// A thin bar: how full the context window is. Turns yellow past 80%.
+struct ContextMeter: View {
+    let fraction: Double
+    let palette: ClaudePalette
+
+    var body: some View {
+        let f = min(max(fraction, 0), 1)
+        Capsule().fill(palette.foreground.opacity(0.1))
+            .frame(width: 44, height: 4)
+            .overlay(alignment: .leading) {
+                Capsule().fill(f > 0.8 ? DS.Status.needsYou : palette.dim).frame(width: max(2, 44 * f), height: 4)
+            }
+            .accessibilityLabel("Context \(Int(f * 100)) percent used")
     }
 }
 
@@ -602,37 +699,21 @@ struct LoginGate: View {
     }
 }
 
-struct WorkingIndicator: View {
-    let text: String
-    let palette: ClaudePalette
-    @State private var phase = false
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "sparkle")
-                .foregroundStyle(palette.claude)
-                .rotationEffect(.degrees(phase ? 180 : 0))
-                .animation(.linear(duration: 1.6).repeatForever(autoreverses: false), value: phase)
-            Text(text).foregroundStyle(palette.dim)
-            Text("esc to interrupt").foregroundStyle(palette.dim.opacity(0.7))
-        }
-        .font(.system(size: 12))
-        .onAppear { phase = true }
-    }
-}
-
 struct ClaudeItemView: View, Equatable {
     let item: ClaudeItem
     let palette: ClaudePalette
     let mentions: InlineMarkdown.MentionStyle
     let fontSize: CGFloat
     var directory: String?
+    /// For actions that need the session (Review, Fix with Claude).
+    var session: ClaudeCodeSession?
 
     /// Lets the transcript skip items whose inputs didn't change when the
     /// pane re-renders. Changes inside `item` still arrive via Observation.
     nonisolated static func == (a: Self, b: Self) -> Bool {
         MainActor.assumeIsolated {
-            a.item === b.item && a.fontSize == b.fontSize && a.mentions == b.mentions && a.palette == b.palette && a.directory == b.directory
+            a.item === b.item && a.fontSize == b.fontSize && a.mentions == b.mentions && a.palette == b.palette
+                && a.directory == b.directory && a.session === b.session
         }
     }
 
@@ -640,25 +721,9 @@ struct ClaudeItemView: View, Equatable {
         let p = palette
         switch item.kind {
         case .user:
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("❯").foregroundStyle(p.dim).font(.system(size: fontSize, weight: .bold))
-                VStack(alignment: .leading, spacing: 8) {
-                    if !item.attachments.isEmpty {
-                        ClaudeAttachmentStrip(attachments: item.attachments, palette: p)
-                    }
-                    if !item.text.isEmpty {
-                        MarkdownView(text: item.text, palette: p, mentions: mentions, fontSize: fontSize, directory: directory)
-                    }
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: 8).fill(p.raised))
+            UserMessageView(item: item, palette: p, mentions: mentions, fontSize: fontSize, directory: directory)
         case .assistant:
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Circle().fill(p.claude).frame(width: 6, height: 6).alignmentGuide(.firstTextBaseline) { d in d[.bottom] }
-                MarkdownView(text: item.text, palette: p, mentions: mentions, fontSize: fontSize, directory: directory)
-            }
+            MarkdownView(text: item.text, palette: p, mentions: mentions, fontSize: fontSize, directory: directory)
         case .thinking:
             ThinkingView(item: item, palette: p, fontSize: fontSize)
         case .tool:
@@ -666,8 +731,10 @@ struct ClaudeItemView: View, Equatable {
             case "AskUserQuestion": QuestionSummaryView(item: item, palette: p, fontSize: fontSize, directory: directory)
             case "ExitPlanMode": PlanSummaryView(item: item, palette: p, fontSize: fontSize, directory: directory)
             case "TodoWrite": TodoListView(item: item, palette: p, fontSize: fontSize)
-            default: ToolCallView(item: item, palette: p, fontSize: fontSize)
+            default: ToolCallView(item: item, palette: p, fontSize: fontSize, directory: directory, session: session)
             }
+        case .checkFailure:
+            CheckFailureCard(item: item, palette: p, fontSize: fontSize, session: session)
         case .notice:
             HStack(spacing: 6) {
                 Rectangle().fill(p.border).frame(height: 1)
@@ -676,111 +743,70 @@ struct ClaudeItemView: View, Equatable {
             }
         case .error:
             HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(p.red)
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(DS.Status.failed)
                 Text(item.text).font(.system(size: fontSize - 1, design: .monospaced)).foregroundStyle(p.red).textSelection(.enabled)
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 8).fill(p.red.opacity(0.08)))
+            .background(RoundedRectangle(cornerRadius: DS.Radius.row).fill(DS.Status.failed.opacity(0.08)))
         }
     }
 }
 
-struct ThinkingView: View {
+/// Your message: a right-aligned bubble, with its attachments above it.
+struct UserMessageView: View {
     let item: ClaudeItem
     let palette: ClaudePalette
+    let mentions: InlineMarkdown.MentionStyle
     let fontSize: CGFloat
-    @State private var expanded = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Button { expanded.toggle() } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "brain").foregroundStyle(palette.dim)
-                    Text(item.isRunning ? "Thinking…" : "Thought").italic()
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right").font(.system(size: 9))
-                }
-                .font(.system(size: 11.5))
-                .foregroundStyle(palette.dim)
-            }
-            .buttonStyle(.plain)
-            if expanded || item.isRunning {
-                Text(item.text)
-                    .font(.system(size: fontSize - 1.5))
-                    .italic()
-                    .foregroundStyle(palette.dim)
-                    .textSelection(.enabled)
-                    .lineLimit(expanded ? nil : 3)
-                    .padding(.leading, 18)
-            }
-        }
-    }
-}
-
-struct ToolCallView: View {
-    let item: ClaudeItem
-    let palette: ClaudePalette
-    let fontSize: CGFloat
-    @State private var expanded = false
+    var directory: String?
 
     var body: some View {
         let p = palette
-        VStack(alignment: .leading, spacing: 6) {
-            Button { expanded.toggle() } label: {
-                HStack(spacing: 7) {
-                    statusIcon(p)
-                    Image(systemName: ClaudeToolFormat.symbol(item.toolName)).foregroundStyle(p.dim).frame(width: 14)
-                    Text(ClaudeToolFormat.displayName(item.toolName))
-                        .font(.system(size: fontSize - 1, weight: .semibold))
-                        .foregroundStyle(item.toolName.hasPrefix("mcp__") ? p.cyan : p.foreground)
-                    Text(item.summary)
-                        .font(.system(size: fontSize - 1.5, design: .monospaced))
-                        .foregroundStyle(p.dim)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer(minLength: 0)
-                    if hasDetail {
-                        Image(systemName: expanded ? "chevron.down" : "chevron.right").font(.system(size: 9)).foregroundStyle(p.dim)
-                    }
-                }
-                .contentShape(Rectangle())
+        let context = item.attachments.filter { $0.tag != nil }
+        let files = item.attachments.filter { $0.tag == nil }
+        VStack(alignment: .trailing, spacing: 6) {
+            ForEach(context) { a in
+                ContextChip(attachment: a, palette: p)
             }
-            .buttonStyle(.plain)
-            if let diff = ClaudeToolFormat.diff(name: item.toolName, input: item.input), expanded || item.toolName != "Write" {
-                DiffView(lines: diff, palette: p, fontSize: fontSize - 2, collapsedLimit: expanded ? nil : 12)
+            if !files.isEmpty {
+                ClaudeAttachmentStrip(attachments: files, palette: p)
+                    .fixedSize(horizontal: true, vertical: false)
             }
-            if expanded, let result = item.result.map(ClaudeToolFormat.visibleResult), !result.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    Text(result.count > 12000 ? String(result.prefix(12000)) + "\n…" : result)
-                        .font(.system(size: fontSize - 2, design: .monospaced))
-                        .foregroundStyle(item.isError ? p.red : p.foreground.opacity(0.85))
-                        .textSelection(.enabled)
-                        .fixedSize()
-                        .padding(8)
-                }
-                .frame(maxHeight: 320)
-                .background(RoundedRectangle(cornerRadius: 6).fill(p.surface))
-            } else if !expanded, item.isError, let result = item.result {
-                Text(result.components(separatedBy: "\n").prefix(3).joined(separator: "\n"))
-                    .font(.system(size: fontSize - 2, design: .monospaced))
-                    .foregroundStyle(p.red)
-                    .lineLimit(3)
+            if !item.text.isEmpty {
+                MarkdownView(text: item.text, palette: p, mentions: mentions, fontSize: fontSize, directory: directory)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(UnevenRoundedRectangle(topLeadingRadius: 16, bottomLeadingRadius: 16, bottomTrailingRadius: 4,
+                                                       topTrailingRadius: 16).fill(p.raised))
             }
         }
-        .padding(.vertical, 2)
+        .padding(.leading, 60)
+        .frame(maxWidth: .infinity, alignment: .trailing)
     }
+}
 
-    private var hasDetail: Bool { !(item.result ?? "").isEmpty || ["Edit", "MultiEdit", "Write"].contains(item.toolName) }
+/// Context Shell attached to a message: "LOG build-and-test · 212 lines".
+struct ContextChip: View {
+    let attachment: ClaudeAttachment
+    let palette: ClaudePalette
 
-    @ViewBuilder
-    private func statusIcon(_ p: ClaudePalette) -> some View {
-        if item.isRunning {
-            ProgressView().controlSize(.mini).frame(width: 12)
-        } else if item.isError {
-            Image(systemName: "xmark.circle.fill").foregroundStyle(p.red).font(.system(size: 11))
-        } else {
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(p.green).font(.system(size: 11))
+    var body: some View {
+        HStack(spacing: 6) {
+            if let tag = attachment.tag {
+                Text(tag).font(.system(size: 10, design: .monospaced)).foregroundStyle(DS.Status.failed)
+            }
+            Text([attachment.name, attachment.note].compactMap { $0 }.joined(separator: " · "))
+                .font(.system(size: 11.5))
+                .foregroundStyle(palette.foreground.opacity(0.8))
         }
+        .padding(.horizontal, 9)
+        .frame(height: 24)
+        .background(palette.raised, in: RoundedRectangle(cornerRadius: 7))
+        .contentShape(Rectangle())
+        .onTapGesture { QuickLookController.shared.toggle([attachment.url]) }
+        .help(attachment.url.path)
     }
 }
 

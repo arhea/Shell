@@ -130,7 +130,7 @@ private struct MarkdownBlockView: View, Equatable {
             .padding(.top, level <= 2 ? 4 : 0)
         case .code(let lang, let code, let closed):
             CodeBlockView(language: lang, code: code, palette: palette, fontSize: typography.codeSize, lineSpacing: (lineSpacing * 0.5).rounded(),
-                          font: typography.codeFont(), isComplete: closed)
+                          font: typography.codeFont(), isComplete: closed, directory: directory)
         case .list(let items):
             VStack(alignment: .leading, spacing: max(3, lineSpacing)) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
@@ -344,7 +344,10 @@ struct MarkdownImageView: View {
     }
 }
 
+/// A fenced code block: language and file name, Copy / Save… / Run in new
+/// tab (shell snippets), and a line-number gutter.
 struct CodeBlockView: View {
+    /// The fence's language, with a file name as "lang:name" when it had one.
     let language: String
     let code: String
     let palette: ClaudePalette
@@ -354,47 +357,129 @@ struct CodeBlockView: View {
     var font: Font?
     /// False while the fence is still open (the block is streaming in).
     var isComplete = true
+    /// The session's directory: where "Run in new tab" runs and Save… starts.
+    var directory: String?
     @State private var copied = false
 
     /// A large block that's still streaming grows on every token batch;
     /// highlighting each partial copy would redo all of it every time.
     private var highlights: Bool { isComplete || code.utf8.count < 4_000 }
 
+    /// "bash:repro.sh" → ("bash", "repro.sh").
+    static func split(_ language: String) -> (language: String, file: String?) {
+        guard let colon = language.firstIndex(of: ":") else { return (language, nil) }
+        let file = String(language[language.index(after: colon)...])
+        return (String(language[..<colon]), file.isEmpty ? nil : file)
+    }
+
     var body: some View {
+        let (lang, file) = Self.split(language)
+        let lineCount = max(1, ClaudeOutput.lineCount(code))
+        let codeFont = font ?? .system(size: fontSize, design: .monospaced)
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text(language.isEmpty ? "code" : language)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            HStack(spacing: 8) {
+                Text(lang.isEmpty ? "code" : lang)
+                    .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(palette.dim)
-                Spacer()
-                Button {
+                if let file {
+                    Text(file).font(.system(size: 12, design: .monospaced)).foregroundStyle(palette.foreground).lineLimit(1)
+                }
+                Spacer(minLength: 6)
+                headerButton(copied ? "Copied" : "Copy") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(code, forType: .string)
                     copied = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copied = false }
-                } label: {
-                    Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
-                        .font(.system(size: 10))
                 }
-                .buttonStyle(.borderless)
-                .foregroundStyle(palette.dim)
+                .help("Copy the code")
+                headerButton("Save…") { save(lang: lang, file: file) }
+                    .help("Save the code to a file")
+                if isComplete, let directory, ClaudeTerminalLauncher.isShell(lang) {
+                    Button { ClaudeTerminalLauncher.run(code, language: lang, directory: directory) } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "play.fill").font(.system(size: 8)).foregroundStyle(palette.green)
+                            Text("Run in new tab")
+                        }
+                        .font(.system(size: 12))
+                        .foregroundStyle(palette.foreground)
+                        .padding(.horizontal, 10).frame(height: 24)
+                        .background(palette.foreground.opacity(0.09), in: RoundedRectangle(cornerRadius: DS.Radius.control))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Open a terminal tab in \(ClaudeToolFormat.shortPath(directory)) and run this")
+                }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
+            .padding(.leading, 12).padding(.trailing, 8)
+            .frame(minHeight: 36)
             .background(palette.raised)
             ScrollView(.horizontal, showsIndicators: false) {
-                Text(highlights ? CodeHighlighter.attributed(code, language: language, palette: palette) : AttributedString(code))
-                    .font(font ?? .system(size: fontSize, design: .monospaced))
-                    .lineSpacing(lineSpacing)
-                    .foregroundStyle(palette.foreground)
-                    .textSelection(.enabled)
-                    .fixedSize()
-                    .padding(10)
+                HStack(alignment: .top, spacing: 14) {
+                    // One Text per column keeps a long block cheap; the same font
+                    // and spacing keep the numbers on their lines (code doesn't wrap).
+                    Text((1...lineCount).map(String.init).joined(separator: "\n"))
+                        .font(codeFont)
+                        .lineSpacing(lineSpacing)
+                        .foregroundStyle(palette.dim.opacity(0.7))
+                        .multilineTextAlignment(.trailing)
+                        .frame(minWidth: 22, alignment: .trailing)
+                        .accessibilityHidden(true)
+                    Text(highlights ? CodeHighlighter.attributed(code, language: lang, palette: palette) : AttributedString(code))
+                        .font(codeFont)
+                        .lineSpacing(lineSpacing)
+                        .foregroundStyle(palette.foreground)
+                        .textSelection(.enabled)
+                }
+                .fixedSize()
+                .padding(.vertical, 8)
+                .padding(.leading, 6).padding(.trailing, 12)
             }
         }
         .background(palette.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 7))
-        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(palette.border, lineWidth: 0.5))
+        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card).strokeBorder(palette.border, lineWidth: 0.5))
+    }
+
+    private func headerButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12))
+                .foregroundStyle(palette.foreground.opacity(0.85))
+                .padding(.horizontal, 9).frame(height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func save(lang: String, file: String?) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = file.map { ($0 as NSString).lastPathComponent } ?? "snippet." + Self.fileExtension(lang)
+        if let directory { panel.directoryURL = URL(fileURLWithPath: directory) }
+        let code = code
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                try Data((code.hasSuffix("\n") ? code : code + "\n").utf8).write(to: url)
+            } catch {
+                MainActor.assumeIsolated { _ = NSAlert(error: error).runModal() }
+            }
+        }
+    }
+
+    static func fileExtension(_ language: String) -> String {
+        switch language.lowercased() {
+        case "", "text", "plain", "plaintext": "txt"
+        case "bash", "shell", "zsh", "sh": "sh"
+        case "python", "py": "py"
+        case "javascript", "js": "js"
+        case "typescript", "ts": "ts"
+        case "markdown", "md": "md"
+        case "ruby", "rb": "rb"
+        case "rust", "rs": "rs"
+        case "kotlin", "kt": "kt"
+        case "yaml", "yml": "yml"
+        default: language.lowercased()
+        }
     }
 }
 

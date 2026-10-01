@@ -17,9 +17,10 @@ enum InlineMarkdown {
         for run in result.runs {
             if let intent = run.inlinePresentationIntent {
                 if intent.contains(.code) {
-                    result[run.range].font = (codeFont ?? .system(.body, design: .monospaced)).weight(.medium)
-                    result[run.range].foregroundColor = palette.claude
-                    result[run.range].backgroundColor = palette.raised
+                    // Neutral, not accent-colored: code reads as code without shouting.
+                    result[run.range].font = codeFont ?? .system(.body, design: .monospaced)
+                    result[run.range].foregroundColor = palette.foreground
+                    result[run.range].backgroundColor = palette.foreground.opacity(0.08)
                     if let directory, let url = ClaudeLinks.fileURL(String(result[run.range].characters), directory: directory) {
                         result[run.range].link = url
                     }

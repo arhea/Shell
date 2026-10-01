@@ -2,7 +2,85 @@ import AppKit
 import CoreImage
 import SwiftUI
 
-// MARK: - Prompts
+// MARK: - Shared
+
+/// The yellow "needs you" card every prompt uses.
+private struct PromptCardChrome: ViewModifier {
+    let palette: ClaudePalette
+
+    func body(content: Content) -> some View {
+        content
+            .background(RoundedRectangle(cornerRadius: 12).fill(palette.surface))
+            .background(RoundedRectangle(cornerRadius: 12).fill(DS.Status.needsYou.opacity(0.06)))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DS.Status.needsYou.opacity(0.4), lineWidth: 1))
+    }
+}
+
+extension View {
+    fileprivate func promptCard(_ palette: ClaudePalette) -> some View { modifier(PromptCardChrome(palette: palette)) }
+}
+
+/// "!" in a yellow disc, then the card's title.
+private struct PromptHeader<Trailing: View>: View {
+    let title: String
+    let fontSize: CGFloat
+    @ViewBuilder var trailing: Trailing
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text("!")
+                .font(.system(size: 12, weight: .heavy))
+                .foregroundStyle(Color.black.opacity(0.85))
+                .frame(width: 18, height: 18)
+                .background(DS.Status.needsYou, in: Circle())
+                .accessibilityHidden(true)
+            Text(title).font(.system(size: fontSize + 0.5, weight: .semibold))
+            Spacer(minLength: 6)
+            trailing
+        }
+    }
+}
+
+/// A numbered, full-width choice: "1  Allow once  ⏎". The first is
+/// highlighted, as Return picks it.
+struct PromptChoiceRow: View {
+    let number: Int
+    let title: Text
+    var trailing: String?
+    var selected = false
+    let palette: ClaudePalette
+    let fontSize: CGFloat
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Text("\(number)")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(selected ? Color.white : palette.foreground.opacity(0.8))
+                    .frame(width: 18, height: 18)
+                    .background(selected ? Color.white.opacity(0.22) : palette.foreground.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
+                title
+                    .font(.system(size: fontSize, weight: selected ? .medium : .regular))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if let trailing {
+                    Text(trailing).font(.system(size: fontSize - 1.5)).foregroundStyle(selected ? Color.white.opacity(0.85) : palette.dim)
+                }
+            }
+            .foregroundStyle(selected ? Color.white : palette.foreground)
+            .padding(.horizontal, 10)
+            .frame(minHeight: 32)
+            .background(RoundedRectangle(cornerRadius: 7)
+                .fill(selected ? DS.Status.selection : hovering ? palette.foreground.opacity(0.07) : .clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+}
+
+// MARK: - Permission
 
 struct PermissionCard: View {
     let request: ClaudePermissionRequest
@@ -13,62 +91,137 @@ struct PermissionCard: View {
 
     var body: some View {
         let p = palette
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: ClaudeToolFormat.symbol(request.toolName)).foregroundStyle(p.yellow)
-                Text("Allow \(ClaudeToolFormat.displayName(request.displayName))?").font(.system(size: 13, weight: .semibold))
-                Spacer()
+        let size = fontSize - 0.5
+        VStack(alignment: .leading, spacing: 0) {
+            PromptHeader(title: Self.title(request), fontSize: fontSize) {
+                ToolChip(name: ClaudeToolFormat.displayName(request.displayName), palette: p)
             }
-            if let d = request.description, !d.isEmpty,
-               !(request.input["file_path"] as? String).map({ d.contains(ClaudeToolFormat.shortPath($0)) || d.contains($0) }).isTrue {
-                Text(d).font(.system(size: 12)).foregroundStyle(p.dim)
-            }
+            .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 8)
             detail(p)
-            if let reason = request.reason, !reason.isEmpty {
-                Text(reason).font(.system(size: 11)).foregroundStyle(p.dim)
+                .padding(.horizontal, 14)
+            if let explanation {
+                Text(explanation)
+                    .font(.system(size: fontSize - 1))
+                    .foregroundStyle(p.foreground.opacity(0.8))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 14).padding(.top, 8)
             }
-            HStack(spacing: 8) {
-                Button { onDecide(true, false) } label: { Text("1  Allow").frame(minWidth: 70) }
-                    .buttonStyle(.borderedProminent).tint(p.claude)
+            VStack(spacing: 4) {
+                PromptChoiceRow(number: 1, title: Text("Allow once"), trailing: showsKeyHint ? "⏎" : nil, selected: true,
+                                palette: p, fontSize: size) { onDecide(true, false) }
                 if !request.suggestions.isEmpty {
-                    Button { onDecide(true, true) } label: { Text("2  Always allow") }
-                        .help("Allow and add Claude Code's suggested permission rule")
+                    PromptChoiceRow(number: 2, title: Self.alwaysTitle(request.suggestions, palette: p), palette: p, fontSize: size) {
+                        onDecide(true, true)
+                    }
+                    .help("Allow, and add Claude Code's suggested permission rule")
                 }
-                Button { onDecide(false, false) } label: { Text("\(request.suggestions.isEmpty ? 2 : 3)  Deny") }
-                Spacer()
-                if showsKeyHint { Text("Return allows · Esc denies").font(.system(size: 10)).foregroundStyle(p.dim) }
+                PromptChoiceRow(number: request.suggestions.isEmpty ? 2 : 3, title: Text("Deny, and tell Claude what to do instead"),
+                                trailing: showsKeyHint ? "esc" : nil, palette: p, fontSize: size) { onDecide(false, false) }
+                    .help("Type instructions in the composer first to send them with the denial")
             }
-            .controlSize(.small)
+            .padding(.horizontal, 10).padding(.top, 10).padding(.bottom, 10)
         }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 10).fill(p.surface))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(p.yellow.opacity(0.6), lineWidth: 1))
+        .promptCard(p)
+    }
+
+    /// The description and the reason it's asking, without one that only
+    /// repeats the file path.
+    private var explanation: String? {
+        var parts: [String] = []
+        if let d = request.description, !d.isEmpty,
+           !(request.input["file_path"] as? String).map({ d.contains(ClaudeToolFormat.shortPath($0)) || d.contains($0) }).isTrue {
+            parts.append(d)
+        }
+        if let reason = request.reason, !reason.isEmpty { parts.append(reason) }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+
+    static func title(_ request: ClaudePermissionRequest) -> String {
+        let file = (request.input["file_path"] as? String).map { ($0 as NSString).lastPathComponent }
+        switch request.toolName {
+        case "Bash": return "Claude wants to run a command"
+        case "Edit", "MultiEdit", "NotebookEdit": return "Claude wants to edit " + (file ?? "a file")
+        case "Write": return "Claude wants to write " + (file ?? "a file")
+        case "Read": return "Claude wants to read " + (file ?? "a file")
+        case "WebFetch": return "Claude wants to fetch a page"
+        case "WebSearch": return "Claude wants to search the web"
+        default: return "Claude wants to use " + ClaudeToolFormat.displayName(request.displayName)
+        }
+    }
+
+    /// "Always allow `gh pr merge` in this repo", from Claude Code's suggested rule.
+    static func alwaysTitle(_ suggestions: [Any], palette: ClaudePalette) -> Text {
+        let (lead, code, tail) = alwaysParts(suggestions)
+        var text = AttributedString(lead)
+        if let code {
+            var c = AttributedString(code)
+            c.font = .system(size: 12, design: .monospaced)
+            text += AttributedString(" ") + c
+        }
+        if !tail.isEmpty { text += AttributedString(" " + tail) }
+        return Text(text)
+    }
+
+    static func alwaysParts(_ suggestions: [Any]) -> (lead: String, code: String?, tail: String) {
+        for case let s as [String: Any] in suggestions {
+            let scope: String
+            switch s["destination"] as? String {
+            case "userSettings": scope = "everywhere"
+            case "session": scope = "this session"
+            case "localSettings", "projectSettings": scope = "in this repo"
+            default: scope = ""
+            }
+            switch s["type"] as? String {
+            case "addRules", "replaceRules":
+                let rules = (s["rules"] as? [[String: Any]] ?? [])
+                if let rule = rules.first {
+                    let content = (rule["ruleContent"] as? String).map { $0.replacingOccurrences(of: ":*", with: "") }
+                    let tool = rule["toolName"] as? String ?? ""
+                    return ("Always allow", content.flatMap { $0.isEmpty ? nil : $0 } ?? ClaudeToolFormat.displayName(tool),
+                            scope == "this session" ? "for this session" : scope)
+                }
+            case "setMode":
+                if s["mode"] as? String == "acceptEdits" { return ("Allow all edits", nil, scope == "this session" ? "during this session" : scope) }
+            case "addDirectories":
+                if let dir = (s["directories"] as? [String])?.first {
+                    return ("Always allow access to", ClaudeToolFormat.shortPath(dir), scope == "this session" ? "for this session" : scope)
+                }
+            default:
+                continue
+            }
+        }
+        return ("Always allow", nil, "")
     }
 
     @ViewBuilder
     private func detail(_ p: ClaudePalette) -> some View {
         if let diff = ClaudeToolFormat.diff(name: request.toolName, input: request.input) {
-            if let path = request.input["file_path"] as? String {
-                Text(ClaudeToolFormat.shortPath(path)).font(.system(size: 11, design: .monospaced)).foregroundStyle(p.blue)
+            VStack(alignment: .leading, spacing: 6) {
+                if let path = request.input["file_path"] as? String {
+                    Text(ClaudePathText.attributed(path, directory: nil, palette: p))
+                        .font(.system(size: 11, design: .monospaced))
+                }
+                ScrollView { DiffView(lines: diff, palette: p, fontSize: fontSize - 2) }.frame(maxHeight: 220)
             }
-            ScrollView { DiffView(lines: diff, palette: p, fontSize: fontSize - 2) }.frame(maxHeight: 220)
         } else {
             let text = request.toolName == "Bash" ? (request.input["command"] as? String ?? "") : ClaudeToolFormat.summary(name: request.toolName, input: request.input)
             if !text.isEmpty {
                 ScrollView {
                     Text(request.toolName == "Bash" ? CodeHighlighter.attributed(text, language: "sh", palette: p) : AttributedString(text))
-                        .font(.system(size: fontSize - 1, design: .monospaced))
+                        .font(ChatTypography.current.codeFont(size: fontSize - 0.5))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(8)
+                        .padding(.horizontal, 12).padding(.vertical, 10)
                 }
                 .frame(maxHeight: 160)
                 .fixedSize(horizontal: false, vertical: true)
-                .background(RoundedRectangle(cornerRadius: 6).fill(p.raised))
+                .background(RoundedRectangle(cornerRadius: DS.Radius.row).fill(p.background.opacity(0.7)))
             }
         }
     }
 }
+
+// MARK: - Questions
 
 /// Claude's AskUserQuestion prompt: pick an option, several for
 /// multi-select questions, or type your own answer under "Other".
@@ -87,26 +240,21 @@ struct QuestionCard: View {
         let p = palette
         let questions = request.questions
         VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 6) {
-                Image(systemName: "questionmark.bubble").foregroundStyle(p.claude)
-                Text(questions.count == 1 ? "Claude has a question" : "Claude has \(questions.count) questions")
-                    .font(.system(size: 11, weight: .semibold)).foregroundStyle(p.dim)
-                Spacer()
-            }
+            PromptHeader(title: questions.count == 1 ? "Claude has a question" : "Claude has \(questions.count) questions",
+                         fontSize: fontSize) { EmptyView() }
             ForEach(questions) { q in question(q) }
             HStack(spacing: 8) {
                 Button("Submit") { onAnswer(answers(questions)) }
-                    .buttonStyle(.borderedProminent).tint(p.claude)
+                    .buttonStyle(.labeled(.primary))
                     .disabled(!questions.allSatisfy { !answer(for: $0).isEmpty })
                 Button("Skip") { onDeny() }
+                    .buttonStyle(.labeled(.neutral))
                 Spacer()
-                Text(hint(questions)).font(.system(size: 10)).foregroundStyle(p.dim)
+                Text(hint(questions)).font(.system(size: 10.5)).foregroundStyle(p.dim)
             }
-            .controlSize(.small)
         }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 10).fill(p.surface))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(p.claude.opacity(0.5), lineWidth: 1))
+        .padding(14)
+        .promptCard(p)
     }
 
     private func question(_ q: ClaudeQuestion) -> some View {
@@ -152,11 +300,15 @@ struct QuestionCard: View {
         let p = palette
         let selected = choices[q.id]?.contains(o.label) == true
         return Button { toggle(q, o.label) } label: {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: selectionSymbol(q, selected))
-                    .foregroundStyle(selected ? p.claude : p.dim)
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(q.multiSelect ? (selected ? "✓" : " ") : "\(index + 1)")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(selected ? Color.white : p.foreground.opacity(0.8))
+                    .frame(width: 18, height: 18)
+                    .background(selected ? DS.Status.selection : p.foreground.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
+                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 4 }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(InlineMarkdown.attributed("\(index + 1). " + o.label, palette: p, directory: directory))
+                    Text(InlineMarkdown.attributed(o.label, palette: p, directory: directory))
                         .font(.system(size: fontSize - 1, weight: .medium))
                     if !o.description.isEmpty {
                         Text(InlineMarkdown.attributed(o.description, palette: p, directory: directory))
@@ -166,8 +318,8 @@ struct QuestionCard: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(6)
-            .background(RoundedRectangle(cornerRadius: 6).fill(selected ? p.claude.opacity(0.1) : hovered[q.id] == o.label ? p.raised : .clear))
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .background(RoundedRectangle(cornerRadius: 7).fill(selected ? DS.Status.selection.opacity(0.16) : hovered[q.id] == o.label ? p.foreground.opacity(0.07) : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -180,8 +332,12 @@ struct QuestionCard: View {
         let p = palette
         let text = other[q.id] ?? ""
         let on = !text.trimmingCharacters(in: .whitespaces).isEmpty
-        return HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: selectionSymbol(q, on)).foregroundStyle(on ? p.claude : p.dim)
+        return HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: "pencil")
+                .font(.system(size: 10))
+                .foregroundStyle(on ? Color.white : p.dim)
+                .frame(width: 18, height: 18)
+                .background(on ? DS.Status.selection : p.foreground.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
             TextField("Other — type your own answer", text: Binding(
                 get: { other[q.id] ?? "" },
                 set: { value in
@@ -192,12 +348,8 @@ struct QuestionCard: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: fontSize - 1))
         }
-        .padding(6)
-        .background(RoundedRectangle(cornerRadius: 6).fill(on ? p.claude.opacity(0.1) : .clear))
-    }
-
-    private func selectionSymbol(_ q: ClaudeQuestion, _ selected: Bool) -> String {
-        q.multiSelect ? (selected ? "checkmark.square.fill" : "square") : (selected ? "largecircle.fill.circle" : "circle")
+        .padding(.horizontal, 8).padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 7).fill(on ? DS.Status.selection.opacity(0.16) : .clear))
     }
 
     private func toggle(_ q: ClaudeQuestion, _ label: String) {
@@ -231,9 +383,9 @@ struct QuestionCard: View {
     }
 
     private func hint(_ questions: [ClaudeQuestion]) -> String {
-        guard questions.count == 1, let q = questions.first else { return "Esc skips" }
-        return q.multiSelect ? "Type an answer and Return · Esc skips"
-            : "1–\(q.options.count) chooses · type an answer and Return · Esc skips"
+        guard questions.count == 1, let q = questions.first else { return "esc skips" }
+        return q.multiSelect ? "Type an answer and ⏎ · esc skips"
+            : "1–\(q.options.count) chooses · type an answer and ⏎ · esc skips"
     }
 }
 
@@ -242,12 +394,14 @@ struct QuestionHeaderChip: View {
     let palette: ClaudePalette
 
     var body: some View {
-        Text(text).font(.system(size: 10, weight: .bold)).foregroundStyle(palette.claude)
+        Text(text).font(.system(size: 10, weight: .bold)).foregroundStyle(palette.foreground.opacity(0.8))
             .padding(.horizontal, 6).padding(.vertical, 1)
-            .background(Capsule().fill(palette.claude.opacity(0.14)))
+            .background(RoundedRectangle(cornerRadius: 4).fill(palette.foreground.opacity(0.1)))
             .fixedSize()
     }
 }
+
+// MARK: - Plans
 
 /// ExitPlanMode: Claude's plan, rendered as markdown, waiting for approval.
 struct PlanCard: View {
@@ -260,31 +414,31 @@ struct PlanCard: View {
 
     var body: some View {
         let p = palette
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: "list.bullet.clipboard").foregroundStyle(p.cyan)
-                Text("Ready to code? Review Claude's plan").font(.system(size: 13, weight: .semibold))
-                Spacer()
+        let size = fontSize - 0.5
+        VStack(alignment: .leading, spacing: 0) {
+            PromptHeader(title: "Ready to code? Review Claude's plan", fontSize: fontSize) {
+                ToolChip(name: "Plan", palette: p)
             }
+            .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 8)
             ScrollView {
                 MarkdownView(text: request.plan, palette: p, fontSize: fontSize - 0.5, directory: directory)
-                    .padding(10)
+                    .padding(12)
             }
             .frame(maxHeight: 320)
             .fixedSize(horizontal: false, vertical: true)
-            .background(RoundedRectangle(cornerRadius: 6).fill(p.raised))
-            HStack(spacing: 8) {
-                Button { onDecide(.acceptEdits) } label: { Text("1  Yes, auto-accept edits") }
-                    .buttonStyle(.borderedProminent).tint(p.claude)
-                Button { onDecide(.default) } label: { Text("2  Yes, ask before edits") }
-                Button { onDecide(nil) } label: { Text("3  Keep planning") }
-                Spacer()
-                Text("Type feedback and Return to keep planning").font(.system(size: 10)).foregroundStyle(p.dim)
+            .background(RoundedRectangle(cornerRadius: DS.Radius.row).fill(p.background.opacity(0.7)))
+            .padding(.horizontal, 14)
+            VStack(spacing: 4) {
+                PromptChoiceRow(number: 1, title: Text("Yes, and auto-accept edits"), trailing: "⏎", selected: true, palette: p, fontSize: size) {
+                    onDecide(.acceptEdits)
+                }
+                PromptChoiceRow(number: 2, title: Text("Yes, and ask before edits"), palette: p, fontSize: size) { onDecide(.default) }
+                PromptChoiceRow(number: 3, title: Text("No, keep planning"), trailing: "or type feedback", palette: p, fontSize: size) {
+                    onDecide(nil)
+                }
             }
-            .controlSize(.small)
+            .padding(.horizontal, 10).padding(.vertical, 10)
         }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 10).fill(p.surface))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(p.cyan.opacity(0.6), lineWidth: 1))
+        .promptCard(p)
     }
 }

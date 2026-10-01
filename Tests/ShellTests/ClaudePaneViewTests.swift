@@ -140,7 +140,7 @@ final class ClaudePaneViewTests: XCTestCase {
         // The remove button's key-view stand-in sits at the very top (it's an
         // offset overlay), ahead of the header's buttons.
         let controls = w.controls()
-        XCTAssertEqual(controls.count, 4, "remove, the header's MCP button, attach, mode")
+        XCTAssertEqual(controls.count, 5, "remove, the header's MCP button, +, @ Context, / Skills")
         w.press(0)
         XCTAssertTrue(claude.draftAttachments.isEmpty)
     }
@@ -191,8 +191,8 @@ final class ClaudePaneViewTests: XCTestCase {
         F.permission(claude, id: "q1", tool: "AskUserQuestion", input: F.questionInput([("Which?", "", [("A", "", nil), ("B", "", nil)], false)]),
                      toolUseID: "t-ask")
         let w = claudeWindow(pane(claude), width: 900, height: 1200)
-        // Below the header: A, B, Skip (Submit is disabled), attach, and the status line's mode button.
-        XCTAssertEqual(w.controls().filter { $0.frame.minY > 80 }.count, 5)
+        // Below the header: A, B, Skip (Submit is disabled), then the composer's +, @ Context and / Skills.
+        XCTAssertEqual(w.controls().filter { $0.frame.minY > 80 }.count, 6)
         try pressBelowHeader(w, 1) // B
         try pressBelowHeader(w, 2) // Submit, now enabled, before Skip
         XCTAssertTrue(claude.pending.isEmpty)
@@ -201,7 +201,7 @@ final class ClaudePaneViewTests: XCTestCase {
         F.permission(claude, id: "q2", tool: "AskUserQuestion", input: F.questionInput([("Again?", "", [("A", "", nil)], false)]))
         w.layout(settle: 0.05)
         let now = w.controls().filter { $0.frame.minY > 80 }
-        try pressBelowHeader(w, now.count - 3) // Skip, before attach and the mode button
+        try pressBelowHeader(w, now.count - 4) // Skip, before the composer's three buttons
         XCTAssertTrue(claude.pending.isEmpty)
     }
 }
@@ -456,9 +456,15 @@ final class ClaudeGateTests: XCTestCase {
         XCTAssertEqual(login.phase, .failed("Sign-in was cancelled."))
     }
 
-    func testWorkingIndicatorRenders() {
-        let w = claudeWindow(WorkingIndicator(text: "Compacting conversation…", palette: F.palette), width: 400)
-        XCTAssertGreaterThan(w.size.height, 10)
+    func testActivityLineShowsWorkOrWaiting() {
+        let claude = F.session()
+        XCTAssertLessThan(render(ClaudeActivityLine(claude: claude, palette: F.palette)).fittingSize.height, 5, "nothing between turns")
+        claude.handle(["type": "system", "subtype": "status", "status": "compacting"])
+        F.tool(claude, id: "t", name: "Read", input: ["file_path": "/tmp/a.swift"])
+        let w = claudeWindow(ClaudeActivityLine(claude: claude, palette: F.palette), width: 600)
+        _ = w
+        F.permission(claude, id: "r", tool: "Bash", input: ["command": "ls"])
+        XCTAssertGreaterThan(render(ClaudeActivityLine(claude: claude, palette: F.palette), size: CGSize(width: 600, height: 30)).fittingSize.height, 10)
     }
 }
 
@@ -528,14 +534,17 @@ final class ClaudeItemViewTests: XCTestCase {
 
     func testToolCallExpandsToShowItsResult() {
         let long = (1...3000).map { "line \($0) of output" }.joined(separator: "\n")
-        for item in [
-            F.item(.tool, tool: "Bash", input: ["command": "cat big.log"], result: long + "<system-reminder>hidden</system-reminder>"),
-            F.item(.tool, tool: "Bash", input: ["command": "false"], result: "e1\ne2\ne3\ne4\ne5\ne6", isError: true),
-            F.item(.tool, tool: "Write", input: ["file_path": "/tmp/c.swift", "content": "let a = 1\nlet b = 2"]),
+        let write = (1...30).map { "let v\($0) = \($0)" }.joined(separator: "\n")
+        // Bash: "Show all 3000 lines"; Write: "Show all 30 lines" (after Copy and Review);
+        // any other tool: its step row opens to the result.
+        for (item, control) in [
+            (F.item(.tool, tool: "Bash", input: ["command": "cat big.log"], result: long + "<system-reminder>hidden</system-reminder>"), 0),
+            (F.item(.tool, tool: "Write", input: ["file_path": "/tmp/c.swift", "content": write]), 2),
+            (F.item(.tool, tool: "Grep", input: ["pattern": "x"], result: "a.swift\nb.swift"), 0),
         ] {
             let w = claudeWindow(ToolCallView(item: item, palette: p, fontSize: 13), width: 700)
             let collapsed = w.host.fittingSize.height
-            w.press(0)
+            w.press(control)
             XCTAssertGreaterThan(w.host.fittingSize.height, collapsed, item.toolName)
         }
     }
