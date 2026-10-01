@@ -1,47 +1,64 @@
 import AppKit
 import SwiftUI
 
-/// The GitHub tab's detail pane: one PR's description, conversation, checks
-/// and diff, with review and merge actions. For a stack, the layers are
-/// listed on top to switch between.
+/// The GitHub tab's detail pane: one PR's overview (description, reviewers,
+/// checks, its stack), conversation, checks and diff, led by Check Out in
+/// Worktree and Review with Claude, with Comment / Request changes / Approve
+/// (and Merge) along the bottom.
 struct PullRequestDetailView: View {
     let model: GitHubBoardModel
     let controller: TerminalWindowController
     let pr: OpenPullRequest
     let stack: PullRequestBoard.Stack?
 
-    enum Section: String, CaseIterable { case conversation, checks, files }
+    enum Section: String, CaseIterable, Identifiable {
+        case overview, conversation, checks, files
+        var id: String { rawValue }
+        var title: String { rawValue.capitalized }
+    }
 
-    @State private var section: Section = .conversation
+    enum Compose { case comment, requestChanges }
+
+    @State private var section: Section
     @State private var draft = ""
+    @State private var composing: Compose?
     @State private var confirmMerge: PullRequestBoard.MergeMethod?
     @State private var confirmClose = false
+    @State private var showAllPassed = false
+    @FocusState private var composerFocused: Bool
+
+    init(model: GitHubBoardModel, controller: TerminalWindowController, pr: OpenPullRequest, stack: PullRequestBoard.Stack?,
+         section: Section = .overview) {
+        self.model = model
+        self.controller = controller
+        self.pr = pr
+        self.stack = stack
+        _section = State(initialValue: section)
+    }
 
     private var detail: PullRequestDetail? { model.details[pr.number] }
     private var busy: String? { model.busy[pr.number] }
+    private var creating: Bool { model.creatingWorktree.contains(pr.number) }
+    private var actions: PRActions { PRActions(model: model, controller: controller) }
+    private var column: PullRequestBoard.Column { PullRequestBoard.column(for: pr) }
 
     var body: some View {
         let p = ClaudePalette.current
         VStack(spacing: 0) {
-            if let stack { stackList(stack, p) }
-            header(p)
-            actionBar(p)
-            p.border.frame(height: 1)
-            Picker("", selection: $section) {
-                Text("Conversation").tag(Section.conversation)
-                Text("Checks" + (detail.map { " (\($0.checks.count))" } ?? "")).tag(Section.checks)
-                Text("Files" + (model.diffs[pr.number].map { " (\($0.count))" } ?? "")).tag(Section.files)
+            header
+            tabBar
+            Divider()
+            Group {
+                switch section {
+                case .overview: overview(p)
+                case .conversation: conversation(p)
+                case .checks: checks
+                case .files: files(p)
+                }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .controlSize(.small)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            switch section {
-            case .conversation: conversation(p)
-            case .checks: checks(p)
-            case .files: files(p)
-            }
+            .frame(maxHeight: .infinity, alignment: .top)
+            Divider()
+            bottomBar
         }
         .background(p.surface)
         .confirmationDialog("Merge #\(pr.number)?", isPresented: Binding(get: { confirmMerge != nil }, set: { if !$0 { confirmMerge = nil } }),
@@ -63,204 +80,348 @@ struct PullRequestDetailView: View {
         Task {
             if await model.perform(action, on: pr) {
                 switch action {
-                case .comment, .approve, .requestChanges: draft = ""
+                case .comment, .approve, .requestChanges:
+                    draft = ""
+                    composing = nil
                 default: break
                 }
             }
         }
     }
 
-    // MARK: Stack
-
-    private func stackList(_ stack: PullRequestBoard.Stack, _ p: ClaudePalette) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Image(systemName: "square.stack.3d.up").foregroundStyle(p.accent)
-                Text("Stack of \(stack.layers.count)").font(.system(size: 11.5, weight: .semibold))
-                Text("top to bottom, merging into \(stack.bottom.base)").font(.system(size: 10.5)).foregroundStyle(p.dim)
-                Spacer()
-            }
-            ForEach(Array(stack.layers.enumerated().reversed()), id: \.element.pr.number) { _, layer in
-                StackLayerRow(layer: layer, model: model, palette: p, stackID: stack.id, selected: layer.pr.number == pr.number)
-            }
-        }
-        .padding(10)
-        .background(p.background.opacity(0.5))
-        .overlay(alignment: .bottom) { p.border.frame(height: 1) }
-    }
-
     // MARK: Header
 
-    private func header(_ p: ClaudePalette) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("#\(pr.number)").font(.system(size: 14, weight: .bold)).foregroundStyle(pr.isDraft ? p.dim : p.green)
-                Text(pr.title).font(.system(size: 14, weight: .semibold)).textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text("#\(pr.number)").font(.system(size: DS.Size.title)).foregroundStyle(.secondary).monospacedDigit()
+                Pill(column.title, color: GitHubBoardView.color(column))
+                if creating || busy != nil {
+                    SpinnerRing(size: 10)
+                    Text(busy ?? "Creating worktree…").font(.system(size: DS.Size.small)).foregroundStyle(.secondary)
+                }
                 Spacer(minLength: 4)
-                Button { model.selection = nil } label: { Image(systemName: "xmark") }
-                    .buttonStyle(HeaderButtonStyle(palette: p, active: false))
-                    .help("Close details")
-                    .keyboardShortcut(.escape, modifiers: [])
+                Button { model.selection = nil } label: {
+                    Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
+                }
+                .buttonStyle(.labeled(.plain, compact: true))
+                .help("Close details (⎋)")
+                .accessibilityLabel("Close details")
+                .keyboardShortcut(.escape, modifiers: [])
             }
-            HStack(spacing: 6) {
-                Text(pr.author).foregroundStyle(model.isMine(pr) ? p.claude : p.foreground.opacity(0.85))
-                Text("wants to merge").foregroundStyle(p.dim)
-                Text(pr.head).foregroundStyle(p.magenta).lineLimit(1).truncationMode(.middle)
-                Image(systemName: "arrow.right").font(.system(size: 8)).foregroundStyle(p.dim)
-                Text(pr.base).foregroundStyle(p.foreground.opacity(0.85)).lineLimit(1)
-                Spacer(minLength: 2)
-                Text("+\(pr.additions)").foregroundStyle(p.green).monospacedDigit()
-                Text("−\(pr.deletions)").foregroundStyle(p.red).monospacedDigit()
-            }
-            .font(.system(size: 11))
-            HStack(spacing: 6) {
-                PRBadges(pr: pr, palette: p)
-                Spacer(minLength: 0)
-                if let updated = pr.updatedAt {
-                    Text("updated " + PRBadges.relative(updated)).font(.system(size: 10.5)).foregroundStyle(p.dim)
+            Text(pr.title)
+                .font(.system(size: DS.Size.heading, weight: .semibold))
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 0) {
+                Text(pr.authorName ?? pr.author).fontWeight(.medium).foregroundStyle(.primary)
+                Text(" wants to merge into ")
+                Text(pr.base).font(.system(size: DS.Size.subtitle, design: .monospaced)).foregroundStyle(.primary)
+                    .lineLimit(1).truncationMode(.middle)
+                if let date = detail?.createdAt ?? pr.updatedAt {
+                    Text(" · " + PullRequestBoard.shortAge(date) + " ago").help(detail?.createdAt != nil ? "Opened" : "Updated")
                 }
             }
+            .font(.system(size: DS.Size.subtitle))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .help("\(pr.head) → \(pr.base)")
+            // The full labels when the pane is wide enough, else "Review".
+            ViewThatFits(in: .horizontal) {
+                actionRow(reviewTitle: "Review with Claude")
+                actionRow(reviewTitle: "Review")
+            }
+            .disabled(creating)
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 10)
-        .padding(.bottom, 6)
+        .padding(.horizontal, 14)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
     }
 
-    // MARK: Actions
-
-    private func actionBar(_ p: ClaudePalette) -> some View {
-        let worktree = model.worktree(for: pr)
-        let creating = model.creatingWorktree.contains(pr.number)
-        return HStack(spacing: 6) {
-            if pr.isDraft {
-                Button { run(.markReady) } label: { Label("Ready for Review", systemImage: "eye") }
+    private func actionRow(reviewTitle: String) -> some View {
+        HStack(spacing: 6) {
+            checkoutButton
+            Button { actions.review(pr) } label: {
+                HStack(spacing: 4) { ClaudeMark(size: 11); Text(reviewTitle) }.fixedSize()
             }
-            if pr.checks == .failing {
-                Button { run(.rerunFailedChecks) } label: { Label("Re-run Failed", systemImage: "arrow.clockwise") }
-                    .help(pr.failedRunIDs.isEmpty ? "No failed GitHub Actions runs found" : "Re-run the failed jobs of \(pr.failedRunIDs.count) workflow run\(pr.failedRunIDs.count == 1 ? "" : "s")")
-            }
-            mergeButton(p)
-            Menu {
-                if let worktree {
-                    Button("Open Terminal in Worktree") { controller.switchToDirectory(worktree) }
-                    Button("Open Claude in Worktree") { openClaude(in: worktree) }
-                    Button("Open Terminal in New Tab") { controller.newTab(directory: worktree) }
-                } else {
-                    Button("Check Out in Worktree") { checkout(then: nil) }
-                    Button("Check Out and Open Claude") { checkout(then: .claude) }
+            .buttonStyle(.labeled(.claude))
+            .help("Check out #\(pr.number) in a worktree and start a Claude review")
+            Button { actions.openOnGitHub(pr) } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.up.right").font(.system(size: 9, weight: .bold))
+                    Text("GitHub")
                 }
+                .fixedSize()
+            }
+            .buttonStyle(.labeled(.neutral))
+            .help("Open #\(pr.number) on github.com")
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// "Check Out in Worktree ▾" (or "Open Worktree ▾" once checked out): the
+    /// worktree actions, then the PR's state changes.
+    private var checkoutButton: some View {
+        let existing = model.worktree(for: pr) != nil
+        return HStack(spacing: 0) {
+            Button { actions.openInTerminal(pr) } label: {
+                Text(existing ? "Open Worktree" : "Check Out in Worktree")
+                    .font(.system(size: DS.Size.body, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.leading, 10).padding(.trailing, 8)
+                    .frame(height: 26)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(existing ? "Open a terminal in \(ShellQuote.path(model.plannedWorktreePath(for: pr)))"
+                  : "Check out \(pr.head) into \(ShellQuote.path(model.plannedWorktreePath(for: pr))) and open a terminal there")
+            Color.white.opacity(0.35).frame(width: 0.5, height: 14)
+            Menu {
+                PRWorktreeMenuItems(pr: pr, actions: actions)
                 Divider()
-                if !pr.isDraft { Button("Convert to Draft") { run(.convertToDraft) } }
+                if pr.isDraft {
+                    Button("Mark Ready for Review") { run(.markReady) }
+                } else {
+                    Button("Convert to Draft") { run(.convertToDraft) }
+                }
                 if pr.checks == .failing { Button("Re-run Failed Checks") { run(.rerunFailedChecks) } }
                 Button("Close Pull Request…") { confirmClose = true }
                 Divider()
                 Button("Copy Link") { PRContextMenu.copy(pr.url.absoluteString) }
-                Button("Copy Branch Name") { PRContextMenu.copy(pr.head) }
             } label: {
-                Label(worktree != nil ? "Worktree" : "More", systemImage: worktree != nil ? "square.stack.3d.up.fill" : "ellipsis.circle")
+                Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
             }
-            .menuStyle(.button)
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
             .fixedSize()
-            Spacer()
-            if creating {
-                ProgressView().controlSize(.mini)
-                Text("Creating worktree…").font(.system(size: 10.5)).foregroundStyle(p.dim)
-            } else if let busy {
-                ProgressView().controlSize(.mini)
-                Text(busy).font(.system(size: 10.5)).foregroundStyle(p.dim)
-            }
-            Button { NSWorkspace.shared.open(pr.url) } label: { Image(systemName: "arrow.up.right.square") }
-                .help("Open #\(pr.number) on GitHub")
+            .tint(.white)
+            .frame(width: 24, height: 26)
+            .help("More worktree and pull request actions")
+            .accessibilityLabel("More actions")
         }
-        .labelStyle(.titleAndIcon)
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-        .disabled(busy != nil || creating)
-        .padding(.horizontal, 12)
-        .padding(.bottom, 8)
+        .background(DS.Status.selection, in: RoundedRectangle(cornerRadius: DS.Radius.control))
+        .fixedSize()
     }
 
-    @ViewBuilder
-    private func mergeButton(_ p: ClaudePalette) -> some View {
-        let methods = model.mergeMethods.isEmpty ? [PullRequestBoard.MergeMethod.merge] : model.mergeMethods
-        if !pr.isDraft {
-            if methods.count == 1 {
-                Button { confirmMerge = methods[0] } label: { Label("Merge", systemImage: "arrow.triangle.merge") }
-                    .tint(PullRequestBoard.column(for: pr) == .ready ? p.green : nil)
-            } else {
-                Menu {
-                    ForEach(methods) { m in Button(m.title + "…") { confirmMerge = m } }
-                } label: {
-                    Label("Merge", systemImage: "arrow.triangle.merge")
-                } primaryAction: {
-                    confirmMerge = methods[0]
+    // MARK: Tabs
+
+    private var tabBar: some View {
+        HStack(spacing: 16) {
+            ForEach(Section.allCases) { s in
+                Button { section = s } label: {
+                    VStack(spacing: 5) {
+                        HStack(spacing: 4) {
+                            Text(s.title)
+                            if let n = count(s) { Text("\(n)").foregroundStyle(.secondary).monospacedDigit() }
+                        }
+                        .font(.system(size: DS.Size.body, weight: section == s ? .semibold : .regular))
+                        .foregroundStyle(section == s ? Color.primary : Color.secondary)
+                        Rectangle().fill(section == s ? DS.Status.selection : .clear).frame(height: 2)
+                    }
+                    .fixedSize()
+                    .contentShape(Rectangle())
                 }
-                .menuStyle(.button)
-                .fixedSize()
-                .help("\(methods[0].title) (click), or pick another method")
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(section == s ? [.isButton, .isSelected] : .isButton)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 2)
+    }
+
+    private func count(_ s: Section) -> Int? {
+        switch s {
+        case .overview: nil
+        case .conversation: detail?.events.count
+        case .checks: detail.map { max($0.jobs.count, $0.checks.count) } ?? (pr.checksTotal > 0 ? pr.checksTotal : nil)
+        case .files: model.diffs[pr.number]?.count ?? detail?.changedFiles
+        }
+    }
+
+    // MARK: Overview
+
+    private func overview(_ p: ClaudePalette) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                if pr.isDraft {
+                    HStack(spacing: 8) {
+                        Text("This pull request is still a draft.").font(.system(size: DS.Size.body))
+                        Spacer(minLength: 4)
+                        Button("Ready for Review") { run(.markReady) }
+                            .buttonStyle(.labeled(.neutral, compact: true))
+                            .disabled(busy != nil)
+                    }
+                    .padding(10)
+                    .cardSurface()
+                }
+                if let detail {
+                    MarkdownView(text: detail.body.isEmpty ? "_No description._" : detail.body, palette: p, fontSize: DS.Size.body)
+                        .textSelection(.enabled)
+                    reviewers(detail)
+                    checksSummary(detail)
+                } else {
+                    loading("Loading…")
+                }
+                if let stack, stack.layers.count > 1 { stackSection(stack) }
+            }
+            .padding(14)
+        }
+    }
+
+    private func loading(_ text: String) -> some View {
+        HStack(spacing: 6) {
+            ProgressView().controlSize(.small)
+            Text(text).font(.system(size: DS.Size.body)).foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 12)
+    }
+
+    private func reviewers(_ detail: PullRequestDetail) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            SectionHeader("Reviewers")
+            if detail.reviewers.isEmpty {
+                Text("No reviewers yet").font(.system(size: DS.Size.body)).foregroundStyle(.secondary)
+            }
+            ForEach(detail.reviewers) { r in
+                HStack(spacing: 8) {
+                    AvatarCircle(login: r.login.replacingOccurrences(of: "team:", with: ""), size: 18)
+                    Text(r.login == model.login ? "You" : r.login).lineLimit(1)
+                    Spacer(minLength: 4)
+                    Text(Self.reviewerState(r.state)).foregroundStyle(Self.reviewerColor(r.state))
+                }
+                .font(.system(size: DS.Size.body))
             }
         }
     }
 
-    private enum Then { case claude }
+    private static func sortedJobs(_ jobs: [CheckJob]) -> [CheckJob] {
+        func rank(_ s: CheckJob.State) -> Int {
+            switch s {
+            case .failed: 0
+            case .running: 1
+            case .queued: 2
+            case .passed: 3
+            case .skipped, .cancelled: 4
+            }
+        }
+        return jobs.sorted { (rank($0.state), $0.name) < (rank($1.state), $1.name) }
+    }
 
-    private func checkout(then: Then?) {
-        Task {
-            guard let path = await model.createWorktree(for: pr) else { return }
-            if then == .claude { openClaude(in: path) } else { controller.switchToDirectory(path) }
+    /// "4 passed · 1 running".
+    static func checksLine(_ jobs: [CheckJob]) -> String {
+        let failed = jobs.filter { $0.state == .failed }.count
+        let running = jobs.filter { $0.state == .running || $0.state == .queued }.count
+        let passed = jobs.filter { $0.state == .passed }.count
+        return [failed > 0 ? "\(failed) failing" : nil, passed > 0 ? "\(passed) passed" : nil, running > 0 ? "\(running) running" : nil]
+            .compactMap { $0 }.joined(separator: " · ")
+    }
+
+    private func checksSummary(_ detail: PullRequestDetail) -> some View {
+        let jobs = Self.sortedJobs(detail.jobs)
+        let unfinished = jobs.filter { $0.state != .passed && $0.state != .skipped }
+        let passed = jobs.filter { $0.state == .passed || $0.state == .skipped }
+        let shownPassed = showAllPassed ? passed : Array(passed.prefix(max(0, 3 - unfinished.count)))
+        let hidden = passed.count - shownPassed.count
+        return VStack(alignment: .leading, spacing: 7) {
+            SectionHeader("Checks", trailing: AnyView(HStack(spacing: 8) {
+                if pr.checks == .failing { rerunButton }
+                Text(Self.checksLine(jobs)).font(.system(size: DS.Size.small)).foregroundStyle(.secondary)
+            }))
+            if jobs.isEmpty {
+                Text("No checks on the latest commit.").font(.system(size: DS.Size.body)).foregroundStyle(.secondary)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array((unfinished + shownPassed).enumerated()), id: \.element.id) { i, job in
+                        if i > 0 { Divider().opacity(0.5) }
+                        CheckJobRow(job: job)
+                    }
+                    if hidden > 0 || (showAllPassed && passed.count > max(0, 3 - unfinished.count)) {
+                        Divider().opacity(0.5)
+                        Button { showAllPassed.toggle() } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: showAllPassed ? "chevron.up" : "checkmark")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundStyle(showAllPassed ? Color.secondary : DS.Status.done)
+                                    .frame(width: 13)
+                                Text(showAllPassed ? "Show fewer" : "\(hidden) more passed")
+                                Spacer()
+                            }
+                            .font(.system(size: DS.Size.body))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 10)
+                            .frame(minHeight: 30)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .cardSurface()
+            }
         }
     }
 
-    /// A new tab in the worktree running `claude` (native view or TUI, per Settings).
-    private func openClaude(in path: String) {
-        let tab = controller.newTab(directory: path)
-        tab.focusedSession?.pendingCommand = "claude"
+    private var rerunButton: some View {
+        Button("Re-run failed") { run(.rerunFailedChecks) }
+            .buttonStyle(.labeled(.neutral, compact: true))
+            .disabled(busy != nil)
+            .help(pr.failedRunIDs.isEmpty ? "No failed GitHub Actions runs found"
+                  : "Re-run the failed jobs of \(pr.failedRunIDs.count) workflow run\(pr.failedRunIDs.count == 1 ? "" : "s")")
+    }
+
+    private func stackSection(_ stack: PullRequestBoard.Stack) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            SectionHeader("Stack", trailing: AnyView(Text("into \(stack.bottom.base)")
+                .font(.system(size: DS.Size.small, design: .monospaced)).foregroundStyle(.secondary)))
+            ForEach(stack.layers.reversed(), id: \.pr.number) { layer in
+                let current = layer.pr.number == pr.number
+                let layerColumn = PullRequestBoard.column(for: layer.pr)
+                Button { model.selection = .init(number: layer.pr.number, stackID: stack.id) } label: {
+                    HStack(spacing: 8) {
+                        Circle().fill(GitHubBoardView.color(layerColumn)).frame(width: 6, height: 6)
+                        Text("#\(layer.pr.number)").foregroundStyle(.secondary).monospacedDigit()
+                        Text(stack.shortTitle(layer.pr)).fontWeight(current ? .semibold : .regular).lineLimit(1)
+                        Spacer(minLength: 4)
+                        Text(current ? "Viewing" : Self.shortState(layerColumn)).font(.system(size: DS.Size.small)).foregroundStyle(.secondary)
+                    }
+                    .font(.system(size: DS.Size.body))
+                    .padding(.leading, 6 + CGFloat(layer.depth) * 10).padding(.trailing, 8)
+                    .frame(minHeight: 26)
+                    .rowBackground(selected: current, hovering: false)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(current ? [.isButton, .isSelected] : .isButton)
+            }
+        }
+    }
+
+    static func shortState(_ column: PullRequestBoard.Column) -> String {
+        switch column {
+        case .draft: "Draft"
+        case .waitingForReview: "Waiting"
+        case .hasFeedback: "Feedback"
+        case .changesRequested: "Changes requested"
+        case .ready: "Ready"
+        }
     }
 
     // MARK: Conversation
 
     private func conversation(_ p: ClaudePalette) -> some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    if let detail {
-                        if !detail.reviewers.isEmpty { reviewers(detail.reviewers, p) }
-                        eventCard(author: pr.author, label: "opened", date: nil, body: detail.body.isEmpty ? "_No description._" : detail.body,
-                                  accent: p.accent, url: pr.url, p)
-                        ForEach(detail.events) { event in
-                            eventView(event, p)
-                        }
-                    } else {
-                        HStack(spacing: 6) {
-                            ProgressView().controlSize(.small)
-                            Text("Loading…").font(.system(size: 12)).foregroundStyle(p.dim)
-                        }
-                        .padding(20)
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 10) {
+                if let detail {
+                    eventCard(author: pr.author, label: "opened", date: detail.createdAt, body: detail.body.isEmpty ? "_No description._" : detail.body,
+                              accent: DS.Status.selection, url: pr.url, p)
+                    ForEach(detail.events) { event in
+                        eventView(event, p)
                     }
-                }
-                .padding(12)
-            }
-            p.border.frame(height: 1)
-            composer(p)
-        }
-    }
-
-    private func reviewers(_ list: [PullRequestDetail.Reviewer], _ p: ClaudePalette) -> some View {
-        HStack(alignment: .top, spacing: 6) {
-            Text("Reviewers").font(.system(size: 11, weight: .semibold)).foregroundStyle(p.dim)
-            FlowBadges {
-                ForEach(list) { r in
-                    HStack(spacing: 3) {
-                        Image(systemName: Self.reviewIcon(r.state)).foregroundStyle(Self.reviewColor(r.state, p))
-                        Text(r.login)
-                    }
-                    .font(.system(size: 11))
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Capsule().fill(p.raised))
-                    .help(Self.reviewTitle(r.state))
+                } else {
+                    loading("Loading…")
                 }
             }
+            .padding(14)
         }
     }
 
@@ -268,140 +429,74 @@ struct PullRequestDetailView: View {
     private func eventView(_ e: PullRequestDetail.Event, _ p: ClaudePalette) -> some View {
         switch e.kind {
         case .comment:
-            eventCard(author: e.author, label: "commented", date: e.date, body: e.body, accent: p.border, url: e.url, p)
+            eventCard(author: e.author, label: "commented", date: e.date, body: e.body, accent: Color.primary.opacity(0.15), url: e.url, p)
         case .review(let state):
             eventCard(author: e.author, label: Self.reviewTitle(state).lowercased(), date: e.date, body: e.body,
                       accent: Self.reviewColor(state, p), url: e.url, p)
         case .reviewComment(let path, let line):
             eventCard(author: e.author, label: "on \(path)" + (line.map { ":\($0)" } ?? ""), date: e.date, body: e.body,
-                      accent: p.blue.opacity(0.6), url: e.url, p)
+                      accent: DS.Status.info.opacity(0.6), url: e.url, p)
         }
     }
 
     private func eventCard(author: String, label: String, date: Date?, body: String, accent: Color, url: URL?, _ p: ClaudePalette) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 5) {
-                Text(author).font(.system(size: 11.5, weight: .semibold))
-                Text(label).font(.system(size: 11)).foregroundStyle(p.dim).lineLimit(1).truncationMode(.middle)
+            HStack(spacing: 6) {
+                AvatarCircle(login: author, size: 16)
+                Text(author).font(.system(size: DS.Size.subtitle, weight: .semibold))
+                Text(label).font(.system(size: DS.Size.small)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 2)
-                if let date { Text(PRBadges.relative(date)).font(.system(size: 10.5)).foregroundStyle(p.dim) }
+                if let date { Text(PRBadges.relative(date)).font(.system(size: DS.Size.caption)).foregroundStyle(.secondary) }
                 if let url {
                     Button { NSWorkspace.shared.open(url) } label: { Image(systemName: "arrow.up.right") }
-                        .buttonStyle(.plain).foregroundStyle(p.dim).font(.system(size: 9, weight: .bold))
+                        .buttonStyle(.plain).foregroundStyle(.secondary).font(.system(size: 9, weight: .bold))
                         .help("Open on GitHub")
                 }
             }
             if !body.isEmpty {
-                MarkdownView(text: body, palette: p, fontSize: 12.5)
+                MarkdownView(text: body, palette: p, fontSize: DS.Size.body)
                     .textSelection(.enabled)
             }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(p.background.opacity(0.6)))
+        .cardSurface()
         .overlay(alignment: .leading) {
-            UnevenRoundedRectangle(topLeadingRadius: 8, bottomLeadingRadius: 8).fill(accent).frame(width: 3)
+            UnevenRoundedRectangle(topLeadingRadius: DS.Radius.card, bottomLeadingRadius: DS.Radius.card).fill(accent).frame(width: 3)
         }
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(p.border, lineWidth: 0.5))
-    }
-
-    private func composer(_ p: ClaudePalette) -> some View {
-        let empty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let mine = model.isMine(pr)
-        return VStack(alignment: .leading, spacing: 6) {
-            ZStack(alignment: .topLeading) {
-                if draft.isEmpty {
-                    Text("Leave a comment or review (Markdown)").font(.system(size: 12)).foregroundStyle(p.dim)
-                        .padding(.horizontal, 5).padding(.vertical, 8)
-                        .allowsHitTesting(false)
-                }
-                TextEditor(text: $draft)
-                    .font(.system(size: 12))
-                    .scrollContentBackground(.hidden)
-                    .frame(minHeight: 54, maxHeight: 130)
-            }
-            .padding(4)
-            .background(RoundedRectangle(cornerRadius: 7).fill(p.background))
-            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(p.border))
-            HStack(spacing: 6) {
-                Spacer()
-                // GitHub doesn't let authors approve or request changes on their own PR.
-                if !mine {
-                    Button { run(.requestChanges(draft)) } label: { Label("Request Changes", systemImage: "exclamationmark.bubble") }
-                        .disabled(empty)
-                        .help("Submit a review requesting changes (needs a comment)")
-                    Button { run(.approve(draft)) } label: { Label("Approve", systemImage: "checkmark.seal") }
-                        .help("Approve, with the comment above if any")
-                }
-                Button { run(.comment(draft)) } label: { Label("Comment", systemImage: "text.bubble") }
-                    .disabled(empty)
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .buttonStyle(.borderedProminent)
-            }
-            .labelStyle(.titleAndIcon)
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(busy != nil)
-        }
-        .padding(10)
     }
 
     // MARK: Checks
 
-    private func checks(_ p: ClaudePalette) -> some View {
+    private var checks: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 10) {
                 if let detail {
-                    if detail.checks.isEmpty {
-                        Text("No checks on the latest commit.").font(.system(size: 12)).foregroundStyle(p.dim).padding(12)
+                    let jobs = Self.sortedJobs(detail.jobs)
+                    HStack(spacing: 8) {
+                        Text(jobs.isEmpty ? "No checks on the latest commit." : Self.checksLine(jobs))
+                            .font(.system(size: DS.Size.body)).foregroundStyle(.secondary)
+                        Spacer(minLength: 4)
+                        if pr.checks == .failing { rerunButton }
                     }
-                    ForEach(detail.checks.sorted { Self.order($0.state) < Self.order($1.state) }) { check in
-                        Button { if let u = check.url { NSWorkspace.shared.open(u) } } label: {
-                            HStack(spacing: 7) {
-                                Self.checkIcon(check.state, p).frame(width: 14)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(check.name).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
-                                    if let wf = check.workflow { Text(wf).font(.system(size: 10.5)).foregroundStyle(p.dim).lineLimit(1) }
-                                }
-                                Spacer()
-                                if check.url != nil { Image(systemName: "arrow.up.right").font(.system(size: 9, weight: .bold)).foregroundStyle(p.dim) }
+                    if !jobs.isEmpty {
+                        VStack(spacing: 0) {
+                            ForEach(Array(jobs.enumerated()), id: \.element.id) { i, job in
+                                if i > 0 { Divider().opacity(0.5) }
+                                CheckJobRow(job: job)
                             }
-                            .padding(.horizontal, 8).padding(.vertical, 5)
-                            .background(RoundedRectangle(cornerRadius: 6).fill(p.background.opacity(0.5)))
-                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
-                        .disabled(check.url == nil)
-                        .help(check.url == nil ? "" : "Open details")
+                        .cardSurface()
                     }
                     if detail.mergeStateStatus != "UNKNOWN" {
                         Text("Merge state: \(detail.mergeStateStatus.lowercased().replacingOccurrences(of: "_", with: " "))")
-                            .font(.system(size: 11)).foregroundStyle(p.dim).padding(.top, 8)
+                            .font(.system(size: DS.Size.small)).foregroundStyle(.secondary)
                     }
                 } else {
-                    ProgressView().controlSize(.small).padding(20)
+                    loading("Loading…")
                 }
             }
-            .padding(12)
-        }
-    }
-
-    private static func order(_ s: PullRequestDetail.Check.State) -> Int {
-        switch s {
-        case .failing: 0
-        case .pending: 1
-        case .passing: 2
-        case .skipped: 3
-        }
-    }
-
-    @ViewBuilder
-    private static func checkIcon(_ s: PullRequestDetail.Check.State, _ p: ClaudePalette) -> some View {
-        switch s {
-        case .passing: Image(systemName: "checkmark.circle.fill").foregroundStyle(p.green)
-        case .failing: Image(systemName: "xmark.circle.fill").foregroundStyle(p.red)
-        case .pending: Image(systemName: "clock").foregroundStyle(p.yellow)
-        case .skipped: Image(systemName: "arrow.uturn.right.circle").foregroundStyle(p.dim)
+            .padding(14)
         }
     }
 
@@ -411,21 +506,112 @@ struct PullRequestDetailView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 10) {
                 if let files = model.diffs[pr.number] {
-                    if files.isEmpty { Text("No changes.").font(.system(size: 12)).foregroundStyle(p.dim).padding(12) }
+                    if files.isEmpty { Text("No changes.").font(.system(size: DS.Size.body)).foregroundStyle(.secondary).padding(12) }
                     ForEach(files) { file in
                         PullRequestFileDiff(file: file, palette: p, startExpanded: files.count <= 30)
                     }
                 } else {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.small)
-                        Text("Loading diff…").font(.system(size: 12)).foregroundStyle(p.dim)
-                    }
-                    .padding(20)
+                    loading("Loading diff…")
                 }
             }
-            .padding(12)
+            .padding(14)
         }
         .onAppear { model.loadDiff(pr.number) }
+    }
+
+    // MARK: Bottom bar
+
+    private var bottomBar: some View {
+        let mine = model.isMine(pr)
+        let approvedByMe = model.login.map { me in pr.reviews.contains { $0.login == me && $0.state == "APPROVED" } } ?? false
+        let empty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return VStack(alignment: .leading, spacing: 8) {
+            if let composing {
+                ZStack(alignment: .topLeading) {
+                    if draft.isEmpty {
+                        Text(composing == .comment ? "Leave a comment (Markdown)" : "What needs to change? (Markdown)")
+                            .font(.system(size: DS.Size.body)).foregroundStyle(.tertiary)
+                            .padding(.horizontal, 5).padding(.vertical, 8)
+                            .allowsHitTesting(false)
+                    }
+                    TextEditor(text: $draft)
+                        .font(.system(size: DS.Size.body))
+                        .scrollContentBackground(.hidden)
+                        .focused($composerFocused)
+                        .frame(minHeight: 54, maxHeight: 130)
+                }
+                .padding(4)
+                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: DS.Radius.row))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.row).strokeBorder(Color.primary.opacity(0.1)))
+            }
+            HStack(spacing: 6) {
+                if let composing {
+                    Button("Cancel") {
+                        self.composing = nil
+                        draft = ""
+                    }
+                    .buttonStyle(.labeled(.plain))
+                    Spacer(minLength: 4)
+                    Button(composing == .comment ? "Comment" : "Request Changes") {
+                        run(composing == .comment ? .comment(draft) : .requestChanges(draft))
+                    }
+                    .buttonStyle(.labeled(composing == .comment ? .primary : .destructive))
+                    .disabled(empty)
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .help("Submit (⌘⏎)")
+                } else {
+                    Button("Comment…") { compose(.comment) }
+                        .buttonStyle(.labeled(.neutral))
+                    // GitHub doesn't let authors approve or request changes on their own PR.
+                    if !mine {
+                        Button("Request changes") { compose(.requestChanges) }
+                            .buttonStyle(.labeled(.neutral))
+                    }
+                    Spacer(minLength: 4)
+                    mergeButton
+                    if !mine && !approvedByMe {
+                        Button("Approve") { run(.approve("")) }
+                            .buttonStyle(FilledButtonStyle(color: DS.Status.done))
+                            .help("Approve #\(pr.number)")
+                    }
+                }
+            }
+        }
+        .disabled(busy != nil)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    private func compose(_ mode: Compose) {
+        composing = mode
+        composerFocused = true
+    }
+
+    @ViewBuilder
+    private var mergeButton: some View {
+        let methods = model.mergeMethods.isEmpty ? [PullRequestBoard.MergeMethod.merge] : model.mergeMethods
+        if !pr.isDraft {
+            let ready = column == .ready
+            if methods.count == 1 {
+                Button("Merge") { confirmMerge = methods[0] }
+                    .buttonStyle(ready ? AnyButtonStyle(FilledButtonStyle(color: DS.Status.done)) : AnyButtonStyle(LabeledButtonStyle()))
+                    .help("\(methods[0].title)…")
+            } else {
+                Menu {
+                    ForEach(methods) { m in Button(m.title + "…") { confirmMerge = m } }
+                } label: {
+                    Text("Merge").font(.system(size: DS.Size.body, weight: .medium))
+                } primaryAction: {
+                    confirmMerge = methods[0]
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .padding(.horizontal, 8)
+                .frame(height: 26)
+                .background(ready ? DS.Status.done.opacity(0.22) : Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.Radius.control))
+                .help("\(methods[0].title) (click), or pick another method")
+            }
+        }
     }
 
     // MARK: Review states
@@ -449,14 +635,52 @@ struct PullRequestDetailView: View {
         }
     }
 
-    static func reviewColor(_ state: String, _ p: ClaudePalette) -> Color {
+    static func reviewColor(_ state: String, _ p: ClaudePalette) -> Color { reviewerColor(state) }
+
+    /// The reviewer list's state words: "Requested", "Commented", "Approved".
+    static func reviewerState(_ state: String) -> String {
         switch state {
-        case "APPROVED": p.green
-        case "CHANGES_REQUESTED": p.red
-        case "REQUESTED": p.yellow
-        default: p.dim
+        case "APPROVED": "Approved"
+        case "CHANGES_REQUESTED": "Changes requested"
+        case "DISMISSED": "Dismissed"
+        case "REQUESTED": "Requested"
+        default: "Commented"
         }
     }
+
+    static func reviewerColor(_ state: String) -> Color {
+        switch state {
+        case "APPROVED": DS.Status.done
+        case "CHANGES_REQUESTED": DS.Status.failed
+        case "REQUESTED": DS.Status.info
+        case "DISMISSED": .secondary
+        default: DS.Status.review
+        }
+    }
+}
+
+/// A solid button in one color: the green Approve and Merge.
+struct FilledButtonStyle: ButtonStyle {
+    var color: Color
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: DS.Size.body, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 26)
+            .background(color.opacity(configuration.isPressed ? 0.8 : 1), in: RoundedRectangle(cornerRadius: DS.Radius.control))
+            .contentShape(RoundedRectangle(cornerRadius: DS.Radius.control))
+    }
+}
+
+/// Picks a button style at runtime.
+struct AnyButtonStyle: ButtonStyle {
+    private let make: (Configuration) -> AnyView
+
+    init<S: ButtonStyle>(_ style: S) { make = { AnyView(style.makeBody(configuration: $0)) } }
+
+    func makeBody(configuration: Configuration) -> some View { make(configuration) }
 }
 
 /// One file of a PR's diff, collapsible, drawn with the Claude view's `DiffView`.
