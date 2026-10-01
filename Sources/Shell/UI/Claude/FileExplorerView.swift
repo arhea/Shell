@@ -231,7 +231,7 @@ struct FileExplorerView: View {
 
     // MARK: Actions
 
-    private func url(_ rel: String) -> URL { repo.root.appendingPathComponent(rel) }
+    func url(_ rel: String) -> URL { repo.root.appendingPathComponent(rel) }
 
     private func open(_ rel: String) {
         let u = url(rel)
@@ -244,7 +244,7 @@ struct FileExplorerView: View {
     }
 
     @ViewBuilder
-    private func menu(for rel: String, isDirectory: Bool) -> some View {
+    func menu(for rel: String, isDirectory: Bool) -> some View {
         let u = url(rel)
         if let insert = context.insert {
             Button(context.isClaude ? "Mention in Prompt" : "Insert Path") {
@@ -270,14 +270,14 @@ struct FileExplorerView: View {
     }
 
     /// Path relative to the Claude session's directory when possible.
-    private func mentionPath(_ rel: String) -> String {
+    func mentionPath(_ rel: String) -> String {
         let abs = url(rel).standardizedFileURL.path
         let base = URL(fileURLWithPath: context.directory).standardizedFileURL.path + "/"
         let path = abs.hasPrefix(base) ? String(abs.dropFirst(base.count)) : abs
         return path.contains(" ") ? "\"\(path)\"" : path
     }
 
-    private func shellQuoted(_ path: String) -> String {
+    func shellQuoted(_ path: String) -> String {
         let p = path.hasPrefix("\"") ? String(path.dropFirst().dropLast()) : path
         return ShellQuote.quote(p)
     }
