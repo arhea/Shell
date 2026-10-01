@@ -10,7 +10,7 @@ A full tour of what Shell does. For key bindings see [Keyboard shortcuts](keyboa
 - [Links and paths](#links-and-paths)
 - [Copying commands and output](#copying-commands-and-output)
 - [Claude Code and Codex](#claude-code-and-codex)
-- [Files, worktrees and GitHub sidebar](#files-worktrees-and-github-sidebar)
+- [Inspector](#inspector)
 - [GitHub tab](#github-tab)
 - [Developer toolchain managers](#developer-toolchain-managers)
 - [Apple Intelligence](#apple-intelligence)
@@ -78,19 +78,19 @@ See [Claude Code and Codex](claude-code.md) for the full guide.
 - **MCP manager** (Shell › MCP Servers…): status, sign in and out, enable and disable, add and remove, and browse each server's tools.
 - **Agent storage** (Settings › Agent Storage): see and reclaim the disk Claude Code and Codex use.
 
-## Files, worktrees and GitHub sidebar
+## Inspector
 
-Toggle it with ⌃⌘B, or the sidebar button at the top right of the window (in the tab bar, or the title row in vertical-tabs mode) when the pane is in a git repository. It's always available in the Claude view.
+The right inspector shows the focused pane's repository. Toggle it with ⌃⌘B, or the sidebar button at the top right of the window (in the tab bar, or the title row in vertical-tabs mode) when the pane is in a git repository. It's always available in the Claude view. Tabs across the top switch panels; Claude panes start on **Session**, terminal panes remember the last tab you picked.
 
-- **Files.** The repository tree with git status per file, or just the changed files.
-- **Worktrees.** Every worktree of the repo with its branch, ahead/behind or "not pushed", the branch's PR (open, draft, merged, closed, review state), uncommitted changes, last activity and disk size. Worktrees that are clean and idle for 7+ days (configurable) are highlighted as stale, and merged ones are badged. When any clean worktree's PR has merged, a **Clean up merged worktrees** line appears at the top of the tab; it lists them for confirmation and removes them, deleting each branch only when it has nothing beyond what merged. The worktree you're in is never included. Open a worktree in a new tab, start Claude there, or delete it (`git worktree remove`, optionally `git branch -d`).
-- **GitHub.** Opens by itself in a terminal pane inside a GitHub repository (turn that off per pane with ⌃⌘B). It links to the repo and the current branch's PR (or *Create PR*), and lists open pull requests and recent Actions runs. **Board** opens the [GitHub tab](#github-tab). The list refreshes every 10 seconds while any run is queued or running, and shows jobs, cancel and re-run failed.
-- **Pull requests** (via `gh`). Open PRs with checks, review state, labels, size and whether you're a requested reviewer (filter: All / Review / Mine). One click switches to the PR's worktree, focusing a tab that's already there, or creates one (`git worktree add` + `gh pr checkout`, in `$WORKTREES_HOME/<repo>/<branch>`). *Review* also starts Claude there with a review prompt.
+- **Session** (Claude panes). **Changes** lists each uncommitted file with its status letter (M modified, A added, D deleted) and the lines added and removed, from `git diff --numstat HEAD` plus untracked files. Click a file to open it, or **Review** for the diff. **To-dos** shows the agent's task list (done, in progress, not started). **Running in background** shows subagents and background tasks with what they're doing, how long they've run, *View transcript* or *Output*, and *Stop*.
+- **Worktrees.** The repository's worktrees and their total disk use. Filter chips narrow the list to **Changes**, **Not pushed** (no upstream, or commits ahead of it) and **Stale**, each with a count. Worktrees are grouped: **Open in tabs** (with each tab's agent state, e.g. *Claude needs approval*, and the PR's checks), **Main checkout** (how far it's behind its upstream, with a **Pull** button that runs `git pull --ff-only`), and the rest, newest first (**Show N more** expands the list). Each row shows the branch, clean or how many changes, pushed or not, last activity and size. Hover a row to open it in a new tab, start Claude there or delete it (`git worktree remove`, optionally `git branch -d`); right-click for more, including *Go to Tab*. Worktrees that are clean and idle for 7+ days (configurable) are stale: a card at the bottom totals their size, and **Review & Remove…** removes them after confirmation. When any clean worktree's PR has merged, **Clean up merged worktrees** lists them for confirmation and removes them, deleting each branch only when it has nothing beyond what merged. The worktree you're in is never included.
+- **Checks** (repositories on GitHub, via `gh`). The checks on the current branch's pull request: counts of failing, running, passed and skipped jobs, each failing job expanded with its steps and **Fix with Claude**, **Re-run** and **Log ↗**, then the other jobs. The tab shows a red dot while a check is failing. Fix with Claude saves the job's failing log to a file and asks Claude to fix it: in the prompt of a Claude pane, or in a new tab running `claude` from a terminal pane. In Claude panes, **Send failures to Claude** does that automatically when a check newly fails (auto mode still asks before pushing). Below the jobs: *Create pull request* when the branch has none, the count of open pull requests and those waiting on your review with **Open board** for the [GitHub tab](#github-tab), and **All workflow runs**, the repository's recent Actions runs (all branches or this one) with jobs, cancel and re-run failed. Checks refresh every 10 seconds while a run is active.
+- **Files.** The repository tree with git status per file (the same letters and colors as Session › Changes), or just the changed files.
 - **Scheduled worktree cleanup** (Settings › Worktrees). List repositories or folders of repositories, and Shell removes stale worktrees daily, weekly or monthly, with a preview first. Worktrees with uncommitted changes are never removed. Branches are only deleted when merged, and only if you opt in.
 
 ## GitHub tab
 
-A board of the repository's open pull requests, in its own tab next to your terminals. Open it with **View › Open GitHub** (⌃⌘H), the command palette, or **Board** in the sidebar's GitHub section. It shows the focused pane's repository; the menu next to the repository name switches to another one open in the window. Close it with the × on its tab.
+A board of the repository's open pull requests, in its own tab next to your terminals. Open it with **View › Open GitHub** (⌃⌘H), the command palette, or **Open board** in the inspector's Checks tab. It shows the focused pane's repository; the menu next to the repository name switches to another one open in the window. Close it with the × on its tab.
 
 Everything comes from your `gh`: one `gh api graphql` request per refresh, when the tab opens, when you come back to the window (if the board is older than 30 seconds), every 2 minutes while it's showing, and after each action. Nothing polls while the tab is hidden. Without `gh`, or signed out, the tab says how to set it up.
 
@@ -108,7 +108,7 @@ Cards show the number, title, author, branch, checks, review state, unresolved t
 
 **Stacks.** A PR whose base branch is another open PR's head branch is stacked on it. A stack is one card listing each layer, top to bottom, with its state; branching stacks indent each branch. The card sits in the leftmost column any of its PRs is in, since the stack is only as far along as its least-ready layer. When the PR underneath is merged or closed, the next one starts its own stack. Click a layer (or the card) to open it; the detail pane lists the whole stack to switch between.
 
-**Details and actions.** Selecting a PR opens a pane with its description and conversation (comments, reviews and inline review comments), reviewers, checks and diff. From there you can comment, approve, request changes, mark ready or convert to draft, re-run failed GitHub Actions jobs, merge with any method the repository allows, close, or open it on GitHub. Merging and closing ask first. **Worktree** checks the branch out into a new worktree (like the sidebar) and opens a terminal or Claude there, or goes to the worktree it's already in.
+**Details and actions.** Selecting a PR opens a pane with its description and conversation (comments, reviews and inline review comments), reviewers, checks and diff. From there you can comment, approve, request changes, mark ready or convert to draft, re-run failed GitHub Actions jobs, merge with any method the repository allows, close, or open it on GitHub. Merging and closing ask first. **Worktree** checks the branch out into a new worktree and opens a terminal or Claude there, or goes to the worktree it's already in.
 
 ## Developer toolchain managers
 
