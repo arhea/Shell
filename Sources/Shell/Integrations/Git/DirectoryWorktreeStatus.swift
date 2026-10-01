@@ -29,6 +29,13 @@ final class DirectoryWorktreeStatus {
         var pullRequests: [String: PullRequestInfo]
     }
 
+    /// The environment lookups run with; nil uses `MCPManager.defaultEnvironment()`. Tests pass a fake `gh` here.
+    @ObservationIgnored private let environment: [String: String]?
+
+    init(environment: [String: String]? = nil) {
+        self.environment = environment
+    }
+
     func state(for directory: String) -> State? { states[directory] }
 
     func refresh(_ directory: String) async {
@@ -42,7 +49,7 @@ final class DirectoryWorktreeStatus {
             states[directory] = .missing
             return
         }
-        let env = MCPManager.defaultEnvironment()
+        let env = environment ?? MCPManager.defaultEnvironment()
         let git = GitRepository.findGit(environment: env)
         func run(_ args: [String]) async -> String? {
             await GitRepository.run(git, args, in: directory, environment: env)?.trimmingCharacters(in: .whitespacesAndNewlines)
