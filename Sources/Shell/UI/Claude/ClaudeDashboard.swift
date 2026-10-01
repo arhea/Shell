@@ -464,6 +464,7 @@ struct ClaudeDashboardView: View {
                         }
                         if entries.isEmpty { emptyState(palette) }
                     }
+                    RunningElsewhereSection(controller: controller, palette: palette)
                 }
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -512,7 +513,7 @@ struct ClaudeDashboardView: View {
     private func emptyState(_ palette: ChromePalette) -> some View {
         VStack(spacing: 8) {
             ClaudeLogo(size: 28)
-            Text("No Claude sessions are running").foregroundStyle(palette.foreground)
+            Text("No Claude sessions are running in Shell").foregroundStyle(palette.foreground)
             Text("Run `claude` in any tab and it shows up here.").font(.system(size: 12)).foregroundStyle(palette.secondary)
         }
         .frame(maxWidth: .infinity, minHeight: 250)
