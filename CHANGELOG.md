@@ -6,9 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-01
+
+Claude Sessions becomes the place to find every Claude Code conversation: it stays pinned in the sidebar, lists past sessions you can resume, and shows sessions running outside Shell. Updates now show their progress and can restart straight from the notification, and merged worktrees can be cleaned up in one step.
+
 ### Added
 
+- **Past sessions** on the Claude Sessions page: a drawer lists your earlier Claude Code conversations by repository, branch and first prompt, with ahead/behind, pull request and change status like the Worktrees sidebar. Resume one, start a new session in its folder, or open a terminal there. Turn it off in Settings › Claude & Codex. ([#30](https://github.com/arhea/Shell/pull/30), fixes [#29](https://github.com/arhea/Shell/issues/29))
+- **Running Elsewhere** on the Claude Sessions page lists live Claude Code sessions that aren't in a Shell tab. Background (`claude --bg`) sessions open in a new tab attached to the job; sessions held by another terminal or Claude desktop are shown with where to find them. ([#34](https://github.com/arhea/Shell/pull/34), fixes [#33](https://github.com/arhea/Shell/issues/33))
 - The Worktrees sidebar shows a **Clean up merged worktrees** line when worktrees whose pull request has merged have no uncommitted changes. It lists them for confirmation, then removes them and deletes each branch when it holds nothing beyond what merged. The main checkout, locked worktrees and the one you're in are never touched. ([#27](https://github.com/arhea/Shell/pull/27), fixes [#26](https://github.com/arhea/Shell/issues/26))
+- Updates show download progress in Settings › General › Software Update and the Help menu, and the "update ready" notification has a **Restart Now** button. ([#31](https://github.com/arhea/Shell/pull/31))
+
+### Changed
+
+- **Claude Sessions now stays pinned to the top of the sidebar whenever Claude Code is installed**, not only while a session runs. Choose Always, When sessions are active, or Never in Settings › Claude & Codex. If you had turned off the old dashboard toggle, it's set to Never. ([#30](https://github.com/arhea/Shell/pull/30), fixes [#29](https://github.com/arhea/Shell/issues/29))
+- The Dock icon uses the light or dark variant that matches the active theme, so a dark theme on a light Mac gets the dark icon while Shell is running. ([#28](https://github.com/arhea/Shell/pull/28), fixes [#25](https://github.com/arhea/Shell/issues/25))
+
+### Fixed
+
+- A failed update download no longer drops the update silently. Shell says why it failed and offers **Try Again**, and background checks retry it. ([#31](https://github.com/arhea/Shell/pull/31))
 
 ## [0.3.0] - 2026-09-30
 
@@ -58,7 +74,8 @@ First public release.
 - Optional on-device Apple Intelligence features, all off by default.
 - Shortcuts and Spotlight actions, Finder services, a Dock menu, a desktop widget, Quick Look previews and optional iCloud settings sync.
 
-[Unreleased]: https://github.com/arhea/Shell/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/arhea/Shell/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/arhea/Shell/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/arhea/Shell/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/arhea/Shell/releases/tag/v0.2.0
 [0.1.0]: https://github.com/arhea/Shell/releases/tag/v0.1.0
