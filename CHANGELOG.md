@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- Shell's Dock icon follows the active theme instead of the system appearance: with Appearance set to Dark on a light Mac (or a light theme in the dark slot), the Dock shows the dark icon, and vice versa. When the theme matches the system, macOS draws the native icon as before. ([#26](https://github.com/arhea/Shell/pull/26), fixes [#25](https://github.com/arhea/Shell/issues/25))
+- Shell's Dock icon follows the active theme instead of the system appearance: with Appearance set to Dark on a light Mac (or a light theme in the dark slot), the Dock shows the dark icon, and vice versa. When the theme matches the system, macOS draws the native icon as before. ([#28](https://github.com/arhea/Shell/pull/28), fixes [#25](https://github.com/arhea/Shell/issues/25))
 
 ## [0.3.0] - 2026-09-30
 
