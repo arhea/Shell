@@ -433,13 +433,15 @@ final class InputEditorView: NSView, NSTextViewDelegate {
         let directory = session.abbreviatedDirectory
         let branch = session.gitBranch
         fixTask = Task { [weak self] in
-            let fix = await Intelligence.commandFix(command: command, exitCode: code, output: output, directory: directory, branch: branch)
-            guard let self, let fix, !Task.isCancelled, session.state == .idle, session.lastCommand == command,
+            let result = await Intelligence.commandFixWithReason(command: command, exitCode: code, output: output,
+                                                                 directory: directory, branch: branch)
+            guard let self, let fix = result?.command, !Task.isCancelled, session.state == .idle, session.lastCommand == command,
                   fix.hasPrefix(textView.string) else { return }
             fixSuggestion = fix
             updateGhost()
             var state = base
             state.suggestion = fix
+            state.reason = result?.reason
             setFix(state)
         }
     }
@@ -997,6 +999,8 @@ struct CommandFixState: Equatable {
     var directory: String
     /// A corrected command from Apple Intelligence.
     var suggestion: String?
+    /// Why it failed, in one sentence, from the same suggestion.
+    var reason: String?
 }
 
 /// The bar above the prompt after a failure: "◆ Try `make bootstrap`" with
@@ -1046,9 +1050,15 @@ struct CommandFixBar: View {
     private func message(_ palette: EditorPalette) -> some View {
         if let suggestion = fix.suggestion {
             HStack(spacing: 5) {
-                Text("Try").fontWeight(.semibold)
-                code(suggestion, palette)
-                Text("· suggested on this Mac").foregroundStyle(palette.dim)
+                if let reason = fix.reason, !reason.isEmpty {
+                    Text(reason).fontWeight(.semibold)
+                    Text("Try").foregroundStyle(palette.dim)
+                    code(suggestion, palette)
+                } else {
+                    Text("Try").fontWeight(.semibold)
+                    code(suggestion, palette)
+                    Text("· suggested on this Mac").foregroundStyle(palette.dim)
+                }
             }
             .help("Suggested by Apple Intelligence on this Mac. → accepts it in the prompt.")
         } else {

@@ -111,10 +111,19 @@ enum Intelligence {
 
     /// A corrected command for one that just failed, or nil.
     static func commandFix(command: String, exitCode: Int, output: String, directory: String, branch: String?) async -> String? {
+        await commandFixWithReason(command: command, exitCode: exitCode, output: output, directory: directory, branch: branch)?.command
+    }
+
+    /// A corrected command plus a one-sentence reason for the failure (the
+    /// fix bar's "TaktKit is built by the bootstrap step."), or nil.
+    static func commandFixWithReason(command: String, exitCode: Int, output: String, directory: String,
+                                     branch: String?) async -> (command: String, reason: String?)? {
         guard isEnabled(.commandFixes), IntelligencePrompts.shouldSuggestFix(exitCode: exitCode, output: output) else { return nil }
         let prompt = IntelligencePrompts.commandFix(command: command, exitCode: exitCode, output: output, directory: directory, branch: branch)
-        guard let fix = await OnDeviceModel.commandFix(prompt: prompt) else { return nil }
-        return IntelligencePrompts.validatedFix(fix, original: command, output: output)
+        guard let fix = await OnDeviceModel.commandFix(prompt: prompt),
+              let valid = IntelligencePrompts.validatedFix(fix.command, original: command, output: output) else { return nil }
+        let reason = IntelligencePrompts.cleanLine(fix.reason, maxLength: 100)
+        return (valid, reason)
     }
 
     /// A short line saying what a Claude session is doing, from the tail of its transcript.
