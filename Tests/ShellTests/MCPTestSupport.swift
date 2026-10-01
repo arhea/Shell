@@ -15,7 +15,7 @@ import XCTest
 ///
 /// It logs control requests to `requests.log`, `claude mcp …` arguments to
 /// `cli.log`, and its launch arguments, directory and environment to `launch.log`.
-struct FakeClaude {
+struct FakeMCPClaude {
     let dir: URL
     var binary: String { dir.appendingPathComponent("claude").path }
 
@@ -175,7 +175,7 @@ extension XCTestCase {
 
     /// A manager pointed at a fake `claude`, trusting (or not) its directory.
     @MainActor
-    func makeMCPManager(_ fake: FakeClaude, directory: URL, trusted: Bool = true) -> MCPManager {
+    func makeMCPManager(_ fake: FakeMCPClaude, directory: URL, trusted: Bool = true) -> MCPManager {
         let manager = MCPManager(directory: directory.path, binary: fake.binary, environment: fake.environment)
         manager.isTrusted = { _ in trusted }
         addTeardownBlock { @MainActor in manager.stop() }

@@ -9,13 +9,13 @@ import XCTest
 @MainActor
 final class MCPManagerWindowTests: XCTestCase {
     private var dir: URL!
-    private var fake: FakeClaude!
+    private var fake: FakeMCPClaude!
     private let palette = ClaudePalette.current
     private let size = CGSize(width: 1000, height: 1600)
 
     override func setUp() async throws {
         dir = try makeTemporaryDirectory()
-        fake = try FakeClaude(in: dir)
+        fake = try FakeMCPClaude(in: dir)
     }
 
     private func loaded(_ servers: [[String: Any]] = MCPFixtures.all, trusted: Bool = true) async throws -> MCPManager {

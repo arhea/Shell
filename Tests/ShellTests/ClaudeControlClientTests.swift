@@ -5,11 +5,11 @@ import XCTest
 @MainActor
 final class ClaudeControlClientTests: XCTestCase {
     private var dir: URL!
-    private var fake: FakeClaude!
+    private var fake: FakeMCPClaude!
 
     override func setUp() async throws {
         dir = try makeTemporaryDirectory()
-        fake = try FakeClaude(in: dir)
+        fake = try FakeMCPClaude(in: dir)
     }
 
     private func makeClient(environment: [String: String]? = nil) -> ClaudeControlClient {

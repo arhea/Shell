@@ -105,11 +105,11 @@ final class MCPServerEntryTests: XCTestCase {
 @MainActor
 final class MCPManagerTests: XCTestCase {
     private var dir: URL!
-    private var fake: FakeClaude!
+    private var fake: FakeMCPClaude!
 
     override func setUp() async throws {
         dir = try makeTemporaryDirectory()
-        fake = try FakeClaude(in: dir)
+        fake = try FakeMCPClaude(in: dir)
     }
 
     private func loaded(_ servers: [[String: Any]] = MCPFixtures.all, trusted: Bool = true) async throws -> MCPManager {
