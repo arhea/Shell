@@ -62,7 +62,7 @@ final class ReviewRowsTests: XCTestCase {
 
     func testLineCapAndFullDiff() {
         let big = UnifiedDiffHunk(oldStart: 1, oldCount: 0, newStart: 1, newCount: 3100, section: "",
-                                  lines: (1...3100).map { .init(kind: .added, text: "x\($0)", newNumber: $0) })
+                                  lines: (1...3100).map { (n: Int) in UnifiedDiffLine(kind: .added, text: "x\(n)", newNumber: n) })
         let capped = ReviewRows.build(.init(files: [file(hunks: [big])], split: false))
         XCTAssertTrue(capped.contains { if case .truncated(_, let n) = $0.kind { n == 100 } else { false } })
         let full = ReviewRows.build(.init(files: [file(hunks: [big])], split: false, fullDiff: ["a.swift"]))
