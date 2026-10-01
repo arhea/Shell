@@ -254,6 +254,10 @@ struct ClaudePaneView: View {
 
 // MARK: - Header
 
+/// The Claude view's header: title, repository / branch, PR and checks, then
+/// model, effort, mode, MCP, "…" and the inspector toggle. With vertical
+/// tabs the window's unified toolbar shows all of this for the focused pane,
+/// so the pane draws no header of its own (one bar, not two).
 struct ClaudeHeader: View {
     @Bindable var claude: ClaudeCodeSession
     let palette: ClaudePalette
@@ -262,78 +266,34 @@ struct ClaudeHeader: View {
     var onToggleExplorer: () -> Void
 
     var body: some View {
-        let p = palette
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 8) {
-                Image(systemName: "sparkle")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(p.claude)
-                Text("Claude Code").font(.system(size: 13, weight: .semibold))
-                stateBadge(p)
-                Spacer(minLength: 8)
-                ModelMenu(claude: claude, palette: p)
-                EffortMenu(claude: claude, palette: p)
-                ModeMenu(claude: claude, palette: p)
-                RemoteControlButton(claude: claude, palette: p)
-                MCPHeaderButton(claude: claude, palette: p)
-                if claude.repository != nil {
-                    Button(action: onToggleExplorer) {
-                        Image(systemName: "sidebar.right")
+        if SettingsStore.shared.settings.tabBarStyle != .vertical {
+            HStack(spacing: 12) {
+                ClaudeMark(size: 15)
+                ToolbarTitle(title: "Claude Code", subtitle: RepoSubtitleText(repo: claude.repository, directory: claude.directory, isClaude: true))
+                StatusIndicator(status: status)
+                if let repo = claude.repository {
+                    StatusCapsules(repo: repo) {
+                        claude.showExplorer = true
+                        BranchChecksRequest.post(repository: repo, sessionID: nil)
                     }
-                    .buttonStyle(HeaderButtonStyle(palette: p, active: claude.showExplorer))
-                    .help(claude.showExplorer ? "Hide file explorer" : "Show file explorer")
                 }
-                Menu {
-                    Button("Continue in Terminal UI") { onContinueInTerminal() }
-                        .disabled(claude.sessionID == nil)
-                    Button("Interrupt") { claude.interrupt() }.disabled(!claude.isRunning)
-                    Divider()
-                    Button("Close Claude") { onClose() }
-                } label: {
-                    Image(systemName: "ellipsis")
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .foregroundStyle(p.dim)
-                Button(action: onClose) { Image(systemName: "xmark") }
-                    .buttonStyle(HeaderButtonStyle(palette: p, active: false))
-                    .help("Close Claude and return to the shell (⌃D)")
+                Spacer(minLength: 8)
+                ClaudeToolbarControls(
+                    claude: claude, inspectorOn: claude.showExplorer,
+                    onToggleInspector: claude.repository == nil ? nil : onToggleExplorer,
+                    onClose: onClose, onContinueInTerminal: onContinueInTerminal) { EmptyView() }
             }
-            ClaudeContextBar(claude: claude, palette: p)
-        }
-        .padding(.horizontal, 14)
-        .padding(.top, 9)
-        .padding(.bottom, 8)
-        .background(p.surface)
-        .overlay(alignment: .bottom) { p.border.frame(height: 1) }
-    }
-
-    @ViewBuilder
-    private func stateBadge(_ p: ClaudePalette) -> some View {
-        if claude.login != nil {
-            badge("signed out", p.yellow, p)
-        } else if claude.hasExited {
-            badge("ended", p.dim, p)
-        } else if !claude.pending.isEmpty {
-            badge("needs you", p.yellow, p)
-        } else if claude.isRunning {
-            HStack(spacing: 4) {
-                ProgressView().controlSize(.mini)
-                Text("working").font(.system(size: 10, weight: .semibold)).foregroundStyle(p.claude)
-            }
-        } else if claude.isStarting {
-            badge("starting", p.dim, p)
+            .padding(.horizontal, 14)
+            .frame(height: 48)
+            .background(palette.surface)
+            .overlay(alignment: .bottom) { palette.border.frame(height: 1) }
         }
     }
 
-    private func badge(_ text: String, _ color: Color, _ p: ClaudePalette) -> some View {
-        Text(text)
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 1)
-            .background(Capsule().fill(color.opacity(0.14)))
+    private var status: StatusKind {
+        if claude.hasExited { return .idle }
+        if claude.login != nil || !claude.pending.isEmpty { return .needsYou }
+        return claude.isRunning ? .working : .idle
     }
 }
 
@@ -435,140 +395,6 @@ enum QRCode {
     }
 }
 
-/// Opens the MCP manager; badged with the number of servers needing sign-in.
-struct MCPHeaderButton: View {
-    let claude: ClaudeCodeSession
-    let palette: ClaudePalette
-
-    var body: some View {
-        let waiting = claude.mcpNeedsAuth.count
-        Button {
-            MCPManagerWindowController.show(directory: claude.directory, binary: claude.request.binary,
-                                            environment: claude.request.environment, select: claude.mcpNeedsAuth.first?.name)
-        } label: {
-            Image(systemName: "puzzlepiece.extension")
-                .overlay(alignment: .topTrailing) {
-                    if waiting > 0 {
-                        Text("\(waiting)")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(.black)
-                            .padding(.horizontal, 3)
-                            .background(Capsule().fill(palette.yellow))
-                            .offset(x: 7, y: -6)
-                    }
-                }
-        }
-        .buttonStyle(HeaderButtonStyle(palette: palette, active: false))
-        .help(waiting > 0 ? "MCP servers — \(waiting) need sign-in" : "MCP servers (\(claude.mcpServers.count))")
-    }
-}
-
-/// Directory, branch, worktree and change count.
-struct ClaudeContextBar: View {
-    let claude: ClaudeCodeSession
-    let palette: ClaudePalette
-
-    var body: some View {
-        let p = palette
-        HStack(spacing: 6) {
-            if let repo = claude.repository {
-                let st = repo.status
-                let gh = repo.github
-                // Repository: GitHub link when there's a GitHub remote.
-                if let gh {
-                    chip(icon: "shippingbox", text: gh.slug, color: p.cyan, url: gh.url, help: "Open \(gh.slug) on GitHub", priority: 3)
-                } else {
-                    chip(icon: "shippingbox", text: repo.name, color: p.cyan, help: "Repository root: \(repo.root.path)", priority: 3)
-                        .onTapGesture { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: repo.root.path) }
-                }
-                // Branch: its page on GitHub once pushed.
-                let branchText = repo.branchLabel + (st.ahead > 0 ? " ↑\(st.ahead)" : "") + (st.behind > 0 ? " ↓\(st.behind)" : "")
-                if let gh, let branch = st.branch, repo.isBranchPublished {
-                    chip(icon: "arrow.triangle.branch", text: branchText, color: p.magenta, url: gh.branchURL(branch),
-                         help: "Open \(branch) on GitHub (tracking \(st.upstream ?? ""))", priority: 1, truncation: .middle)
-                } else {
-                    chip(icon: "arrow.triangle.branch", text: branchText, color: p.magenta,
-                         help: gh == nil ? "No GitHub remote" : "Not pushed yet — no upstream branch", priority: 1, truncation: .middle)
-                }
-                // Pull request, or a shortcut to open one.
-                if let pr = repo.pullRequest {
-                    chip(icon: prIcon(pr), text: "#\(pr.number)", color: prColor(pr, p), url: pr.url,
-                         help: "\(pr.title)\n\(pr.isDraft ? "Draft" : pr.state.rawValue.capitalized) — open on GitHub", priority: 3)
-                } else if let gh, let branch = st.branch, repo.isBranchPublished, branch != repo.defaultBranch {
-                    chip(icon: "plus", text: "Create PR", color: p.green, url: gh.compareURL(branch), help: "Open a pull request for \(branch) on GitHub", priority: 3)
-                }
-                if repo.isLinkedWorktree {
-                    chip(icon: "square.stack.3d.up", text: "worktree", color: p.yellow,
-                         help: "Linked worktree at \(repo.root.path)" + (repo.mainWorktree.map { "\nMain checkout: \($0.path)" } ?? ""),
-                         priority: 2)
-                        .onTapGesture { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: repo.root.path) }
-                }
-            }
-            chip(icon: "folder", text: ClaudeToolFormat.shortPath(claude.directory), color: p.blue,
-                 help: "\(claude.directory)\nClick to reveal in Finder")
-                .onTapGesture { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: claude.directory) }
-            if let repo = claude.repository {
-                let changes = repo.status.changeCount
-                if changes > 0 { chip(icon: "plusminus", text: "\(changes) changed", color: p.yellow, help: "Uncommitted changes", priority: 2) }
-            } else if claude.repositoryChecked {
-                chip(icon: "questionmark.folder", text: "not a git repository", color: p.dim, help: "")
-            }
-            Spacer(minLength: 0)
-        }
-        .font(.system(size: 11, weight: .medium))
-    }
-
-    private func prIcon(_ pr: PullRequestInfo) -> String {
-        switch pr.state {
-        case .merged: "arrow.triangle.merge"
-        case .closed: "xmark.circle"
-        case .open: pr.isDraft ? "circle.dashed" : "arrow.triangle.pull"
-        }
-    }
-
-    private func prColor(_ pr: PullRequestInfo, _ p: ClaudePalette) -> Color {
-        switch pr.state {
-        case .merged: p.magenta
-        case .closed: p.red
-        case .open: pr.isDraft ? p.dim : p.green
-        }
-    }
-
-    @ViewBuilder
-    /// Chips with higher `priority` keep their full text when space is short.
-    private func chip(icon: String, text: String, color: Color, url: URL? = nil, help: String,
-                      priority: Double = 0, truncation: Text.TruncationMode = .head) -> some View {
-        let body = HStack(spacing: 4) {
-            Image(systemName: icon).foregroundStyle(color)
-            Text(text).foregroundStyle(palette.foreground.opacity(0.88)).lineLimit(1).truncationMode(truncation)
-            if url != nil {
-                Image(systemName: "arrow.up.right").font(.system(size: 8, weight: .bold)).foregroundStyle(palette.dim)
-            }
-        }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 3)
-        .background(Capsule().fill(palette.raised))
-        .overlay(Capsule().strokeBorder(palette.border, lineWidth: 0.5))
-        .help(help)
-        .fixedSize(horizontal: priority >= 2, vertical: false)
-        .layoutPriority(priority)
-        if let url {
-            Button { NSWorkspace.shared.open(url) } label: { body }
-                .buttonStyle(.plain)
-                .contextMenu {
-                    Button("Open on GitHub") { NSWorkspace.shared.open(url) }
-                    Button("Copy Link") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(url.absoluteString, forType: .string)
-                    }
-                }
-                .onHover { inside in if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
-        } else {
-            body
-        }
-    }
-}
-
 struct HeaderButtonStyle: ButtonStyle {
     let palette: ClaudePalette
     var active: Bool
@@ -580,97 +406,6 @@ struct HeaderButtonStyle: ButtonStyle {
             .frame(width: 24, height: 22)
             .background(RoundedRectangle(cornerRadius: 5).fill(configuration.isPressed ? palette.raised : .clear))
             .contentShape(Rectangle())
-    }
-}
-
-/// Pill-shaped menu used for model, effort and mode.
-struct PillMenu<Content: View>: View {
-    let icon: String
-    let title: String
-    let color: Color
-    let palette: ClaudePalette
-    let help: String
-    @ViewBuilder var content: () -> Content
-
-    var body: some View {
-        Menu {
-            content()
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: icon).foregroundStyle(color)
-                Text(title).foregroundStyle(palette.foreground)
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).foregroundStyle(palette.dim)
-            }
-            .font(.system(size: 11, weight: .medium))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(Capsule().fill(palette.raised))
-            .overlay(Capsule().strokeBorder(palette.border, lineWidth: 0.5))
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help(help)
-    }
-}
-
-struct ModelMenu: View {
-    let claude: ClaudeCodeSession
-    let palette: ClaudePalette
-
-    var body: some View {
-        PillMenu(icon: "cpu", title: claude.modelTitle, color: palette.claude, palette: palette,
-                 help: "Model" + (claude.resolvedModel.map { " — using \($0)" } ?? "")) {
-            if claude.models.isEmpty {
-                ForEach(["default", "opus", "sonnet", "haiku"], id: \.self) { m in
-                    Toggle(m.capitalized, isOn: Binding(get: { claude.model == m }, set: { _ in claude.setModel(m) }))
-                }
-            } else {
-                ForEach(claude.models) { m in
-                    Toggle(isOn: Binding(get: { claude.model == m.value }, set: { _ in claude.setModel(m.value) })) {
-                        Text(m.label)
-                        if !m.detail.isEmpty { Text(m.detail) }
-                    }
-                }
-            }
-        }
-    }
-}
-
-struct EffortMenu: View {
-    let claude: ClaudeCodeSession
-    let palette: ClaudePalette
-
-    var body: some View {
-        if !claude.effortLevels.isEmpty {
-            PillMenu(icon: "gauge.with.dots.needle.50percent", title: claude.effort.isEmpty ? "Auto effort" : claude.effort.capitalized,
-                     color: palette.yellow, palette: palette, help: "Effort: how much Claude thinks before acting") {
-                Toggle("Model default", isOn: Binding(get: { claude.effort.isEmpty }, set: { _ in claude.setEffort("") }))
-                Divider()
-                ForEach(claude.effortLevels, id: \.self) { level in
-                    Toggle(level == "xhigh" ? "Extra high" : level.capitalized,
-                           isOn: Binding(get: { claude.effort == level }, set: { _ in claude.setEffort(level) }))
-                }
-            }
-        }
-    }
-}
-
-struct ModeMenu: View {
-    let claude: ClaudeCodeSession
-    let palette: ClaudePalette
-
-    var body: some View {
-        PillMenu(icon: claude.permissionMode.symbol, title: claude.permissionMode.title,
-                 color: ClaudeStatusLine.modeColor(claude.permissionMode, palette), palette: palette,
-                 help: "Permission mode (⇧⇥ to cycle)") {
-            ForEach(claude.availableModes) { mode in
-                Toggle(isOn: Binding(get: { claude.permissionMode == mode }, set: { _ in claude.setPermissionMode(mode) })) {
-                    Text(mode.title)
-                    Text(mode.detail)
-                }
-            }
-        }
     }
 }
 

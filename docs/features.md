@@ -39,7 +39,10 @@ There is one place to type: a native editor pinned to the top or bottom of each 
 
 ## Tabs, splits and windows
 
-- Horizontal tabs or a vertical sidebar (⌃⌘T). Drag the sidebar's edge to resize it; double-click the edge to reset.
+- Horizontal tabs or a vertical sidebar (⌃⌘T). The sidebar floats inside the window on the system's sidebar glass, tinted by your terminal theme (opaque with Reduce Transparency), with the window's traffic lights in its top row. Hide and show it with ⌃⌘S or the button next to the traffic lights. Drag its edge to resize it; double-click the edge to reset.
+- Each sidebar row shows what the tab is (terminal, Claude, Codex), its folder, branch and PR, and one status: an orange spinner while an agent works, a yellow **Input** pill when it needs you, a green check when it finished, otherwise the tab's ⌘ number. A running command shows a gray spinner; a bell, a failed command and unseen output show small marks. The **Pull Requests** row shows how many PRs wait on your review.
+- The sidebar opens with **Go to anything…** (the command palette) and ends with **New Tab** (⌘T) and **Claude in New Worktree…** (⌥⌘N), which asks for a branch, creates a worktree for it and starts Claude there in a new tab.
+- With vertical tabs, a unified toolbar above the content shows the focused pane: its title, the repository, branch and worktree (or folder and shell), its pull request (click to open it) and a red capsule when CI checks fail on the branch. On the right: Claude's model, effort and permission mode, MCP servers, a **…** menu (continue in the terminal UI, Remote Control, close Claude) and the inspector toggle (⌃⌘B) for Claude panes; **Split**, **…** and the inspector toggle for terminal panes. With splits it follows the focused pane, and the Claude view drops its own header so there's one bar.
 - Chrome-style tab groups: named, colored and collapsible.
 - Drag to reorder tabs, or move a tab to a new window.
 - Splits go right (⌘D) and down (⇧⌘D). Dividers are draggable, and you can zoom a pane or broadcast input to every pane.
@@ -80,7 +83,7 @@ See [Claude Code and Codex](claude-code.md) for the full guide.
 
 ## Files, worktrees and GitHub sidebar
 
-Toggle it with ⌃⌘B, or the sidebar button at the top right of the window (in the tab bar, or the title row in vertical-tabs mode) when the pane is in a git repository. It's always available in the Claude view.
+Toggle it with ⌃⌘B, or the sidebar button at the top right of the window (in the tab bar, or the toolbar in vertical-tabs mode) when the pane is in a git repository. It's always available in the Claude view.
 
 - **Files.** The repository tree with git status per file, or just the changed files.
 - **Worktrees.** Every worktree of the repo with its branch, ahead/behind or "not pushed", the branch's PR (open, draft, merged, closed, review state), uncommitted changes, last activity and disk size. Worktrees that are clean and idle for 7+ days (configurable) are highlighted as stale, and merged ones are badged. When any clean worktree's PR has merged, a **Clean up merged worktrees** line appears at the top of the tab; it lists them for confirmation and removes them, deleting each branch only when it has nothing beyond what merged. The worktree you're in is never included. Open a worktree in a new tab, start Claude there, or delete it (`git worktree remove`, optionally `git branch -d`).
@@ -151,7 +154,7 @@ The first time Shell sees that Apple Intelligence is available, it shows a one-t
 ## Everything else
 
 - Hotkey window (quake-style, default ⌥\`).
-- Command palette (⇧⌘P).
+- Command palette (⇧⌘P): tabs, worktrees, recent folders, actions, themes and history, grouped by kind. Type `>` to search actions only or `@` for folders and worktrees. ⏎ goes to a result (an open tab, else a new one), ⌘⏎ opens it in a new tab and ⌥⏎ starts Claude there.
 - Find (⌘F).
 - Jump between commands (⇧⌘↑ / ⇧⌘↓).
 - Notifications for long-running commands.

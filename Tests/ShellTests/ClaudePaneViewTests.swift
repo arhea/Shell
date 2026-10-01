@@ -140,7 +140,7 @@ final class ClaudePaneViewTests: XCTestCase {
         // The remove button's key-view stand-in sits at the very top (it's an
         // offset overlay), ahead of the header's buttons.
         let controls = w.controls()
-        XCTAssertEqual(controls.count, 6, "remove, three header buttons, attach, mode")
+        XCTAssertEqual(controls.count, 4, "remove, the header's MCP button, attach, mode")
         w.press(0)
         XCTAssertTrue(claude.draftAttachments.isEmpty)
     }
@@ -236,57 +236,53 @@ final class ClaudeHeaderTests: XCTestCase {
         render(header(ended))
     }
 
-    func testCloseButtonCloses() throws {
-        var closed = 0
+    func testVerticalTabsLeaveTheHeaderToTheWindowToolbar() {
         let claude = F.session()
-        let w = claudeWindow(ClaudeHeader(claude: claude, palette: F.palette, onClose: { closed += 1 }, onContinueInTerminal: {},
-                                          onToggleExplorer: {}), width: 900)
-        // The close button is the rightmost control (never press a menu: it would open and block).
-        let controls = w.controls()
-        let index = try XCTUnwrap(controls.indices.max { controls[$0].frame.maxX < controls[$1].frame.maxX })
-        w.press(index)
-        XCTAssertEqual(closed, 1)
+        withSettings({ $0.tabBarStyle = .horizontal }) {
+            XCTAssertGreaterThan(render(header(claude), size: CGSize(width: 900, height: 60)).fittingSize.height, 30)
+        }
+        withSettings({ $0.tabBarStyle = .vertical }) {
+            XCTAssertEqual(render(header(claude), size: CGSize(width: 900, height: 60)).fittingSize.height, 0)
+        }
     }
 
-    func testMenusForModelEffortAndMode() {
+    func testToolbarControlsForModelEffortModeAndMCP() {
         withSettings({ _ in }) {
             let claude = F.session(arguments: ClaudeArguments(model: "claude-sonnet-5", effort: "", permissionMode: "default",
                                                               passthrough: ["--allow-dangerously-skip-permissions"]))
             XCTAssertEqual(claude.modelTitle, "Sonnet 5")
             XCTAssertTrue(claude.availableModes.contains(.bypassPermissions))
-            render(ModelMenu(claude: claude, palette: F.palette))
-            render(EffortMenu(claude: claude, palette: F.palette))
+            func controls() -> ClaudeToolbarControls<EmptyView> {
+                ClaudeToolbarControls(claude: claude, inspectorOn: false, onToggleInspector: {}, onClose: {}, onContinueInTerminal: {}) { EmptyView() }
+            }
+            XCTAssertGreaterThan(render(controls(), size: CGSize(width: 700, height: 30)).fittingSize.width, 100)
             claude.setEffort("xhigh")
             XCTAssertEqual(claude.effort, "xhigh")
-            render(EffortMenu(claude: claude, palette: F.palette))
-            render(ModeMenu(claude: claude, palette: F.palette))
+            XCTAssertEqual(ClaudeToolbarControls<EmptyView>.effortTitle("xhigh"), "Extra high")
+            XCTAssertEqual(ClaudeToolbarControls<EmptyView>.effortTitle("high"), "High")
             claude.setModel("default")
             XCTAssertEqual(claude.modelTitle, "Default")
-            render(ModelMenu(claude: claude, palette: F.palette))
+            render(controls(), size: CGSize(width: 700, height: 30))
+            F.systemInit(claude, mcp: [("github", "connected"), ("linear", "needs-auth")])
+            XCTAssertEqual(claude.mcpNeedsAuth.map(\.name), ["linear"])
+            render(controls(), size: CGSize(width: 700, height: 30))
         }
     }
 
-    func testPillMenuAndHeaderButtonStyleRender() {
-        let host = render(PillMenu(icon: "cpu", title: "Model", color: .orange, palette: F.palette, help: "Pick") {
-            Button("One") {}
-        })
-        XCTAssertGreaterThan(host.fittingSize.width, 20)
-        render(Button("x") {}.buttonStyle(HeaderButtonStyle(palette: F.palette, active: true)))
-    }
-
-    func testMCPButtonBadgesServersNeedingSignIn() {
+    func testInspectorToggleCallsBack() throws {
+        var toggled = 0
         let claude = F.session()
-        render(MCPHeaderButton(claude: claude, palette: F.palette))
-        F.systemInit(claude, mcp: [("github", "connected"), ("linear", "needs-auth"), ("slack", "needs-auth")])
-        XCTAssertEqual(claude.mcpNeedsAuth.map(\.name), ["linear", "slack"])
-        render(MCPHeaderButton(claude: claude, palette: F.palette))
+        let w = claudeWindow(ClaudeToolbarControls(claude: claude, inspectorOn: true, onToggleInspector: { toggled += 1 },
+                                                   onClose: {}, onContinueInTerminal: {}) { EmptyView() }, width: 700)
+        // The inspector toggle is the rightmost control (never press a menu: it would open and block).
+        let controls = w.controls()
+        let index = try XCTUnwrap(controls.indices.max { controls[$0].frame.maxX < controls[$1].frame.maxX })
+        w.press(index)
+        XCTAssertEqual(toggled, 1)
     }
 
-    func testContextBarOutsideARepository() {
-        let claude = F.session(directory: NSHomeDirectory() + "/project")
-        XCTAssertNil(claude.repository)
-        let host = render(ClaudeContextBar(claude: claude, palette: F.palette), size: CGSize(width: 800, height: 40))
-        XCTAssertGreaterThan(host.fittingSize.width, 20)
+    func testHeaderButtonStyleRenders() {
+        render(Button("x") {}.buttonStyle(HeaderButtonStyle(palette: F.palette, active: true)))
     }
 }
 

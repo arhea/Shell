@@ -70,9 +70,9 @@ final class TabViewsTests: XCTestCase {
         let tab = fx.tab("Status")
         let session = try XCTUnwrap(tab.focusedSession)
         func check(_ expected: String?, file: StaticString = #filePath, line: UInt = #line) {
-            XCTAssertEqual(TabStatusIcon.accessibilityStatus(tab), expected, file: file, line: line)
-            render(TabStatusIcon(tab: tab, palette: palette), size: CGSize(width: 20, height: 20))
-            render(SidebarTabRow(controller: fx.controller, workspace: fx.workspace, tab: tab, group: nil, palette: palette),
+            XCTAssertEqual(TabPresentation.accessibilityStatus(tab), expected, file: file, line: line)
+            render(TabTrailingStatus(tab: tab, index: 0, hovering: false) {}, size: CGSize(width: 40, height: 20))
+            render(SidebarTabRow(controller: fx.controller, workspace: fx.workspace, tab: tab, group: nil),
                    size: CGSize(width: 240, height: 50))
         }
         check(nil)
@@ -193,16 +193,16 @@ final class TabViewsTests: XCTestCase {
                size: CGSize(width: 240, height: 500))
         for agent: AgentStatus in [.needsInput(.claude, "Approve the edit?"), .finished(.claude, "Done")] {
             busy.focusedSession?.agent = agent
-            render(SidebarTabRow(controller: fx.controller, workspace: fx.workspace, tab: busy, group: group, palette: palette),
+            render(SidebarTabRow(controller: fx.controller, workspace: fx.workspace, tab: busy, group: group),
                    size: CGSize(width: 240, height: 60))
         }
         group.isCollapsed = true
         fx.controller.chrome.isFullScreen = true
         render(VerticalTabSidebar(controller: fx.controller, workspace: fx.workspace, chrome: fx.controller.chrome),
                size: CGSize(width: 240, height: 500))
-        render(SidebarGroupHeader(controller: fx.controller, workspace: fx.workspace, group: group, count: 1, palette: palette))
+        render(SidebarGroupHeader(controller: fx.controller, workspace: fx.workspace, group: group, count: 1))
         group.name = ""
-        render(SidebarGroupHeader(controller: fx.controller, workspace: fx.workspace, group: group, count: 2, palette: palette))
+        render(SidebarGroupHeader(controller: fx.controller, workspace: fx.workspace, group: group, count: 2))
     }
 
     func testVerticalTabBarStyleBuildsTheSidebarChrome() throws {
@@ -223,7 +223,7 @@ final class TabViewsTests: XCTestCase {
         let w = claudeWindow(VerticalTabSidebar(controller: fx.controller, workspace: fx.workspace, chrome: fx.controller.chrome),
                              width: 240, height: 400)
         let controls = w.controls()
-        // Reading order: the two chrome buttons, then "New Tab" and "New Tab Group" at the bottom.
+        // Reading order ends with the footer: "New Tab", then "Claude in New Worktree…".
         XCTAssertGreaterThanOrEqual(controls.count, 4)
         w.press(controls.count - 2)
         XCTAssertEqual(fx.workspace.tabs.count, 2)
@@ -233,7 +233,7 @@ final class TabViewsTests: XCTestCase {
         let fx = try tabsFixture()
         let first = fx.tab("First")
         fx.tab("Second")
-        let w = claudeWindow(SidebarTabRow(controller: fx.controller, workspace: fx.workspace, tab: first, group: nil, palette: palette),
+        let w = claudeWindow(SidebarTabRow(controller: fx.controller, workspace: fx.workspace, tab: first, group: nil),
                              width: 240, height: 44)
         w.click(x: 80, y: 14)
         XCTAssertTrue(waitUntil(timeout: 2) { fx.workspace.selectedTabID == first.id })
@@ -319,6 +319,6 @@ final class TabViewsTests: XCTestCase {
         let group = fx.workspace.createGroup(name: "", with: tab)
         render(Text("x").tabAccessibility(tab: tab, index: 10, selected: false, group: group) {}, size: CGSize(width: 40, height: 20))
         render(Text("x").tabAccessibility(tab: tab, index: 0, selected: true, group: nil) {}, size: CGSize(width: 40, height: 20))
-        XCTAssertEqual(TabStatusIcon.accessibilityStatus(tab), "Bell")
+        XCTAssertEqual(TabPresentation.accessibilityStatus(tab), "Bell")
     }
 }
