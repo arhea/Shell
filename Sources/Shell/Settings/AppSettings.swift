@@ -402,6 +402,8 @@ struct AppSettings: Codable, Equatable {
     var intelligenceSessionSummaries = false
     /// Suggest names when renaming a tab or creating a tab group.
     var intelligenceTabNames = false
+    /// Draft a commit message from the staged diff in Review Changes.
+    var intelligenceCommitMessages = false
     /// The one-time "Apple Intelligence features are available" banner was shown.
     var intelligenceAnnouncementShown = false
 
