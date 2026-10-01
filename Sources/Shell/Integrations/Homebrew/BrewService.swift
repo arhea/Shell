@@ -32,12 +32,25 @@ final class BrewService {
     private(set) var isSearching = false
     private(set) var lastError: String?
     private var searchTask: Task<Void, Never>?
+    /// Unit tests: where to look for brew instead of the standard locations,
+    /// and where visible commands go instead of a new terminal tab.
+    @ObservationIgnored private let candidates: [String]?
+    @ObservationIgnored private let terminal: @MainActor (_ command: String, _ title: String) -> Void
 
     static let installCommand = #"/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)""#
 
-    private init() { detect() }
+    init(candidates: [String]? = nil,
+         terminal: @escaping @MainActor (_ command: String, _ title: String) -> Void = { AppDelegate.shared.runInTerminal($0, title: $1) }) {
+        self.candidates = candidates
+        self.terminal = terminal
+        detect()
+    }
 
     func detect() {
+        if let candidates {
+            brewPath = candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+            return
+        }
         // Test hook: point Shell at a stand-in brew without touching the real one.
         if let override = ProcessInfo.processInfo.environment["SHELL_APP_BREW"], FileManager.default.isExecutableFile(atPath: override) {
             brewPath = override
@@ -122,7 +135,7 @@ final class BrewService {
     func installHomebrew() { run(Self.installCommand, title: "Install Homebrew") }
 
     private func run(_ command: String, title: String) {
-        AppDelegate.shared.runInTerminal(command, title: title)
+        terminal(command, title)
     }
 
     // MARK: Parsing

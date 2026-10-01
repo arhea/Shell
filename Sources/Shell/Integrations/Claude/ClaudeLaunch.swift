@@ -192,6 +192,9 @@ enum ClaudeLauncher {
         session.startNativeClaude(request)
     }
 
+    /// Unit tests answer the one-time choice here instead of showing the alert.
+    static var alertResponder: ((NSAlert) -> NSApplication.ModalResponse)?
+
     /// Shows the one-time choice. `.ask` in the completion means cancelled.
     private static func ask(in session: TerminalSession, completion: @escaping (ClaudeLaunchMode) -> Void) {
         session.onRequestFocus?()
@@ -215,7 +218,9 @@ enum ClaudeLauncher {
             }
             completion(choice)
         }
-        if let window = session.surfaceView.window {
+        if let alertResponder {
+            finish(alertResponder(alert))
+        } else if let window = session.surfaceView.window {
             alert.beginSheetModal(for: window, completionHandler: finish)
         } else {
             finish(alert.runModal())

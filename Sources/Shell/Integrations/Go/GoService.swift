@@ -28,7 +28,31 @@ final class GoService {
     var message: String?
 
     @ObservationIgnored private var monitor: Timer?
-    @ObservationIgnored private let environment = MCPManager.defaultEnvironment()
+    // Injectable for unit tests; the defaults are the user's real toolchain.
+    @ObservationIgnored private let environment: [String: String]
+    @ObservationIgnored private let home: String
+    @ObservationIgnored private let findExecutable: (_ name: String, _ environment: [String: String]) -> String?
+    @ObservationIgnored private let size: @Sendable (_ path: String) async -> Int64?
+    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let notify: @MainActor (_ title: String, _ body: String) -> Void
+
+    init(environment: [String: String] = MCPManager.defaultEnvironment(),
+         home: String = NSHomeDirectory(),
+         findExecutable: @escaping (_ name: String, _ environment: [String: String]) -> String? = GitRepository.findExecutable,
+         size: @escaping @Sendable (_ path: String) async -> Int64? = { await WorktreeService.size(of: $0) },
+         // Unit tests share the app's bundle ID; keep their writes out of the real preferences.
+         defaults: UserDefaults = AppEnvironment.isRunningTests
+             ? UserDefaults(suiteName: "app.bethesdalabs.Shell.tests") ?? .standard : .standard,
+         notify: @escaping @MainActor (_ title: String, _ body: String) -> Void = {
+             NotificationManager.shared.postAppNotification(title: $0, body: $1, pane: .go)
+         }) {
+        self.environment = environment
+        self.home = home
+        self.findExecutable = findExecutable
+        self.size = size
+        self.defaults = defaults
+        self.notify = notify
+    }
 
     var isInstalled: Bool { goPath != nil }
     /// All Go caches (the fuzz corpus lives inside the build cache, so it isn't added twice).
@@ -39,12 +63,10 @@ final class GoService {
     /// The build cache on its own is over the same limit.
     var isBuildCacheOverLimit: Bool { lastMeasured != nil && buildCacheBytes > limitBytes }
 
-    private var home: String { NSHomeDirectory() }
-
     // MARK: Discovery
 
     func refresh() async {
-        goPath = GitRepository.findExecutable("go", environment: environment)
+        goPath = findExecutable("go", environment)
         guard let go = goPath else {
             caches = []
             return
@@ -76,10 +98,11 @@ final class GoService {
         guard !isMeasuring else { return }
         isMeasuring = true
         defer { isMeasuring = false }
+        let size = size
         await withTaskGroup(of: (Int, Int64?).self) { group in
             for (i, c) in caches.enumerated() {
                 let path = c.path
-                group.addTask { (i, FileManager.default.fileExists(atPath: path) ? await WorktreeService.size(of: path) : 0) }
+                group.addTask { (i, FileManager.default.fileExists(atPath: path) ? await size(path) : 0) }
             }
             for await (i, bytes) in group where caches.indices.contains(i) { caches[i].bytes = bytes }
         }
@@ -102,7 +125,7 @@ final class GoService {
             let flag = id == .build ? "-cache" : id == .modules ? "-modcache" : "-fuzzcache"
             err = await WorktreeService.runReportingError(go, ["clean", flag], in: home, environment: environment)
         case .golangci:
-            if let lint = GitRepository.findExecutable("golangci-lint", environment: environment) {
+            if let lint = findExecutable("golangci-lint", environment) {
                 err = await WorktreeService.runReportingError(lint, ["cache", "clean"], in: home, environment: environment)
             } else {
                 err = removeContents(cache.path)
@@ -161,19 +184,16 @@ final class GoService {
         let subject = buildOver ? "Go's build cache" : "Go's caches"
         if s.goAutoCleanBuildCache && buildCacheBytes > 0 {
             await clear(.build)
-            NotificationManager.shared.postAppNotification(
-                title: "\(subject) passed \(s.goCacheWarningGB) GB",
-                body: "It was \(size); Shell cleared the build cache. " + (message ?? ""), pane: .go)
+            notify("\(subject) passed \(s.goCacheWarningGB) GB",
+                   "It was \(size); Shell cleared the build cache. " + (message ?? ""))
             return
         }
         let key = buildOver ? "GoBuildCacheWarningLastShown" : "GoCacheWarningLastShown"
-        if let last = UserDefaults.standard.object(forKey: key) as? Date, Date().timeIntervalSince(last) < 86400 { return }
-        UserDefaults.standard.set(Date(), forKey: key)
-        NotificationManager.shared.postAppNotification(
-            title: "\(subject) \(buildOver ? "is" : "are") \(size)",
-            body: buildOver
-                ? "That's over your \(s.goCacheWarningGB) GB limit. Open Settings › Go to clear it (go clean -cache)."
-                : "That's over your \(s.goCacheWarningGB) GB limit. Open Settings › Go to clear the build or module cache.",
-            pane: .go)
+        if let last = defaults.object(forKey: key) as? Date, Date().timeIntervalSince(last) < 86400 { return }
+        defaults.set(Date(), forKey: key)
+        notify("\(subject) \(buildOver ? "is" : "are") \(size)",
+               buildOver
+                   ? "That's over your \(s.goCacheWarningGB) GB limit. Open Settings › Go to clear it (go clean -cache)."
+                   : "That's over your \(s.goCacheWarningGB) GB limit. Open Settings › Go to clear the build or module cache.")
     }
 }

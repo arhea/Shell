@@ -1,6 +1,7 @@
 import AppKit
 import CoreServices
 import Observation
+import os
 
 /// A file's state in `git status`.
 struct GitFileStatus: Equatable {
@@ -389,9 +390,16 @@ final class GitRepository {
         findExecutable("git", environment: environment) ?? "/usr/bin/git"
     }
 
+    /// Searched after `PATH`. Tests narrow it so a real Homebrew `gh` is never found.
+    nonisolated static var fallbackSearchDirectories: [String] {
+        get { fallbackDirectories.withLock { $0 } }
+        set { fallbackDirectories.withLock { $0 = newValue } }
+    }
+    private nonisolated static let fallbackDirectories = OSAllocatedUnfairLock(initialState: ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"])
+
     nonisolated static func findExecutable(_ name: String, environment: [String: String]) -> String? {
         let fm = FileManager.default
-        let dirs = (environment["PATH"] ?? "").split(separator: ":").map(String.init) + ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"]
+        let dirs = (environment["PATH"] ?? "").split(separator: ":").map(String.init) + fallbackSearchDirectories
         return dirs.map { "\($0)/\(name)" }.first { fm.isExecutableFile(atPath: $0) }
     }
 

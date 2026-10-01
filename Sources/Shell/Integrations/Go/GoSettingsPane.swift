@@ -4,10 +4,13 @@ import SwiftUI
 /// Settings › Go: toolchain info, cache sizes and clearing, and the size warning.
 struct GoSettingsPane: View {
     /// App-wide model (observed through property access; not state this view owns).
-    private let go = GoService.shared
+    private let go: GoService
     /// App-wide model (observed through property access; not state this view owns).
     private let store = SettingsStore.shared
     @State private var confirm: GoService.Cache?
+
+    /// `go` is injectable for unit tests.
+    init(go: GoService = .shared) { self.go = go }
 
     var body: some View {
         Form {
@@ -97,11 +100,11 @@ struct GoSettingsPane: View {
         .confirmationDialog("Clear \(confirm?.title ?? "")?", isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }), presenting: confirm) { c in
             Button("Clear \(c.bytes.map(WorktreeService.formatBytes) ?? "")", role: .destructive) { Task { await go.clear(c.id) } }
         } message: { c in
-            Text([command(for: c), c.caution].compactMap { $0 }.joined(separator: "\n\n"))
+            Text([Self.command(for: c), c.caution].compactMap { $0 }.joined(separator: "\n\n"))
         }
     }
 
-    private func command(for c: GoService.Cache) -> String {
+    static func command(for c: GoService.Cache) -> String {
         switch c.id {
         case .build: "Runs `go clean -cache`."
         case .modules: "Runs `go clean -modcache`."

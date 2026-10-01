@@ -4,7 +4,12 @@ import SwiftUI
 /// Settings › Apple Intelligence: optional features backed by the on-device
 /// model. Each is off by default and hidden behind availability.
 struct IntelligenceSettingsPane: View {
-    @State private var status = Intelligence.status
+    @State private var status: Intelligence.Status
+
+    /// `status` is injectable so unit tests can show each availability state.
+    init(status: Intelligence.Status = Intelligence.status) {
+        _status = State(initialValue: status)
+    }
 
     var body: some View {
         let available = status == .available

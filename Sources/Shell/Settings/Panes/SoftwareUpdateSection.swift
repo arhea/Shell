@@ -5,21 +5,41 @@ import SwiftUI
 struct SoftwareUpdateSection: View {
     /// App-wide model (observed through property access; not state this view owns).
     private let updater = SoftwareUpdater.shared
+    /// A fixed state for unit tests; nil reads the live updater.
+    private let injected: Status?
+
+    /// What the section shows.
+    struct Status {
+        var phase: SoftwareUpdater.Phase
+        var currentVersion: String
+        var installBlocker: String?
+        var downloadFraction: Double?
+        var downloadError: String?
+        var lastCheck: Date?
+    }
+
+    init(status: Status? = nil) { injected = status }
+
+    private var current: Status {
+        injected ?? Status(phase: updater.phase, currentVersion: updater.currentVersion, installBlocker: updater.installBlocker,
+                           downloadFraction: updater.downloadFraction, downloadError: updater.downloadError, lastCheck: updater.lastCheck)
+    }
 
     var body: some View {
         let s = SettingsStore.shared.settings
-        let blocker = updater.installBlocker
+        let u = current
+        let blocker = u.installBlocker
         Section("Software Update") {
             Toggle("Check for updates automatically", isOn: setting(\.checkForUpdates))
             Toggle("Download updates in the background and install them when Shell quits", isOn: setting(\.installUpdatesAutomatically))
                 .disabled(!s.checkForUpdates || blocker != nil)
-            LabeledContent("Shell \(updater.currentVersion)") { status }
-            if case .downloading = updater.phase, let fraction = updater.downloadFraction, fraction < 1 {
+            LabeledContent("Shell \(u.currentVersion)") { status(u) }
+            if case .downloading = u.phase, let fraction = u.downloadFraction, fraction < 1 {
                 ProgressView(value: fraction)
             }
             if let blocker {
                 Text(blocker).font(.caption).foregroundStyle(.secondary)
-            } else if case .available = updater.phase, let error = updater.downloadError {
+            } else if case .available = u.phase, let error = u.downloadError {
                 Text("The download failed: \(error)").font(.caption).foregroundStyle(.red)
             }
             Text("Shell asks GitHub for the latest release of \(UpdateInstaller.repository) every six hours. Updates are installed only when they're signed by Shell's developer and notarized by Apple. No identifiers or usage data are sent.")
@@ -27,15 +47,15 @@ struct SoftwareUpdateSection: View {
         }
     }
 
-    @ViewBuilder private var status: some View {
+    @ViewBuilder private func status(_ u: Status) -> some View {
         HStack(spacing: 8) {
-            switch updater.phase {
+            switch u.phase {
             case .checking:
                 ProgressView().controlSize(.small)
                 Text("Checking…").foregroundStyle(.secondary)
             case .downloading(let r):
                 ProgressView().controlSize(.small)
-                if let f = updater.downloadFraction, f >= 1 {
+                if let f = u.downloadFraction, f >= 1 {
                     Text("Verifying \(r.version)…").foregroundStyle(.secondary)
                 } else {
                     Text("Downloading \(r.version)…").foregroundStyle(.secondary)
@@ -43,8 +63,8 @@ struct SoftwareUpdateSection: View {
             case .available(let r):
                 Text("\(r.version) is available")
                 Button("Release Notes") { NSWorkspace.shared.open(r.notesURL) }
-                if updater.installBlocker == nil {
-                    Button(updater.downloadError == nil ? "Install and Restart" : "Try Again") { updater.installAndRelaunch() }
+                if u.installBlocker == nil {
+                    Button(u.downloadError == nil ? "Install and Restart" : "Try Again") { updater.installAndRelaunch() }
                         .buttonStyle(.borderedProminent)
                 } else {
                     Button("Download") { NSWorkspace.shared.open(r.notesURL) }
@@ -57,7 +77,7 @@ struct SoftwareUpdateSection: View {
                 Text(message).foregroundStyle(.secondary).lineLimit(2).help(message)
                 checkNow
             case .idle, .upToDate:
-                if let last = updater.lastCheck {
+                if let last = u.lastCheck {
                     Text("Up to date · checked \(last.formatted(.relative(presentation: .named)))").foregroundStyle(.secondary)
                 }
                 checkNow

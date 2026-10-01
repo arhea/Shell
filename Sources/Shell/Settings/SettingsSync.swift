@@ -47,8 +47,12 @@ final class SettingsSync {
         "extraGhosttyConfig",
     ]
 
-    static let cloudDocuments = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs", isDirectory: true)
+    /// The iCloud Drive root. Unit tests get a folder inside their temporary
+    /// support directory, so they never read or write the real iCloud Drive.
+    static let cloudDocuments = AppEnvironment.isRunningTests
+        ? SettingsStore.supportDirectory.appendingPathComponent("CloudDocs", isDirectory: true)
+        : FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs", isDirectory: true)
     static let folder = cloudDocuments.appendingPathComponent("Shell", isDirectory: true)
     static let fileURL = folder.appendingPathComponent("settings.json")
 
@@ -60,19 +64,23 @@ final class SettingsSync {
 
     /// Last sync, for display in Settings.
     private(set) var lastSynced: Date? {
-        get { UserDefaults.standard.object(forKey: Self.lastSyncedKey) as? Date }
-        set { UserDefaults.standard.set(newValue, forKey: Self.lastSyncedKey) }
+        get { Self.defaults.object(forKey: Self.lastSyncedKey) as? Date }
+        set { Self.defaults.set(newValue, forKey: Self.lastSyncedKey) }
     }
 
     /// `modified` stamp of the newest file this Mac wrote or applied, so it
     /// doesn't re-apply its own writes or older copies.
     private var lastSeenStamp: Date? {
-        get { UserDefaults.standard.object(forKey: Self.lastSeenKey) as? Date }
-        set { UserDefaults.standard.set(newValue, forKey: Self.lastSeenKey) }
+        get { Self.defaults.object(forKey: Self.lastSeenKey) as? Date }
+        set { Self.defaults.set(newValue, forKey: Self.lastSeenKey) }
     }
 
-    private static let lastSyncedKey = "SettingsSync.lastSynced"
-    private static let lastSeenKey = "SettingsSync.lastSeenStamp"
+    /// Unit tests use their own suite so they never change the real sync stamps.
+    static let defaults: UserDefaults = AppEnvironment.isRunningTests
+        ? UserDefaults(suiteName: "app.bethesdalabs.Shell.tests") ?? .standard : .standard
+
+    static let lastSyncedKey = "SettingsSync.lastSynced"
+    static let lastSeenKey = "SettingsSync.lastSeenStamp"
 
     private var watcher: DirectoryWatcher?
     private var pushWork: DispatchWorkItem?
@@ -233,7 +241,7 @@ final class SettingsSync {
 
     /// Makes the next `pullIfNewer` ignore the current iCloud copy.
     private static func markRemoteStale() {
-        UserDefaults.standard.set(Date(), forKey: lastSeenKey)
+        defaults.set(Date(), forKey: lastSeenKey)
     }
 
     // MARK: Merging (pure, tested)

@@ -19,6 +19,18 @@ xcodebuild -project Shell.xcodeproj -scheme Shell test
 
 Tests run inside Shell (it's the test host), but they never touch your real files: `AppEnvironment.isRunningTests` makes launch skip windows, the terminal engine, the control socket, iCloud sync, the hotkey, scheduled jobs and session restore, and points `SettingsStore.supportDirectory` (settings, the Ghostty config, history, session restore, themes) at a throwaway `$TMPDIR/ShellTests-<pid>` folder. `TestIsolationTests` checks this.
 
+`make coverage` (`scripts/coverage.sh`) runs the suite with coverage and prints line coverage per file, the total (same exclusions as CI) and the pass/fail counts. `FILTER=UI/Claude make coverage` limits the per-file list; extra arguments go to `xcodebuild`, e.g. `./scripts/coverage.sh -only-testing:ShellTests/ThemeTests`.
+
+### Writing tests
+
+- **Helpers.** `Tests/ShellTests/Support/TestSupport.swift` has `render(_:size:)` (lays out and draws a SwiftUI or AppKit view so its body runs), `withSettings` (changes settings and restores them), `makeTemporaryDirectory()` and `waitUntil`. `ClaudeViewTestSupport.swift` hosts views in an offscreen key window with `press(_:)` to trigger real SwiftUI button actions. `AppDelegate.shared.newWindowController()` and `newTab(directory:)` work in tests (no terminal engine); close every controller you open.
+- **Stand-in tools.** Never run the real `claude`, `gh`, `brew`, `npm`, `go` or `zsh` completion. Services take an injectable executable, runner or environment; tests write small `#!/bin/sh` stand-ins into a temp folder (see `ClaudeCodeSessionProcessTests`, `MCPTestSupport`, `GitFixtureSupport`). Git runs only on throwaway repos with `GIT_CONFIG_GLOBAL=/dev/null`.
+- **Your real state.** The test host shares Shell's bundle ID, so `UserDefaults.standard` is your real Shell preferences: code that writes defaults uses the `app.bethesdalabs.Shell.tests` suite under tests, and windows skip frame autosave. Files go under `SettingsStore.supportDirectory` or a temp folder, never `~`. Don't name temp folders `ShellTests-*`: launch removes stale ones.
+- **SwiftUI tasks run in tests.** `.task` and `.onAppear` run inside `render`, so a view that scans real files or spawns tools when it appears takes injected data or checks `AppEnvironment.isRunningTests`.
+- **Async tests.** `waitUntil` spins the run loop, which doesn't let main-actor tasks progress inside an `async` test; poll with `try await Task.sleep(for: .milliseconds(10))` there.
+- **No modals.** `runModal`, `NSAlert`, `NSOpenPanel` and sheets hang the suite.
+- **Unique names.** All test files share one module; keep helpers `private` or prefix them with their area.
+
 ### Test reports in CI
 
 `.github/workflows/test.yml` runs the tests on every pull request and push to `main`. The `swift-test-report` action (`.github/actions/swift-test-report`) reads the `.xcresult` bundle and keeps a single, updated comment on the PR with pass, fail and skip counts plus line coverage. The job summary shows the same numbers, followed by detail for failures only: each failed test gets its message, source location, a code excerpt, any failing arguments, and its activity log. Passing and skipped tests are only counted. Failures also appear as inline annotations on the diff. Test files are left out of the coverage number.

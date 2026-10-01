@@ -39,23 +39,39 @@ final class ZshService {
     private(set) var availableThemes: [String] = []
     private(set) var lastError: String?
 
-    private var home: URL { FileManager.default.homeDirectoryForCurrentUser }
+    // Injectable for unit tests; the defaults are the user's real setup.
+    @ObservationIgnored private let home: URL
+    @ObservationIgnored private let zdotdir: String?
+    @ObservationIgnored private let zsh: String
+    @ObservationIgnored private let reportedOhMyZsh: @MainActor () -> String?
+    @ObservationIgnored private let terminal: @MainActor (_ command: String, _ title: String) -> Void
+
     var zshrcURL: URL {
-        let dir = ProcessInfo.processInfo.environment["ZDOTDIR"].map { URL(fileURLWithPath: $0) } ?? home
+        let dir = zdotdir.map { URL(fileURLWithPath: $0) } ?? home
         return dir.appendingPathComponent(".zshrc")
     }
     var customPath: String? { omzPath.map { "\($0)/custom" } }
     var isOhMyZshInstalled: Bool { omzPath != nil }
     var isZshDefault: Bool { (loginShell as NSString).lastPathComponent == "zsh" }
 
-    private init() {}
+    init(home: URL = FileManager.default.homeDirectoryForCurrentUser,
+         zdotdir: String? = ProcessInfo.processInfo.environment["ZDOTDIR"],
+         zsh: String = "/bin/zsh",
+         reportedOhMyZsh: @escaping @MainActor () -> String? = { AgentIntegrations.shared.ohMyZshPath },
+         terminal: @escaping @MainActor (_ command: String, _ title: String) -> Void = { AppDelegate.shared.runInTerminal($0, title: $1) }) {
+        self.home = home
+        self.zdotdir = zdotdir
+        self.zsh = zsh
+        self.reportedOhMyZsh = reportedOhMyZsh
+        self.terminal = terminal
+    }
 
     func refresh() async {
         if let pw = getpwuid(getuid()), let sh = pw.pointee.pw_shell { loginShell = String(cString: sh) }
-        let v = await ProcessRunner.run("/bin/zsh", ["--version"])
+        let v = await ProcessRunner.run(zsh, ["--version"])
         zshVersion = String(decoding: v.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let reported = AgentIntegrations.shared.ohMyZshPath
+        let reported = reportedOhMyZsh()
         let candidates = [reported, home.appendingPathComponent(".oh-my-zsh").path].compactMap { $0 }
         omzPath = candidates.first { FileManager.default.fileExists(atPath: "\($0)/oh-my-zsh.sh") }
 
@@ -185,21 +201,21 @@ final class ZshService {
 
     // MARK: Commands (run in a visible tab)
 
-    func installOhMyZsh() { AppDelegate.shared.runInTerminal(Self.ohMyZshInstall, title: "Install Oh My Zsh") }
-    func updateOhMyZsh() { AppDelegate.shared.runInTerminal("omz update", title: "Update Oh My Zsh") }
-    func makeZshDefault() { AppDelegate.shared.runInTerminal("chsh -s /bin/zsh", title: "Default shell") }
+    func installOhMyZsh() { terminal(Self.ohMyZshInstall, "Install Oh My Zsh") }
+    func updateOhMyZsh() { terminal("omz update", "Update Oh My Zsh") }
+    func makeZshDefault() { terminal("chsh -s /bin/zsh", "Default shell") }
 
     func installExternal(_ plugin: ExternalPlugin) {
         guard let custom = customPath else { return }
         let dest = "\(custom)/plugins/\(plugin.name)"
-        AppDelegate.shared.runInTerminal("git clone --depth=1 \(plugin.repo) \(ShellEscape.quote(dest))", title: plugin.name)
+        terminal("git clone --depth=1 \(plugin.repo) \(ShellEscape.quote(dest))", plugin.name)
         setPlugin(plugin.name, enabled: true)
     }
 
     func installPowerlevel10k() {
         guard let custom = customPath else { return }
         let dest = "\(custom)/themes/powerlevel10k"
-        AppDelegate.shared.runInTerminal("git clone --depth=1 https://github.com/romkatv/powerlevel10k.git \(ShellEscape.quote(dest))", title: "powerlevel10k")
+        terminal("git clone --depth=1 https://github.com/romkatv/powerlevel10k.git \(ShellEscape.quote(dest))", "powerlevel10k")
         setTheme("powerlevel10k/powerlevel10k")
     }
 

@@ -106,7 +106,10 @@ struct ShortcutRecorder: View {
 
 struct IntegrationsSettingsPane: View {
     /// App-wide model (observed through property access; not state this view owns).
-    private let agents = AgentIntegrations.shared
+    private let agents: AgentIntegrations
+
+    /// Injectable so unit tests can use a temporary home folder.
+    init(agents: AgentIntegrations = .shared) { self.agents = agents }
 
     var body: some View {
         Form {

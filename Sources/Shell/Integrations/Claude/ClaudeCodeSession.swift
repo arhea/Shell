@@ -1109,9 +1109,12 @@ final class ClaudeCodeSession {
         }
     }
 
+    /// Unit tests point this at a temporary folder; nil means ~/.claude/projects.
+    nonisolated(unsafe) static var projectsDirectoryOverride: URL?
+
     private nonisolated static func readHistory(resumeID: String?, directory: String) -> [HistoryEntry] {
         let fm = FileManager.default
-        let projects = fm.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
+        let projects = projectsDirectoryOverride ?? fm.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
         var file: URL?
         if let id = resumeID {
             let dirs = (try? fm.contentsOfDirectory(at: projects, includingPropertiesForKeys: nil)) ?? []

@@ -11,6 +11,9 @@ struct PastSessionsDrawer: View {
     /// App-wide model (observed through property access; not state this view owns).
     private let history = ClaudeHistory.shared
     @State private var query = ""
+    /// Rescans transcripts while the drawer is open. Off in unit tests, so
+    /// rendering the drawer never reads the user's ~/.claude/projects.
+    static let refreshesHistory = !AppEnvironment.isRunningTests
 
     var body: some View {
         let p = ClaudePalette.current
@@ -38,16 +41,19 @@ struct PastSessionsDrawer: View {
         .task {
             // Pick up sessions that finish while the page is open.
             while !Task.isCancelled {
-                history.refresh()
+                if Self.refreshesHistory { history.refresh() }
                 try? await Task.sleep(for: .seconds(30))
             }
         }
     }
 
-    private var filtered: [ClaudePastSession] {
+    private var filtered: [ClaudePastSession] { Self.filter(history.sessions, query: query) }
+
+    /// Sessions whose title, first prompt, folder or branch contains `query`.
+    static func filter(_ sessions: [ClaudePastSession], query: String) -> [ClaudePastSession] {
         let q = query.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { return history.sessions }
-        return history.sessions.filter {
+        guard !q.isEmpty else { return sessions }
+        return sessions.filter {
             $0.title.localizedCaseInsensitiveContains(q) || ($0.prompt?.localizedCaseInsensitiveContains(q) ?? false)
                 || $0.directory.localizedCaseInsensitiveContains(q)
                 || ($0.branch?.localizedCaseInsensitiveContains(q) ?? false)
@@ -155,7 +161,7 @@ struct PastSessionCard: View {
     let liveEntry: ClaudeDashboard.Entry?
     let palette: ClaudePalette
     let perform: (PastSessionAction) -> Void
-    @State private var hovering = false
+    @State var hovering = false
 
     private var status: DirectoryWorktreeStatus { DirectoryWorktreeStatus.shared }
 

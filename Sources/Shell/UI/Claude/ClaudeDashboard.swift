@@ -735,7 +735,10 @@ struct ClaudeSessionTile: View {
 struct ClaudeUsageTile: View {
     let palette: ChromePalette
     /// App-wide model (observed through property access; not state this view owns).
-    private let usage = ClaudeUsage.shared
+    var usage: ClaudeUsage = .shared
+    /// Rescans transcripts while the tile is on screen. Off in unit tests, so
+    /// rendering the tile never reads the user's ~/.claude/projects.
+    static let refreshesUsage = !AppEnvironment.isRunningTests
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -747,7 +750,7 @@ struct ClaudeUsageTile: View {
             }
             limits
             palette.border.frame(height: 1)
-            tokens
+            ClaudeUsageTokens(stats: usage.tokens, palette: palette)
         }
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 250, alignment: .topLeading)
@@ -755,7 +758,7 @@ struct ClaudeUsageTile: View {
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(palette.border))
         .task {
             while !Task.isCancelled {
-                usage.refreshIfNeeded()
+                if Self.refreshesUsage { usage.refreshIfNeeded() }
                 try? await Task.sleep(for: .seconds(60))
             }
         }
@@ -806,21 +809,57 @@ struct ClaudeUsageTile: View {
         .help("\(label): \(Int((fraction * 100).rounded()))% of your plan's limit used")
     }
 
-    // MARK: Tokens
+    // MARK: Formatting
 
-    @ViewBuilder private var tokens: some View {
-        if let stats = usage.tokens {
+    static func compact(_ n: Int) -> String {
+        let v = Double(n)
+        switch v {
+        case 1_000_000_000...: return String(format: "%.1fB", v / 1_000_000_000)
+        case 1_000_000...: return String(format: "%.1fM", v / 1_000_000)
+        case 1_000...: return String(format: "%.1fK", v / 1_000)
+        default: return "\(n)"
+        }
+    }
+
+    /// "claude-opus-5-5" → "Opus 5.5".
+    static func modelName(_ id: String) -> String { ClaudeModelName.format(id) }
+
+    static func weekday(_ date: Date) -> String {
+        String(date.formatted(.dateTime.weekday(.narrow)))
+    }
+
+    private static func resetText(_ date: Date, weekly: Bool) -> String {
+        if weekly && !Calendar.current.isDateInToday(date) {
+            return date.formatted(.dateTime.weekday(.abbreviated).hour().minute())
+        }
+        return date.formatted(.dateTime.hour().minute())
+    }
+
+    private static func relative(_ date: Date, now: Date) -> String {
+        let seconds = now.timeIntervalSince(date)
+        if seconds < 60 { return "just now" }
+        return date.formatted(.relative(presentation: .named))
+    }
+}
+
+/// The usage tile's token totals: today, the last five hours and the last week.
+struct ClaudeUsageTokens: View {
+    let stats: ClaudeUsage.TokenStats?
+    let palette: ChromePalette
+
+    var body: some View {
+        if let stats {
             HStack(alignment: .top, spacing: 16) {
                 stat("Today", stats.today.total, detail: "\(stats.sessionsToday) session\(stats.sessionsToday == 1 ? "" : "s")")
-                stat("Last 5 hours", stats.lastFiveHours.total, detail: "\(Self.compact(stats.lastFiveHours.output)) output")
+                stat("Last 5 hours", stats.lastFiveHours.total, detail: "\(ClaudeUsageTile.compact(stats.lastFiveHours.output)) output")
                 Spacer(minLength: 0)
                 dailyBars(stats.days)
             }
             HStack(spacing: 10) {
-                Text("in \(Self.compact(stats.today.input)) · out \(Self.compact(stats.today.output)) · cache \(Self.compact(stats.today.cacheWrite + stats.today.cacheRead))")
+                Text("in \(ClaudeUsageTile.compact(stats.today.input)) · out \(ClaudeUsageTile.compact(stats.today.output)) · cache \(ClaudeUsageTile.compact(stats.today.cacheWrite + stats.today.cacheRead))")
                 Spacer()
                 if let (model, count) = stats.modelsToday.first, stats.today.total > 0 {
-                    Text("\(Self.modelName(model)) \(Int((Double(count) / Double(stats.today.total) * 100).rounded()))%")
+                    Text("\(ClaudeUsageTile.modelName(model)) \(Int((Double(count) / Double(stats.today.total) * 100).rounded()))%")
                 }
             }
             .font(.system(size: 11).monospacedDigit())
@@ -836,7 +875,7 @@ struct ClaudeUsageTile: View {
     private func stat(_ label: String, _ value: Int, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label).font(.system(size: 11)).foregroundStyle(palette.secondary)
-            Text(Self.compact(value)).font(.system(size: 20, weight: .semibold).monospacedDigit()).foregroundStyle(palette.foreground)
+            Text(ClaudeUsageTile.compact(value)).font(.system(size: 20, weight: .semibold).monospacedDigit()).foregroundStyle(palette.foreground)
             Text(detail).font(.system(size: 10)).foregroundStyle(palette.secondary)
         }
         .help("\(value.formatted()) tokens, including cache reads and writes")
@@ -855,7 +894,7 @@ struct ClaudeUsageTile: View {
                             .fill(ClaudeLogo.color.opacity(Calendar.current.isDateInToday(day.day) ? 1 : 0.55))
                             .frame(width: 9, height: day.tokens == 0 ? 1 : max(3, height * CGFloat(day.tokens) / CGFloat(peak)))
                             .frame(height: height, alignment: .bottom)
-                        Text(Self.weekday(day.day)).font(.system(size: 9)).foregroundStyle(palette.secondary)
+                        Text(ClaudeUsageTile.weekday(day.day)).font(.system(size: 9)).foregroundStyle(palette.secondary)
                     }
                     .frame(width: 13)
                     .contentShape(Rectangle())
@@ -863,38 +902,6 @@ struct ClaudeUsageTile: View {
                 }
             }
         }
-    }
-
-    // MARK: Formatting
-
-    static func compact(_ n: Int) -> String {
-        let v = Double(n)
-        switch v {
-        case 1_000_000_000...: return String(format: "%.1fB", v / 1_000_000_000)
-        case 1_000_000...: return String(format: "%.1fM", v / 1_000_000)
-        case 1_000...: return String(format: "%.1fK", v / 1_000)
-        default: return "\(n)"
-        }
-    }
-
-    /// "claude-opus-5-5" → "Opus 5.5".
-    static func modelName(_ id: String) -> String { ClaudeModelName.format(id) }
-
-    private static func weekday(_ date: Date) -> String {
-        String(date.formatted(.dateTime.weekday(.narrow)))
-    }
-
-    private static func resetText(_ date: Date, weekly: Bool) -> String {
-        if weekly && !Calendar.current.isDateInToday(date) {
-            return date.formatted(.dateTime.weekday(.abbreviated).hour().minute())
-        }
-        return date.formatted(.dateTime.hour().minute())
-    }
-
-    private static func relative(_ date: Date, now: Date) -> String {
-        let seconds = now.timeIntervalSince(date)
-        if seconds < 60 { return "just now" }
-        return date.formatted(.relative(presentation: .named))
     }
 }
 

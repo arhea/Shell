@@ -213,11 +213,15 @@ final class AgentStorageModel {
 
     static let shared = AgentStorageModel()
 
-    let categories = AgentStorage.categories()
+    let categories: [StorageCategory]
     private(set) var measured: [String: Measured] = [:]
     private(set) var isMeasuring = false
     private(set) var busy: Set<String> = []
     private(set) var lastResult: String?
+
+    init(categories: [StorageCategory] = AgentStorage.categories()) {
+        self.categories = categories
+    }
 
     var total: Int64 { measured.values.map(\.total).reduce(0, +) }
     func total(for agent: StorageCategory.Agent) -> Int64 {
@@ -284,13 +288,22 @@ final class AgentStorageCleanupJob: MaintenanceJob {
     let summary = "Clears Claude Code and Codex caches and logs, and prunes history older than the configured days"
     var isAvailable: Bool { true }
     var schedule: AutoUpdateSchedule { SettingsStore.shared.settings.agentStorageSchedule }
+    /// Injectable for unit tests; defaults to the user's real folders and the shared model.
+    private let categories: () -> [StorageCategory]
+    private let model: @MainActor () -> AgentStorageModel
+
+    init(categories: @escaping () -> [StorageCategory] = { AgentStorage.categories() },
+         model: @escaping @MainActor () -> AgentStorageModel = { AgentStorageModel.shared }) {
+        self.categories = categories
+        self.model = model
+    }
 
     func perform(_ run: MaintenanceRun) async -> MaintenanceOutcome {
         var out = MaintenanceOutcome()
         let includeHistory = SettingsStore.shared.settings.agentPruneHistory
         let days = max(1, SettingsStore.shared.settings.agentHistoryDays)
         var freed: Int64 = 0
-        for c in AgentStorage.categories() {
+        for c in categories() {
             guard !run.cancelled else { break }
             if c.kind == .history && !includeHistory { continue }
             if let app = c.requiresClosed, AgentStorage.isRunning(app) {
@@ -312,7 +325,8 @@ final class AgentStorageCleanupJob: MaintenanceJob {
             out.warnings += r.failures
         }
         out.summary = "freed \(WorktreeService.formatBytes(freed))"
-        await MainActor.run { AgentStorageModel.shared.measure() }
+        let model = model
+        await MainActor.run { model().measure() }
         return out
     }
 

@@ -47,14 +47,45 @@ final class SoftwareUpdater {
     @ObservationIgnored private var relaunchAfterQuit = false
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var wakeObserver: NSObjectProtocol?
+    @ObservationIgnored private let system: System
 
-    var currentVersion: String { UpdateInstaller.currentVersion }
+    /// The updater's connections to this copy of Shell, GitHub and the UI.
+    /// Injectable for unit tests; the defaults are the real ones.
+    struct System {
+        var currentVersion = UpdateInstaller.currentVersion
+        var teamID = UpdateInstaller.teamID
+        var bundleURL = Bundle.main.bundleURL
+        var bundleID = Bundle.main.bundleIdentifier
+        var stagingRoot = UpdateInstaller.stagingRoot
+        /// Nil: updates.json in the support folder.
+        var stateURL: URL?
+        var fetchLatest: @Sendable (_ etag: String?) async throws -> UpdateInstaller.LatestResult = {
+            try await UpdateInstaller.fetchLatest(etag: $0)
+        }
+        var stage: @Sendable (_ release: UpdateRelease, _ teamID: String, _ bundleID: String,
+                              _ monitor: UpdateInstaller.DownloadMonitor) async throws -> URL = {
+            try await UpdateInstaller.stage($0, teamID: $1, bundleID: $2, monitor: $3)
+        }
+        var spawnInstaller: @MainActor (_ staged: URL, _ target: URL, _ relaunch: Bool, _ log: URL) -> Void = {
+            UpdateInstaller.spawnInstaller(staged: $0, target: $1, relaunch: $2, log: $3)
+        }
+        var notify: @MainActor (_ title: String, _ body: String, _ category: String?) -> Void = {
+            NotificationManager.shared.postAppNotification(title: $0, body: $1, pane: .general, category: $2)
+        }
+        var runAlert: @MainActor (NSAlert) -> NSApplication.ModalResponse = { $0.runModal() }
+        var open: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
+        var showSettings: @MainActor () -> Void = { SettingsWindowController.shared.show(pane: .general) }
+        var terminate: @MainActor () -> Void = { NSApp.terminate(nil) }
+    }
+
+    var currentVersion: String { system.currentVersion }
     var releasesURL: URL { URL(string: "https://github.com/\(UpdateInstaller.repository)/releases")! }
 
-    private var stateURL: URL { SettingsStore.supportDirectory.appendingPathComponent("updates.json") }
+    private var stateURL: URL { system.stateURL ?? SettingsStore.supportDirectory.appendingPathComponent("updates.json") }
     private var settings: AppSettings { SettingsStore.shared.settings }
 
-    private init() {
+    init(system: System = System()) {
+        self.system = system
         if let data = try? Data(contentsOf: stateURL), let s = try? JSONDecoder().decode(State.self, from: data) {
             state = s
             lastCheck = s.lastCheck
@@ -63,10 +94,10 @@ final class SoftwareUpdater {
 
     /// Why this copy can't replace itself (so updates are only announced), or nil.
     var installBlocker: String? {
-        guard UpdateInstaller.teamID != nil else {
+        guard system.teamID != nil else {
             return "This is a development build, so it doesn't update itself."
         }
-        let path = Bundle.main.bundlePath
+        let path = system.bundleURL.path
         if path.contains("/AppTranslocation/") {
             return "Move Shell to your Applications folder to install updates."
         }
@@ -88,7 +119,7 @@ final class SoftwareUpdater {
 
     func start() {
         // Staged downloads are for the session that made them.
-        let staging = UpdateInstaller.stagingRoot
+        let staging = system.stagingRoot
         Task.detached(priority: .background) { try? FileManager.default.removeItem(at: staging) }
         configure()
     }
@@ -98,7 +129,7 @@ final class SoftwareUpdater {
     func configure() {
         timer?.invalidate()
         timer = nil
-        guard settings.checkForUpdates, UpdateInstaller.teamID != nil else { return }
+        guard settings.checkForUpdates, system.teamID != nil else { return }
         timer = Timer.scheduledTimer(withTimeInterval: 30 * 60, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.checkIfDue() }
         }
@@ -130,7 +161,7 @@ final class SoftwareUpdater {
         phase = .checking
         let release: UpdateRelease?
         do {
-            switch try await UpdateInstaller.fetchLatest(etag: state.etag) {
+            switch try await system.fetchLatest(state.etag) {
             case .notModified:
                 release = state.release
             case .release(let r, let etag):
@@ -168,7 +199,7 @@ final class SoftwareUpdater {
     /// `.available` with `downloadError` set, so it can be retried.
     @discardableResult
     private func download(_ release: UpdateRelease) async -> Bool {
-        guard let teamID = UpdateInstaller.teamID, let bundleID = Bundle.main.bundleIdentifier else { return false }
+        guard let teamID = system.teamID, let bundleID = system.bundleID else { return false }
         phase = .downloading(release)
         downloadError = nil
         downloadFraction = 0
@@ -186,7 +217,7 @@ final class SoftwareUpdater {
             downloadFraction = nil
         }
         do {
-            stagedApp = try await UpdateInstaller.stage(release, teamID: teamID, bundleID: bundleID, monitor: monitor)
+            stagedApp = try await system.stage(release, teamID, bundleID, monitor)
             phase = .ready(release)
             Log.update.info("Shell \(release.version, privacy: .public) is staged")
             return true
@@ -211,8 +242,7 @@ final class SoftwareUpdater {
             "You have \(currentVersion). Click to download it."
         }
         let category = installBlocker == nil ? NotificationManager.updateCategory : nil
-        NotificationManager.shared.postAppNotification(title: "Shell \(release.version) is available", body: body,
-                                                       pane: .general, category: category)
+        system.notify("Shell \(release.version) is available", body, category)
     }
 
     private func persist() {
@@ -241,7 +271,7 @@ final class SoftwareUpdater {
             default: return
             }
             relaunchAfterQuit = true
-            NSApp.terminate(nil)
+            system.terminate()
             relaunchAfterQuit = false // only reached when the quit was cancelled
         }
     }
@@ -252,8 +282,8 @@ final class SoftwareUpdater {
     func installOnQuit() {
         guard case .ready = phase, let stagedApp, installBlocker == nil,
               relaunchAfterQuit || settings.installUpdatesAutomatically else { return }
-        UpdateInstaller.spawnInstaller(staged: stagedApp, target: Bundle.main.bundleURL, relaunch: relaunchAfterQuit,
-                                       log: ScheduledMaintenance.logDirectory.appendingPathComponent("update.log"))
+        system.spawnInstaller(stagedApp, system.bundleURL, relaunchAfterQuit,
+                              ScheduledMaintenance.logDirectory.appendingPathComponent("update.log"))
     }
 
     private func presentDownloadFailure(_ release: UpdateRelease) {
@@ -264,9 +294,9 @@ final class SoftwareUpdater {
         alert.addButton(withTitle: "Try Again")
         alert.addButton(withTitle: "Open Download Page")
         alert.addButton(withTitle: "Cancel")
-        switch alert.runModal() {
+        switch system.runAlert(alert) {
         case .alertFirstButtonReturn: installAndRelaunch()
-        case .alertSecondButtonReturn: NSWorkspace.shared.open(release.notesURL)
+        case .alertSecondButtonReturn: system.open(release.notesURL)
         default: break
         }
     }
@@ -286,12 +316,12 @@ final class SoftwareUpdater {
         case .upToDate:
             alert.messageText = "You're up to date"
             alert.informativeText = "Shell \(currentVersion) is the latest version."
-            alert.runModal()
+            _ = system.runAlert(alert)
         case .failed(let message):
             alert.alertStyle = .warning
             alert.messageText = "Couldn't check for updates"
             alert.informativeText = message
-            alert.runModal()
+            _ = system.runAlert(alert)
         case .available(let release), .ready(let release):
             let ready = if case .ready = phase { true } else { false }
             alert.messageText = ready ? "Shell \(release.version) is ready to install" : "Shell \(release.version) is available"
@@ -302,20 +332,20 @@ final class SoftwareUpdater {
                 alert.addButton(withTitle: ready ? "Restart Now" : "Install and Restart")
                 alert.addButton(withTitle: "Release Notes")
                 alert.addButton(withTitle: "Later")
-                switch alert.runModal() {
+                switch system.runAlert(alert) {
                 case .alertFirstButtonReturn:
-                    if !ready { SettingsWindowController.shared.show(pane: .general) } // shows download progress
+                    if !ready { system.showSettings() } // shows download progress
                     installAndRelaunch()
-                case .alertSecondButtonReturn: NSWorkspace.shared.open(release.notesURL)
+                case .alertSecondButtonReturn: system.open(release.notesURL)
                 default: break
                 }
             } else {
                 alert.addButton(withTitle: "Open Download Page")
                 alert.addButton(withTitle: "Later")
-                if alert.runModal() == .alertFirstButtonReturn { NSWorkspace.shared.open(release.notesURL) }
+                if system.runAlert(alert) == .alertFirstButtonReturn { system.open(release.notesURL) }
             }
         case .downloading:
-            SettingsWindowController.shared.show(pane: .general)
+            system.showSettings()
         case .idle, .checking:
             break
         }

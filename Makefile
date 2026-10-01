@@ -2,7 +2,7 @@ CONFIG ?= Debug
 DERIVED := build/DerivedData
 APP := $(DERIVED)/Build/Products/$(CONFIG)/Shell.app
 
-.PHONY: bootstrap project build release dist dmg-preview install run clean
+.PHONY: bootstrap project build test coverage release dist dmg-preview install run clean
 
 bootstrap:
 	./scripts/bootstrap.sh
@@ -13,6 +13,13 @@ project:
 build: project
 	xcodebuild -project Shell.xcodeproj -scheme Shell -configuration $(CONFIG) \
 		-derivedDataPath $(DERIVED) -destination 'platform=macOS' build -quiet
+
+test: project
+	xcodebuild -project Shell.xcodeproj -scheme Shell -derivedDataPath $(DERIVED) -destination 'platform=macOS' test -quiet
+
+# Unit tests with line coverage per file and in total (scripts/coverage.sh).
+coverage: project
+	./scripts/coverage.sh
 
 release:
 	$(MAKE) build CONFIG=Release

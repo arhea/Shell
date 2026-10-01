@@ -3,10 +3,18 @@ import SwiftUI
 
 struct HomebrewPane: View {
     /// App-wide model (observed through property access; not state this view owns).
-    private let brew = BrewService.shared
-    @State private var scope: Scope = .installed
-    @State private var query = ""
-    @State private var showDependencies = false
+    private let brew: BrewService
+    @State private var scope: Scope
+    @State private var query: String
+    @State private var showDependencies: Bool
+
+    /// The parameters let unit tests render each state.
+    init(brew: BrewService = .shared, scope: Scope = .installed, query: String = "", showDependencies: Bool = false) {
+        self.brew = brew
+        _scope = State(initialValue: scope)
+        _query = State(initialValue: query)
+        _showDependencies = State(initialValue: showDependencies)
+    }
 
     enum Scope: String, CaseIterable, Identifiable {
         case installed = "Installed", updates = "Updates", search = "Search"

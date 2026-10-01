@@ -37,7 +37,7 @@ enum UpdateInstaller {
         .appendingPathComponent("app.bethesdalabs.Shell/Updates", isDirectory: true)
 
     /// No cookies or cache; the only header beyond the defaults is the User-Agent GitHub requires.
-    private static let session: URLSession = {
+    static let session: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 30 * 60
@@ -54,7 +54,7 @@ enum UpdateInstaller {
         case notModified
     }
 
-    static func fetchLatest(etag: String?) async throws -> LatestResult {
+    static func fetchLatest(etag: String?, session: URLSession = session) async throws -> LatestResult {
         var request = URLRequest(url: URL(string: "https://api.github.com/repos/\(repository)/releases/latest")!)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
@@ -93,9 +93,9 @@ enum UpdateInstaller {
     /// Downloads the release's DMG, checks it against the published SHA-256,
     /// copies the app out and verifies it. Returns the staged `Shell.app`.
     static func stage(_ release: UpdateRelease, teamID: String, bundleID: String,
-                      monitor: DownloadMonitor? = nil) async throws -> URL {
+                      monitor: DownloadMonitor? = nil, root: URL = stagingRoot, session: URLSession = session) async throws -> URL {
         let fm = FileManager.default
-        let dir = stagingRoot.appendingPathComponent(release.version, isDirectory: true)
+        let dir = root.appendingPathComponent(release.version, isDirectory: true)
         try? fm.removeItem(at: dir)
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
 
@@ -214,22 +214,22 @@ enum UpdateInstaller {
     /// Starts the install helper in its own session so it outlives Shell and
     /// isn't among the descendants stopped at quit. Call it last while quitting.
     @discardableResult
-    static func spawnInstaller(staged: URL, target: URL, relaunch: Bool, log: URL) -> Bool {
+    static func spawnInstaller(staged: URL, target: URL, relaunch: Bool, log: URL, waitingFor pid: pid_t = getpid()) -> Bool {
         let args = ["/bin/sh", "-c", installScript, "shell-update",
-                    String(getpid()), staged.path, target.path, relaunch ? "1" : "0", log.path]
+                    String(pid), staged.path, target.path, relaunch ? "1" : "0", log.path]
         var attr: posix_spawnattr_t?
         posix_spawnattr_init(&attr)
         defer { posix_spawnattr_destroy(&attr) }
         posix_spawnattr_setflags(&attr, Int16(POSIX_SPAWN_SETSID))
         let argv = args.map { strdup($0) } + [nil]
         defer { argv.forEach { free($0) } }
-        var pid: pid_t = 0
-        let rc = posix_spawn(&pid, "/bin/sh", nil, &attr, argv, environ)
+        var child: pid_t = 0
+        let rc = posix_spawn(&child, "/bin/sh", nil, &attr, argv, environ)
         if rc != 0 {
             Log.update.error("couldn't start the update helper: \(String(cString: strerror(rc)), privacy: .public)")
             return false
         }
-        Log.update.info("update helper \(pid, privacy: .public) will install into \(target.path, privacy: .public)")
+        Log.update.info("update helper \(child, privacy: .public) will install into \(target.path, privacy: .public)")
         return true
     }
 }

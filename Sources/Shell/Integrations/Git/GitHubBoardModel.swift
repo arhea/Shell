@@ -57,7 +57,8 @@ final class GitHubBoardModel {
         return m
     }
 
-    private init(repoRoot: String, remote: GitHubRemote, environment: [String: String]) {
+    /// Internal (not private) so tests can give a board its own environment; the app uses `model(repoRoot:remote:)`.
+    init(repoRoot: String, remote: GitHubRemote, environment: [String: String]) {
         self.repoRoot = repoRoot
         self.remote = remote
         self.environment = environment

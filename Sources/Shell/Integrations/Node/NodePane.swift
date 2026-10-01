@@ -3,8 +3,14 @@ import SwiftUI
 
 struct NodePane: View {
     /// App-wide model (observed through property access; not state this view owns).
-    private let node = NodeService.shared
+    private let node: NodeService
     @State private var installMajor: Int?
+
+    /// The parameters let unit tests render each state.
+    init(node: NodeService = .shared, installMajor: Int? = nil) {
+        self.node = node
+        _installMajor = State(initialValue: installMajor)
+    }
 
     var body: some View {
         Form {

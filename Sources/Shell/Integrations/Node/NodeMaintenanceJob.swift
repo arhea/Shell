@@ -7,7 +7,11 @@ final class NodeMaintenanceJob: MaintenanceJob {
     let title = "Node.js"
     let summary = "Updates Node along your release track, then npm/pnpm/yarn/bun, then runs npm doctor"
 
-    var node: NodeService { .shared }
+    /// Injectable for unit tests.
+    let node: NodeService
+
+    init(node: NodeService = .shared) { self.node = node }
+
     var isAvailable: Bool { node.manager != nil || NodeService.managerLikelyInstalled }
     var schedule: AutoUpdateSchedule { SettingsStore.shared.settings.nodeAutoUpdate }
 

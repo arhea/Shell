@@ -160,12 +160,20 @@ final class ScheduledMaintenance {
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var activeRun: MaintenanceRun?
     @ObservationIgnored private var wakeObserver: NSObjectProtocol?
+    /// Posts the job's notification; replaceable in unit tests.
+    @ObservationIgnored var notify: @MainActor (_ title: String, _ body: String, _ pane: SettingsPane) -> Void = { title, body, pane in
+        NotificationManager.shared.postAppNotification(title: title, body: body, pane: pane)
+    }
 
     static let retryAfterFailure: TimeInterval = 3600
 
+    /// ~/Library/Logs/Shell. Unit tests log into their throwaway support
+    /// folder instead, so they never write to the real one.
     static var logDirectory: URL {
-        let url = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Logs/Shell", isDirectory: true)
+        let url = AppEnvironment.isRunningTests
+            ? SettingsStore.supportDirectory.appendingPathComponent("Logs", isDirectory: true)
+            : FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Logs/Shell", isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
@@ -250,7 +258,7 @@ final class ScheduledMaintenance {
         persist()
         pruneLogs()
         if let n = job.notification(for: record) {
-            NotificationManager.shared.postAppNotification(title: n.title, body: n.body, pane: SettingsPane(rawValue: job.id) ?? .homebrew)
+            notify(n.title, n.body, SettingsPane(rawValue: job.id) ?? .homebrew)
         }
         await job.didFinish()
     }
@@ -278,14 +286,19 @@ final class HomebrewMaintenanceJob: MaintenanceJob {
     let id = "homebrew"
     let title = "Homebrew"
     let summary = "Runs brew update && brew upgrade && brew doctor in the background while Shell is open"
+    /// Injectable for unit tests.
+    let brew: BrewService
+
+    init(brew: BrewService = .shared) { self.brew = brew }
+
     var isAvailable: Bool {
-        BrewService.shared.detect()
-        return BrewService.shared.isInstalled
+        brew.detect()
+        return brew.isInstalled
     }
     var schedule: AutoUpdateSchedule { SettingsStore.shared.settings.brewAutoUpdate }
 
     func perform(_ run: MaintenanceRun) async -> MaintenanceOutcome {
-        guard let brew = BrewService.shared.brewPath else { return MaintenanceOutcome(failedStep: "find brew") }
+        guard let brew = brew.brewPath else { return MaintenanceOutcome(failedStep: "find brew") }
         let env = ["PATH": "\((brew as NSString).deletingLastPathComponent):/usr/bin:/bin:/usr/sbin:/sbin",
                    "HOMEBREW_NO_ENV_HINTS": "1", "HOMEBREW_NO_ANALYTICS": "1", "HOMEBREW_NO_AUTO_UPDATE": "1"]
         var out = MaintenanceOutcome()
@@ -321,5 +334,5 @@ final class HomebrewMaintenanceJob: MaintenanceJob {
         }
     }
 
-    func didFinish() async { await BrewService.shared.refresh() }
+    func didFinish() async { await brew.refresh() }
 }

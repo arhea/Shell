@@ -250,7 +250,7 @@ struct DetailsBlockView<Content: View>: View {
     let palette: ClaudePalette
     let fontSize: CGFloat
     @ViewBuilder var content: () -> Content
-    @State private var expanded = false
+    @State var expanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {

@@ -71,7 +71,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window.minSize = NSSize(width: 760, height: 480)
         window.isReleasedWhenClosed = false
         window.center()
-        window.setFrameAutosaveName("ShellSettings")
+        // Unit tests create this window too; keep them out of the real defaults.
+        if !AppEnvironment.isRunningTests { window.setFrameAutosaveName("ShellSettings") }
         super.init(window: window)
         window.delegate = self
         let host = NSHostingController(rootView: SettingsRootView(navigation: navigation))

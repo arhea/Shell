@@ -61,7 +61,7 @@ struct ToolGroupView: View {
     let mentions: InlineMarkdown.MentionStyle
     let fontSize: CGFloat
     var directory: String?
-    @State private var expanded = false
+    @State var expanded = false
 
     var body: some View {
         let p = palette
