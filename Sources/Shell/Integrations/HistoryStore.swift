@@ -26,6 +26,8 @@ final class HistoryStore {
     private init() {
         let own = Self.parse(data: (try? Data(contentsOf: ownFile)) ?? Data())
         merge(own)
+        // Unit tests never read the user's real zsh history.
+        guard !AppEnvironment.isRunningTests else { return }
         // Seed from the default zsh history before any shell reports its HISTFILE.
         let fallback = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".zsh_history").path
         load(path: fallback)
