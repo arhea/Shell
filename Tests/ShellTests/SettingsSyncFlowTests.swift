@@ -216,6 +216,10 @@ final class SettingsSyncFlowTests: XCTestCase {
         try withSettings({ $0.darkTheme = "Before Sync" }) {
             SettingsStore.shared.settings.iCloudSync = true // activates: nothing remote, so it publishes
             XCTAssertEqual(try readRemote().settings["darkTheme"] as? String, "Before Sync")
+            // Let the folder watcher see that write first: it can re-apply this Mac's own
+            // file (its `modified` stamp is rounded to milliseconds), which would race a
+            // change made within the watcher's one-second latency.
+            RunLoop.main.run(until: Date().addingTimeInterval(1.6))
 
             SettingsStore.shared.settings.darkTheme = "After Sync" // scheduled push, about a second later
             XCTAssertTrue(waitUntil(timeout: 5) {
