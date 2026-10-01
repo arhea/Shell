@@ -54,6 +54,8 @@ protocol TerminalSessionUI: AnyObject {
     func sessionSearchDidChange(_ session: TerminalSession)
     func sessionAppearanceDidChange(_ session: TerminalSession)
     func sessionNativeClaudeDidChange(_ session: TerminalSession)
+    /// A command block started, finished or was trimmed from `blocks`.
+    func sessionBlocksDidChange(_ session: TerminalSession)
 }
 
 /// One shell: a libghostty surface plus everything we know about what's
@@ -82,14 +84,30 @@ final class TerminalSession: Identifiable {
     private(set) var lastCommand: String?
 
     /// A command plus the prompt context it ran in — enough to find its
-    /// header line ("~/dir branch ❯ cmd") in the scrollback later.
-    struct CommandBlock: Equatable {
+    /// header line ("~/dir branch ❯ cmd") in the scrollback later — and how
+    /// it went once it finished.
+    struct CommandBlock: Equatable, Identifiable {
+        var id = UUID()
         var command: String
+        /// The abbreviated directory as the header shows it ("~/code").
         var directory: String
         var branch: String?
+        /// The absolute working directory the command ran in.
+        var cwd: String?
+        var startedAt = Date()
+        /// Set when the command finishes.
+        var duration: TimeInterval?
+        var exitCode: Int?
+        var isFinished = false
+
+        var failed: Bool { isFinished && (exitCode ?? 0) != 0 }
     }
     @ObservationIgnored private(set) var currentBlock: CommandBlock?
     @ObservationIgnored private(set) var lastBlock: CommandBlock?
+    /// Recent command blocks, oldest first (the running one last), bounded by
+    /// `maxBlocks`. Drives the block decorations over the terminal.
+    @ObservationIgnored private(set) var blocks: [CommandBlock] = []
+    static let maxBlocks = 200
     var bell = false
     var hasUnseenOutput = false
     private(set) var progressPercent: Int?
@@ -252,7 +270,12 @@ final class TerminalSession: Identifiable {
             lastDuration = duration
             lastCommand = runningCommand
             if let cmd = runningCommand {
-                lastBlock = currentBlock?.command == cmd ? currentBlock : CommandBlock(command: cmd, directory: abbreviatedDirectory, branch: gitBranch)
+                var block = currentBlock?.command == cmd ? currentBlock! : newBlock(cmd)
+                block.isFinished = true
+                block.exitCode = exitCode
+                block.duration = duration ?? Date().timeIntervalSince(block.startedAt)
+                lastBlock = block
+                recordBlock(block)
             }
             if !isFocused { hasUnseenOutput = true }
         }
@@ -274,7 +297,9 @@ final class TerminalSession: Identifiable {
     func commandStarted(_ command: String, directory: String?) {
         if currentBlock?.command != command {
             // Typed straight into the terminal (native prompt off).
-            currentBlock = CommandBlock(command: command, directory: abbreviatedDirectory, branch: gitBranch)
+            let block = newBlock(command)
+            currentBlock = block
+            recordBlock(block)
         }
         if let directory, !directory.isEmpty { workingDirectory = directory }
         runningCommand = command
@@ -286,12 +311,40 @@ final class TerminalSession: Identifiable {
     func submit(command: String) {
         guard state == .idle else { return }
         HistoryStore.shared.add(command)
-        currentBlock = CommandBlock(command: command, directory: abbreviatedDirectory, branch: gitBranch)
+        let block = newBlock(command)
+        currentBlock = block
+        recordBlock(block)
         runningCommand = command
         commandStartedAt = Date()
         setState(.running)
         ShellIntegration.run(command: command, in: self)
     }
+
+    // MARK: Block history
+
+    private func newBlock(_ command: String) -> CommandBlock {
+        CommandBlock(command: command, directory: abbreviatedDirectory, branch: gitBranch, cwd: workingDirectory)
+    }
+
+    /// Adds `block` to `blocks`, or replaces the entry with its id.
+    private func recordBlock(_ block: CommandBlock) {
+        Self.record(block, in: &blocks)
+        ui?.sessionBlocksDidChange(self)
+    }
+
+    /// Inserts or replaces `block` (by id), keeping the newest `limit` blocks.
+    static func record(_ block: CommandBlock, in blocks: inout [CommandBlock], limit: Int = maxBlocks) {
+        if let i = blocks.lastIndex(where: { $0.id == block.id }) {
+            blocks[i] = block
+        } else {
+            // An unfinished block left behind (the shell never reported it ending) is dropped.
+            if let last = blocks.last, !last.isFinished { blocks.removeLast() }
+            blocks.append(block)
+        }
+        if blocks.count > limit { blocks.removeFirst(blocks.count - limit) }
+    }
+
+    func block(id: UUID) -> CommandBlock? { blocks.last { $0.id == id } }
 
     // MARK: Command output
 
@@ -300,13 +353,24 @@ final class TerminalSession: Identifiable {
     /// Returns nil when it's no longer on screen (e.g. after ⌘K).
     func lastOutput() -> String? {
         guard let block = lastBlock else { return nil }
+        return output(of: block)
+    }
+
+    /// The output of any recorded block: from its header line to the next
+    /// newer block's header (or the end of the screen). Nil when the header
+    /// is no longer in the scrollback.
+    func output(of block: CommandBlock) -> String? {
         let lines = surfaceView.readText(screen: true)
             .components(separatedBy: "\n")
             .map { $0.replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression) }
+        var newer = Array(blocks.drop(while: { $0.id != block.id }).dropFirst().reversed())
+        // If a newer command is running that isn't recorded yet, stop at its header too.
+        if state == .running, let cur = currentBlock, !newer.contains(where: { $0.id == cur.id }), cur.id != block.id {
+            newer.insert(cur, at: 0)
+        }
         var end = lines.count
-        // If a newer command is running, stop at its header.
-        if state == .running, let cur = currentBlock, let idx = Self.headerIndex(of: cur, in: lines, before: end) {
-            end = idx
+        for b in newer {
+            if let idx = Self.headerIndex(of: b, in: lines, before: end) { end = idx }
         }
         guard let header = Self.headerIndex(of: block, in: lines, before: end) else { return nil }
         let commandLines = block.command.components(separatedBy: "\n").count
@@ -323,6 +387,17 @@ final class TerminalSession: Identifiable {
             trimTrailingBlank()
         }
         return output.joined(separator: "\n")
+    }
+
+    /// Whether the last command printed anything, judged from the viewport
+    /// alone (cheap): true when its header has scrolled out of view.
+    func lastBlockPrintedOutput() -> Bool {
+        guard let block = lastBlock else { return false }
+        let lines = surfaceView.readText().components(separatedBy: "\n")
+            .map { $0.replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression) }
+        guard let header = Self.headerIndex(of: block, in: lines, before: lines.count) else { return true }
+        let start = header + block.command.components(separatedBy: "\n").count
+        return lines.dropFirst(start).contains { !$0.isEmpty && !$0.hasPrefix("✗ exit ") }
     }
 
     /// Finds the last line (before `end`) that shows `block`'s command:

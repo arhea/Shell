@@ -247,6 +247,8 @@ struct AppSettings: Codable, Equatable {
     var inputPosition: InputPosition = .bottom
     var promptStyle: PromptStyle = .compact
     var showContextBar = true
+    /// Status, failure tint and actions drawn over each command block.
+    var showCommandBlocks = true
     var completions = true
     var completionsWhileTyping = true
     var historySuggestions = true

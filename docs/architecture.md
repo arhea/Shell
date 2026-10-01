@@ -76,6 +76,7 @@ See [Shell integration](shell-integration.md) for the protocol details.
 - `ControlServer` accepts and reads on its own dispatch queue, then hops to the main actor to apply messages.
 - Git, `gh`, `brew` and other external commands run as `Process` off the main thread. Their results are published back on the main actor.
 - The native Claude view decodes Claude Code's stream-json output on the pipe's background queue and delivers it to the main actor in batches (about 30 per second). The transcript's markdown is parsed incrementally and cached.
+- Command block decorations (`CommandBlockOverlayView`) anchor each block's header line to a screen row once, then on scroll, resize or new output (libghostty's scrollbar callback, throttled) re-check only the viewport's text. The whole scrollback is read only to re-anchor after a resize, a clear or scrollback trimming, at most once a second and never while a command runs. Scrolling moves the drawn decorations immediately without reading text.
 - Timers and polling pause when nothing is visible: link detection runs only for visible panes, dashboard tiles read terminals only while the dashboard is open, and the Claude logo only animates in visible windows.
 
 ## Quitting

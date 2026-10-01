@@ -28,7 +28,7 @@ final class SettingsSync {
         "scrollbackMB", "copyOnSelect", "optionKey", "naturalTextEditing", "hideMouseWhileTyping", "paddingX", "paddingY",
         "dimUnfocusedSplits", "pasteProtection", "highlightLinks", "focusFollowsMouse", "bellSound", "bounceDockOnBell",
         // Prompt & completions
-        "inputEditor", "inputPosition", "promptStyle", "showContextBar", "completions", "completionsWhileTyping",
+        "inputEditor", "inputPosition", "promptStyle", "showContextBar", "showCommandBlocks", "completions", "completionsWhileTyping",
         "historySuggestions", "completionPreview", "syntaxHighlighting", "editorFontSize",
         // Tabs & windows
         "tabBarStyle", "newTabPlacement", "sidebarAutoShowGitHub",
