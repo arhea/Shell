@@ -153,8 +153,10 @@ struct IntegrationsSettingsPane: View {
                 Toggle("Trust worktrees of repositories I already trust", isOn: setting(\.claudeTrustWorktrees))
                 Text("A worktree of a trusted repository starts in the native view without asking, and is marked trusted in ~/.claude.json. Turn this off if you check out untrusted code (such as pull requests from forks) in worktrees.")
                     .font(.caption).foregroundStyle(.secondary)
-                Toggle("Pin a Claude dashboard to the tabs while Claude is running", isOn: setting(\.claudeDashboard))
-                Text("Tiles every Claude Code session across your windows with its status, directory, branch and a live preview. Open it with ⌃⌘A.")
+                Picker("Show Claude Sessions in the tabs", selection: setting(\.claudeSessionsButton)) {
+                    ForEach(ClaudeSessionsButton.allCases) { Text($0.title).tag($0) }
+                }
+                Text("Pins Claude Sessions to the top of the sidebar (or the front of the tab bar). It tiles every Claude Code session across your windows with its status, directory, branch and a live preview, and lists past sessions to resume. Always shows it whenever Claude Code is installed. ⌃⌘A opens it in every mode.")
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle("Turn on Remote Control for every session", isOn: setting(\.claudeRemoteControl))
                 Text("Continue any Claude Code session from the Claude app on your phone or claude.ai/code. Applies to the native view and to interactive `claude` launches in the terminal UI (adds `--remote-control`).")

@@ -45,6 +45,8 @@ The full model, with defaults, is `AppSettings` in [`Sources/Shell/Settings/AppS
 | `chatComposerWidth` | `"centered"` | Width of the native Claude view's chat column: `centered` (capped at 1200 pt) or `full` (the whole pane). The composer fills the column. |
 | `chatMaxWidth` | `700` | Reading width of the Claude transcript text, in points, within the chat column. `0` uses the whole column. |
 | `claudeRemoteControl` | `true` | See [Claude Code and Codex](claude-code.md#remote-control) |
+| `claudeSessionsButton` | `"always"` | When Claude Sessions is pinned to the tabs: `always` (whenever Claude Code is installed), `whenActive` (while a session runs) or `never`. Replaces `claudeDashboard`; `false` there becomes `never`. |
+| `claudeSessionsHistory` | `true` | Show the past sessions drawer on the Claude Sessions page |
 | `worktreeRoot` | `""` | Empty uses `$WORKTREES_HOME`, then `~/code/worktrees` |
 | `worktreeStaleDays` | `7` | |
 | `brewAutoUpdate`, `nodeAutoUpdate`, `worktreeCleanupSchedule`, `agentStorageSchedule` | `"off"` | `off`, `daily`, `weekly` or `monthly` |

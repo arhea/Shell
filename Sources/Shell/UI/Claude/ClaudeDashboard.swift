@@ -280,20 +280,31 @@ final class SessionSummaries {
 
 // MARK: - Tab strip entries
 
-/// Whether a window shows the dashboard entry: while any Claude session runs
-/// (and the setting is on), or while the dashboard itself is open.
+/// Whether a window shows the Claude Sessions entry, per Settings: always
+/// (when Claude Code is installed), while any Claude session runs, or never.
+/// It always shows while the dashboard itself is open.
 @MainActor
 struct DashboardVisibility {
     let summary: ClaudeDashboard.Summary?
 
     init(workspace: Workspace) {
-        let enabled = SettingsStore.shared.settings.claudeDashboard
-        guard enabled || workspace.showsDashboard else {
+        let mode = SettingsStore.shared.settings.claudeSessionsButton
+        guard mode != .never || workspace.showsDashboard else {
             summary = nil
             return
         }
         let s = ClaudeDashboard.summary(of: ClaudeDashboard.entries())
-        summary = s.total > 0 || workspace.showsDashboard ? s : nil
+        summary = Self.shows(mode: mode, sessions: s.total, claudeInstalled: ClaudeHistory.isClaudeAvailable,
+                             dashboardOpen: workspace.showsDashboard) ? s : nil
+    }
+
+    static func shows(mode: ClaudeSessionsButton, sessions: Int, claudeInstalled: Bool, dashboardOpen: Bool) -> Bool {
+        if dashboardOpen { return true }
+        switch mode {
+        case .always: return claudeInstalled || sessions > 0
+        case .whenActive: return sessions > 0
+        case .never: return false
+        }
     }
 }
 
@@ -411,6 +422,10 @@ struct DashboardCountBadge: View {
     let palette: ChromePalette
 
     var body: some View {
+        if summary.total > 0 { badge }
+    }
+
+    private var badge: some View {
         Text("\(summary.total)")
             .font(.system(size: 10, weight: .bold).monospacedDigit())
             .foregroundStyle(summary.needsInput > 0 ? Color.black.opacity(0.8) : palette.foreground.opacity(0.8))
@@ -434,27 +449,35 @@ struct ClaudeDashboardView: View {
         let palette = ChromePalette.current
         let entries = ClaudeDashboard.entries()
         let summary = ClaudeDashboard.summary(of: entries)
-        ScrollView(.vertical) {
-            VStack(alignment: .leading, spacing: 16) {
-                header(summary, palette: palette)
-                if agents.claude != .installed { hooksBanner(palette) }
-                LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
-                    ClaudeUsageTile(palette: palette)
-                    ForEach(entries) { entry in
-                        ClaudeSessionTile(entry: entry, palette: palette) {
-                            entry.controller.reveal(entry.session)
+        let showsHistory = SettingsStore.shared.settings.claudeSessionsHistory
+        HStack(spacing: 0) {
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 16) {
+                    header(summary, showsHistory: showsHistory, palette: palette)
+                    if agents.claude != .installed { hooksBanner(palette) }
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+                        ClaudeUsageTile(palette: palette)
+                        ForEach(entries) { entry in
+                            ClaudeSessionTile(entry: entry, palette: palette) {
+                                entry.controller.reveal(entry.session)
+                            }
                         }
+                        if entries.isEmpty { emptyState(palette) }
                     }
-                    if entries.isEmpty { emptyState(palette) }
                 }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            if showsHistory {
+                PastSessionsDrawer(controller: controller, live: entries)
+                    .frame(width: 340)
+                    .transition(.move(edge: .trailing))
+            }
         }
         .background(palette.background)
     }
 
-    private func header(_ summary: ClaudeDashboard.Summary, palette: ChromePalette) -> some View {
+    private func header(_ summary: ClaudeDashboard.Summary, showsHistory: Bool, palette: ChromePalette) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text("Claude Sessions").font(.system(size: 18, weight: .semibold)).foregroundStyle(palette.foreground)
             Text(summary.detail).font(.system(size: 12)).foregroundStyle(palette.secondary)
@@ -464,6 +487,11 @@ struct ClaudeDashboardView: View {
                 .font(.system(size: 12))
                 .foregroundStyle(palette.secondary)
                 .help("Return to the selected tab (\(ShortcutAction.claudeDashboard.shortcut?.displayString ?? "⌃⌘A"))")
+            if !showsHistory {
+                ChromeIconButton(symbol: "clock.arrow.circlepath", help: "Show Past Sessions", palette: palette) {
+                    withAnimation(.easeOut(duration: 0.2)) { SettingsStore.shared.settings.claudeSessionsHistory = true }
+                }
+            }
         }
     }
 
