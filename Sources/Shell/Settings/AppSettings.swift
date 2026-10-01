@@ -438,7 +438,16 @@ final class SettingsStore {
     /// ~/Library/Application Support/Shell: settings, the generated Ghostty
     /// config, history, session restore, themes and maintenance state. Unit
     /// tests get a throwaway folder so they never touch the real one.
+    /// Debug builds honor `SHELL_APP_SUPPORT_DIR`, so a dev build can run
+    /// beside the installed app without sharing its settings or session restore.
     static let supportDirectory: URL = {
+        #if DEBUG
+        if let dir = ProcessInfo.processInfo.environment["SHELL_APP_SUPPORT_DIR"], !dir.isEmpty, !AppEnvironment.isRunningTests {
+            let url = URL(fileURLWithPath: (dir as NSString).expandingTildeInPath, isDirectory: true)
+            try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            return url
+        }
+        #endif
         let url = AppEnvironment.isRunningTests
             ? FileManager.default.temporaryDirectory.appendingPathComponent("ShellTests-\(getpid())", isDirectory: true)
             : FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]

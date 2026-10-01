@@ -91,6 +91,7 @@ The Metal terminal renders into snapshots. SwiftUI `NavigationSplitView` content
 
 | Variable | Effect |
 | --- | --- |
+| `SHELL_APP_SUPPORT_DIR=/path` | Debug builds only: use this folder instead of `~/Library/Application Support/Shell`, so a dev build runs beside the installed app without sharing settings, history or session restore (`open --env SHELL_APP_SUPPORT_DIR=/tmp/shell-dev build/…/Shell.app`) |
 | `SHELL_APP_DRY_RUN=1` | Jobs log the commands they would run instead of running them |
 | `SHELL_APP_BREW=/path/to/fake-brew` | Swap in a stand-in `brew` |
 
