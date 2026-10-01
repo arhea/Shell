@@ -12,6 +12,8 @@ struct ClaudePaneView: View {
     var onFocus: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Review changes, shown in place of the chat while set.
+    @State private var review: ReviewChangesModel?
 
     private var palette: ClaudePalette { .current }
     private var fontSize: CGFloat { ChatTypography.current.size }
@@ -32,20 +34,13 @@ struct ClaudePaneView: View {
         VStack(spacing: 0) {
             ClaudeHeader(claude: claude, palette: p, onClose: onClose, onContinueInTerminal: onContinueInTerminal,
                          onToggleExplorer: onToggleExplorer)
-            if docked {
-                transcript(p)
-                    .transition(.opacity)
+            if let review {
+                ReviewChangesView(model: review, onBack: { self.review = nil }) { text in
+                    claude.send(text)
+                    self.review = nil
+                }
             } else {
-                emptyState(p)
-                    .transition(.opacity)
-            }
-            bottom(p, docked: docked)
-            if !docked {
-                // Matches the space above, so the composer is centered.
-                Color.clear
-                    .frame(maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .onTapGesture { composer.focus() }
+                chat(p, docked: docked)
             }
         }
         .animation(reduceMotion ? nil : .spring(duration: 0.4, bounce: 0.12), value: docked)
@@ -54,6 +49,39 @@ struct ClaudePaneView: View {
         // System colors (status, labeled buttons, .primary) follow the terminal
         // theme, not the system appearance, so they read on its background.
         .environment(\.colorScheme, p.isDark ? .dark : .light)
+        .onReceive(NotificationCenter.default.publisher(for: .shellReviewChanges)) { note in
+            guard (note.object as AnyObject?) === claude, let repo = claude.repository else { return }
+            openReview(repo, path: note.userInfo?["path"] as? String)
+        }
+    }
+
+    private func openReview(_ repo: GitRepository, path: String?) {
+        let model = review ?? ReviewChangesModel(repository: repo)
+        if let path {
+            let root = repo.root.standardizedFileURL.path + "/"
+            let full = path.hasPrefix("/") ? URL(fileURLWithPath: path).standardizedFileURL.path : root + path
+            model.selectedPath = full.hasPrefix(root) ? String(full.dropFirst(root.count)) : path
+        }
+        review = model
+    }
+
+    @ViewBuilder
+    private func chat(_ p: ClaudePalette, docked: Bool) -> some View {
+        if docked {
+            transcript(p)
+                .transition(.opacity)
+        } else {
+            emptyState(p)
+                .transition(.opacity)
+        }
+        bottom(p, docked: docked)
+        if !docked {
+            // Matches the space above, so the composer is centered.
+            Color.clear
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .onTapGesture { composer.focus() }
+        }
     }
 
     // MARK: Empty state

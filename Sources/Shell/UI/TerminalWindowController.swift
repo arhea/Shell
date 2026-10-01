@@ -1387,6 +1387,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
         case .toggleTabBarStyle: toggleTabBarStyle()
         case .toggleTabSidebar: toggleTabSidebar()
         case .claudeInNewWorktree: startClaudeInNewWorktree()
+        case .reviewChanges: focusedSession?.nativeClaude?.requestReviewChanges()
         case .copyLastCommand: focusedPane?.editor.copy(.lastCommand)
         case .copyLastOutput: focusedPane?.editor.copy(.lastOutput)
         case .clearBuffer:
@@ -1463,6 +1464,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
             return true
         case .claudeInNewWorktree:
             return focusedSession != nil
+        case .reviewChanges:
+            return focusedSession?.nativeClaude?.repository != nil
         case .claudeDashboard:
             item.state = workspace.showsDashboard ? .on : .off
             return true
