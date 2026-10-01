@@ -527,41 +527,51 @@ struct GitHubSidebarRow: View {
 
     var body: some View {
         let selected = workspace.showsGitHub
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "arrow.triangle.pull").font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(selected ? palette.accent : palette.secondary)
-                .frame(width: 14, height: 14)
-                .padding(.top, 1)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("GitHub")
-                    .font(.system(size: 12, weight: selected ? .semibold : .medium))
-                    .foregroundStyle(selected ? palette.foreground : palette.foreground.opacity(0.85))
-                Text(workspace.githubBoard.map { "\($0.remote.slug) · \($0.pullRequests.count) open" } ?? "Pull requests")
-                    .font(.system(size: 11))
-                    .foregroundStyle(palette.secondary)
+        let board = workspace.githubBoard
+        let counts = board.map { Self.counts($0.pullRequests, login: $0.login) }
+        HStack(spacing: 10) {
+            KindTile(kind: .github)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Pull Requests")
+                    .font(.system(size: DS.Size.title, weight: .medium))
+                    .lineLimit(1)
+                Text(board.map { "\($0.remote.slug) · \(counts?.forYou ?? 0) for you" } ?? "GitHub")
+                    .font(.system(size: DS.Size.subtitle))
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
             if hovering {
                 Button { controller.closeGitHub() } label: {
-                    Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).frame(width: 14, height: 14)
+                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+                        .frame(width: 18, height: 18)
+                        .background(Circle().fill(Color.primary.opacity(0.08)))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(palette.secondary)
+                .foregroundStyle(.secondary)
                 .help("Close the GitHub tab")
+            } else if let review = counts?.toReview, review > 0 {
+                Pill("\(review) to review", color: DS.Status.info)
             }
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(selected ? palette.selected : hovering ? palette.hover : .clear))
+        .padding(.vertical, 7)
+        .rowBackground(selected: selected, hovering: hovering)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture { controller.toggleGitHub() }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("GitHub pull requests")
+        .accessibilityLabel("Pull requests" + ((counts?.toReview ?? 0) > 0 ? ", \(counts?.toReview ?? 0) to review" : ""))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { controller.toggleGitHub() }
+    }
+
+    /// PRs waiting on the viewer's review, and those that are theirs or wait
+    /// on them ("for you"). Zero until the viewer's login is known.
+    static func counts(_ prs: [OpenPullRequest], login: String?) -> (toReview: Int, forYou: Int) {
+        guard let login else { return (0, 0) }
+        let review = prs.filter { $0.reviewRequestedLogins.contains(login) }.count
+        let forYou = prs.filter { $0.author == login || $0.reviewRequestedLogins.contains(login) }.count
+        return (review, forYou)
     }
 }

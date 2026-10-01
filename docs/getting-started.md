@@ -98,7 +98,7 @@ Right-click a tab to rename it, duplicate it, add it to a group or move it to a 
 
 ### Find anything
 
-Press ⇧⌘P for the **command palette**. Every menu command and Settings pane is there, with its shortcut. When you don't know where something lives, start here.
+Press ⇧⌘P for the **command palette** (or click **Go to anything…** at the top of the vertical sidebar). It finds tabs, worktrees, recent folders, every menu command and Settings pane (with its shortcut), themes and history. Start with `>` to search commands only, or `@` for folders and worktrees. When you don't know where something lives, start here.
 
 ### Copy what you need
 

@@ -348,29 +348,40 @@ struct DashboardSidebarRow: View {
 
     var body: some View {
         let selected = workspace.showsDashboard
-        HStack(alignment: .top, spacing: 8) {
-            DashboardStatusIcon(summary: summary, palette: palette, active: controller.chrome.isVisible).padding(.top, 1)
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: 10) {
+            KindTile(kind: .claude)
+            VStack(alignment: .leading, spacing: 1) {
                 Text("Claude Sessions")
-                    .font(.system(size: 12, weight: selected ? .semibold : .medium))
-                    .foregroundStyle(selected ? palette.foreground : palette.foreground.opacity(0.85))
-                Text(summary.detail.isEmpty ? "No sessions" : summary.detail)
-                    .font(.system(size: 11))
-                    .foregroundStyle(summary.needsInput > 0 ? palette.yellow : palette.secondary)
+                    .font(.system(size: DS.Size.title, weight: .semibold))
+                    .lineLimit(1)
+                Text(Self.subtitle(summary))
+                    .font(.system(size: DS.Size.subtitle))
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
-            DashboardCountBadge(summary: summary, palette: palette)
+            if summary.needsInput > 0 {
+                CountBadge(count: summary.needsInput)
+            } else if summary.working > 0, controller.chrome.isVisible {
+                SpinnerRing()
+            }
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(selected ? palette.selected : hovering ? palette.hover : .clear))
+        .padding(.vertical, 7)
+        .rowBackground(selected: selected, hovering: hovering)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture { controller.toggleDashboard() }
         .dashboardEntryAccessibility(summary: summary, selected: selected) { controller.toggleDashboard() }
+    }
+
+    /// "1 needs you · 2 working", "2 need you", "3 sessions", "No sessions".
+    static func subtitle(_ s: ClaudeDashboard.Summary) -> String {
+        var parts: [String] = []
+        if s.needsInput > 0 { parts.append("\(s.needsInput) need\(s.needsInput == 1 ? "s" : "") you") }
+        if s.working > 0 { parts.append("\(s.working) working") }
+        if parts.isEmpty { return s.total == 0 ? "No sessions" : "\(s.total) session\(s.total == 1 ? "" : "s")" }
+        return parts.joined(separator: " · ")
     }
 }
 
