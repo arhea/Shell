@@ -417,6 +417,13 @@ final class DashboardReposTests: XCTestCase {
         let session = try XCTUnwrap(tab.focusedSession)
         session.commandStarted("claude", directory: nil)
         await DashboardRepos.shared.refresh(session)
+        // Another refresh may already be discovering, and status loads after
+        // discovery, so wait for the branch rather than reading it once.
+        let deadline = Date().addingTimeInterval(5)
+        while ClaudeDashboard.branch(for: session) != "main", Date() < deadline {
+            await DashboardRepos.shared.refresh(session)
+            try await Task.sleep(for: .milliseconds(10))
+        }
         XCTAssertEqual(ClaudeDashboard.branch(for: session), "main")
         let entry = ClaudeDashboard.Entry(session: session, tab: tab, controller: controller, location: "Tab 1")
         let host = render(ClaudeSessionTile(entry: entry, palette: ChromePalette.current) {}, size: CGSize(width: 420, height: 300))
