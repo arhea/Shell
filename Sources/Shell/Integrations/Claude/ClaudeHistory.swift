@@ -27,8 +27,12 @@ final class ClaudeHistory {
 
     private(set) var sessions: [ClaudePastSession] = []
     private(set) var isLoading = false
-    @ObservationIgnored private let index = ClaudeTranscriptIndex()
+    @ObservationIgnored private let index: ClaudeTranscriptIndex
     @ObservationIgnored private var loadedAt: Date?
+
+    init(index: ClaudeTranscriptIndex = ClaudeTranscriptIndex()) {
+        self.index = index
+    }
 
     /// True when Claude Code is on this Mac: its config folder exists or the
     /// `claude` binary is on the PATH. Checked once per launch.
@@ -49,10 +53,10 @@ final class ClaudeHistory {
         isLoading = true
         loadedAt = Date()
         let index = index
-        Task.detached(priority: .utility) {
+        Task.detached(priority: .utility) { [weak self] in
             let found = index.scan()
             await MainActor.run {
-                let history = ClaudeHistory.shared
+                guard let history = self else { return }
                 history.isLoading = false
                 if history.sessions != found { history.sessions = found }
             }

@@ -77,9 +77,17 @@ enum AgentLauncher {
     // MARK: Launch
 
     /// Starts the agent here, or in a new tab for a worktree. Calls `report` with progress
-    /// or an error for the pane that asked.
-    static func start(_ mode: Mode, from session: TerminalSession, report: @escaping (String, Bool) -> Void) {
-        guard let controller = controller(for: session) else { return }
+    /// or an error for the pane that asked. `open` replaces opening the new tab
+    /// in the session's window (for unit tests).
+    static func start(_ mode: Mode, from session: TerminalSession, report: @escaping (String, Bool) -> Void,
+                      open opener: ((Plan) -> Void)? = nil) {
+        let openPlan: (Plan) -> Void
+        if let opener {
+            openPlan = opener
+        } else {
+            guard let controller = controller(for: session) else { return }
+            openPlan = { open($0, in: controller) }
+        }
         let agent = SettingsStore.shared.settings.defaultAgent
         let directory = session.workingDirectory ?? NSHomeDirectory()
         if mode == .here {
@@ -114,7 +122,7 @@ enum AgentLauncher {
             do {
                 let plan = try await worktreePlan(directory: directory, branch: branch, name: name, trackRemote: remote,
                                                   agent: agent, worktreeRoot: root, environment: env)
-                open(plan, in: controller)
+                openPlan(plan)
             } catch {
                 report(error.localizedDescription, false)
             }
@@ -173,7 +181,7 @@ enum AgentLauncher {
         return (info, worktrees)
     }
 
-    private static func worktreePlan(directory: String, branch requested: String?, name: String?, trackRemote: String?,
+    static func worktreePlan(directory: String, branch requested: String?, name: String?, trackRemote: String?,
                                      agent: CodingAgent, worktreeRoot: String, environment env: [String: String]) async throws -> Plan {
         let (info, worktrees) = try await inspect(directory: directory, environment: env)
         let git = GitRepository.findGit(environment: env)

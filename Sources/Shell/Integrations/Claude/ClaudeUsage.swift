@@ -7,7 +7,9 @@ import Observation
 @MainActor
 @Observable
 final class ClaudeUsage {
-    static let shared = ClaudeUsage()
+    /// Unit tests keep plan limits out of the app's real defaults.
+    static let shared = ClaudeUsage(defaults: AppEnvironment.isRunningTests
+        ? UserDefaults(suiteName: "app.bethesdalabs.Shell.tests") ?? .standard : .standard)
 
     struct LimitWindow: Codable, Equatable {
         /// 0…1 of the window used.
@@ -61,13 +63,14 @@ final class ClaudeUsage {
     private(set) var tokens: TokenStats?
     private(set) var isScanning = false
 
-    @ObservationIgnored private let scanner = TranscriptScanner()
+    @ObservationIgnored private let scanner: TranscriptScanner
     @ObservationIgnored private var lastScan: Date?
     @ObservationIgnored private let defaults: UserDefaults
     private static let limitsKey = "ClaudeUsageLimits"
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, scanner: TranscriptScanner = TranscriptScanner()) {
         self.defaults = defaults
+        self.scanner = scanner
         if let data = defaults.data(forKey: Self.limitsKey) {
             limits = try? JSONDecoder().decode(Limits.self, from: data)
         }
@@ -120,11 +123,11 @@ final class ClaudeUsage {
         isScanning = true
         lastScan = Date()
         let scanner = scanner
-        Task.detached(priority: .utility) {
+        Task.detached(priority: .utility) { [weak self] in
             let records = scanner.scan()
             let stats = ClaudeUsage.stats(from: records, now: Date(), calendar: .current)
             await MainActor.run {
-                let usage = ClaudeUsage.shared
+                guard let usage = self else { return }
                 usage.isScanning = false
                 if usage.tokens != stats { usage.tokens = stats }
             }

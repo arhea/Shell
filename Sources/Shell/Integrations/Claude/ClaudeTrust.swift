@@ -9,7 +9,11 @@ import Foundation
 /// in Claude Code's terminal UI, with the native view's "Trust and Start", or
 /// (optionally) because they're a worktree of a trusted repository.
 enum ClaudeTrust {
-    static var configURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude.json") }
+    /// Unit tests point this at a temporary file; nil means ~/.claude.json.
+    nonisolated(unsafe) static var configURLOverride: URL?
+    static var configURL: URL {
+        configURLOverride ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude.json")
+    }
 
     /// True when `directory` or one of its parents was trusted.
     static func isTrusted(_ directory: String, config: [String: Any]? = nil, configURL: URL = configURL) -> Bool {

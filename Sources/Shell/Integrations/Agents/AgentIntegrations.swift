@@ -27,11 +27,16 @@ final class AgentIntegrations {
     static let marker = "SHELL_APP_CTL"
     static let claudeEvents = ["UserPromptSubmit", "Notification", "Stop", "SessionEnd"]
 
-    private var home: URL { FileManager.default.homeDirectoryForCurrentUser }
+    /// Unit tests use a temporary home; nil means the user's home folder.
+    @ObservationIgnored private let homeOverride: URL?
+    private var home: URL { homeOverride ?? FileManager.default.homeDirectoryForCurrentUser }
     var claudeSettingsURL: URL { home.appendingPathComponent(".claude/settings.json") }
     var codexConfigURL: URL { home.appendingPathComponent(".codex/config.toml") }
 
-    private init() { refresh() }
+    init(home: URL? = nil) {
+        homeOverride = home
+        refresh()
+    }
 
     func shellReported(omz: String?, theme: String?) {
         ohMyZshPath = (omz?.isEmpty ?? true) ? nil : omz
