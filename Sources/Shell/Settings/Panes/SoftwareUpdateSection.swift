@@ -14,8 +14,13 @@ struct SoftwareUpdateSection: View {
             Toggle("Download updates in the background and install them when Shell quits", isOn: setting(\.installUpdatesAutomatically))
                 .disabled(!s.checkForUpdates || blocker != nil)
             LabeledContent("Shell \(updater.currentVersion)") { status }
+            if case .downloading = updater.phase, let fraction = updater.downloadFraction, fraction < 1 {
+                ProgressView(value: fraction)
+            }
             if let blocker {
                 Text(blocker).font(.caption).foregroundStyle(.secondary)
+            } else if case .available = updater.phase, let error = updater.downloadError {
+                Text("The download failed: \(error)").font(.caption).foregroundStyle(.red)
             }
             Text("Shell asks GitHub for the latest release of \(UpdateInstaller.repository) every six hours. Updates are installed only when they're signed by Shell's developer and notarized by Apple. No identifiers or usage data are sent.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -30,12 +35,17 @@ struct SoftwareUpdateSection: View {
                 Text("Checking…").foregroundStyle(.secondary)
             case .downloading(let r):
                 ProgressView().controlSize(.small)
-                Text("Downloading \(r.version)…").foregroundStyle(.secondary)
+                if let f = updater.downloadFraction, f >= 1 {
+                    Text("Verifying \(r.version)…").foregroundStyle(.secondary)
+                } else {
+                    Text("Downloading \(r.version)…").foregroundStyle(.secondary)
+                }
             case .available(let r):
                 Text("\(r.version) is available")
                 Button("Release Notes") { NSWorkspace.shared.open(r.notesURL) }
                 if updater.installBlocker == nil {
-                    Button("Install and Restart") { updater.installAndRelaunch() }.buttonStyle(.borderedProminent)
+                    Button(updater.downloadError == nil ? "Install and Restart" : "Try Again") { updater.installAndRelaunch() }
+                        .buttonStyle(.borderedProminent)
                 } else {
                     Button("Download") { NSWorkspace.shared.open(r.notesURL) }
                 }

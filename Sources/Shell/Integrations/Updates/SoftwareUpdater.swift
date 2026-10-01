@@ -16,7 +16,8 @@ final class SoftwareUpdater {
         case idle
         case checking
         case upToDate
-        /// Newer, not downloaded: automatic install is off or this copy can't replace itself.
+        /// Newer, not downloaded: automatic install is off, this copy can't
+        /// replace itself, or the last download failed (`downloadError`).
         case available(UpdateRelease)
         case downloading(UpdateRelease)
         /// Downloaded, verified and staged; installs at quit.
@@ -35,6 +36,11 @@ final class SoftwareUpdater {
 
     private(set) var phase: Phase = .idle
     private(set) var lastCheck: Date?
+    /// How much of the DMG has arrived while `.downloading`, 0...1. At 1 the
+    /// download is done and the app is being verified.
+    private(set) var downloadFraction: Double?
+    /// Why the last download of an `.available` release failed.
+    private(set) var downloadError: String?
 
     @ObservationIgnored private var state = State()
     @ObservationIgnored private var stagedApp: URL?
@@ -151,26 +157,44 @@ final class SoftwareUpdater {
         }
         Log.update.info("Shell \(release.version, privacy: .public) is available")
         if !userInitiated, settings.installUpdatesAutomatically, installBlocker == nil {
-            if await download(release) { announce(release, ready: true) }
+            announce(release, ready: await download(release))
         } else {
             phase = .available(release)
             if !userInitiated { announce(release, ready: false) }
         }
     }
 
+    /// Downloads, verifies and stages `release`. On failure the release stays
+    /// `.available` with `downloadError` set, so it can be retried.
     @discardableResult
     private func download(_ release: UpdateRelease) async -> Bool {
         guard let teamID = UpdateInstaller.teamID, let bundleID = Bundle.main.bundleIdentifier else { return false }
         phase = .downloading(release)
+        downloadError = nil
+        downloadFraction = 0
+        let monitor = UpdateInstaller.DownloadMonitor()
+        let total = Double(max(release.dmgSize, 1))
+        let progress = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(250))
+                guard let self, case .downloading = self.phase else { return }
+                self.downloadFraction = min(1, Double(monitor.bytesReceived) / total)
+            }
+        }
+        defer {
+            progress.cancel()
+            downloadFraction = nil
+        }
         do {
-            stagedApp = try await UpdateInstaller.stage(release, teamID: teamID, bundleID: bundleID)
+            stagedApp = try await UpdateInstaller.stage(release, teamID: teamID, bundleID: bundleID, monitor: monitor)
             phase = .ready(release)
             Log.update.info("Shell \(release.version, privacy: .public) is staged")
             return true
         } catch {
             Log.update.error("update \(release.version, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
             stagedApp = nil
-            phase = .failed(error.localizedDescription)
+            downloadError = error.localizedDescription
+            phase = .available(release)
             return false
         }
     }
@@ -180,13 +204,15 @@ final class SoftwareUpdater {
         state.notifiedVersion = release.version
         persist()
         let body = if ready {
-            "Choose Help › Restart to Update, or it installs the next time you quit Shell."
+            "Restart Shell to install it, or it installs the next time you quit."
         } else if installBlocker == nil {
             "You have \(currentVersion). Choose Help › Install Shell \(release.version) and Restart."
         } else {
             "You have \(currentVersion). Click to download it."
         }
-        NotificationManager.shared.postAppNotification(title: "Shell \(release.version) is available", body: body, pane: .general)
+        let category = installBlocker == nil ? NotificationManager.updateCategory : nil
+        NotificationManager.shared.postAppNotification(title: "Shell \(release.version) is available", body: body,
+                                                       pane: .general, category: category)
     }
 
     private func persist() {
@@ -200,13 +226,18 @@ final class SoftwareUpdater {
     // MARK: Installing
 
     /// Downloads the update if needed, then quits, installs and relaunches.
-    /// Tabs come back through session restore.
+    /// Tabs come back through session restore. A failed download is reported
+    /// in an alert with the option to try again.
     func installAndRelaunch() {
+        guard installBlocker == nil else { return }
         Task {
             switch phase {
             case .ready: break
             case .available(let release):
-                guard await download(release) else { return }
+                guard await download(release) else {
+                    presentDownloadFailure(release)
+                    return
+                }
             default: return
             }
             relaunchAfterQuit = true
@@ -223,6 +254,21 @@ final class SoftwareUpdater {
               relaunchAfterQuit || settings.installUpdatesAutomatically else { return }
         UpdateInstaller.spawnInstaller(staged: stagedApp, target: Bundle.main.bundleURL, relaunch: relaunchAfterQuit,
                                        log: ScheduledMaintenance.logDirectory.appendingPathComponent("update.log"))
+    }
+
+    private func presentDownloadFailure(_ release: UpdateRelease) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Couldn't download Shell \(release.version)"
+        alert.informativeText = downloadError ?? "The download failed."
+        alert.addButton(withTitle: "Try Again")
+        alert.addButton(withTitle: "Open Download Page")
+        alert.addButton(withTitle: "Cancel")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn: installAndRelaunch()
+        case .alertSecondButtonReturn: NSWorkspace.shared.open(release.notesURL)
+        default: break
+        }
     }
 
     // MARK: Check for Updates…
@@ -250,7 +296,8 @@ final class SoftwareUpdater {
             let ready = if case .ready = phase { true } else { false }
             alert.messageText = ready ? "Shell \(release.version) is ready to install" : "Shell \(release.version) is available"
             let blocker = installBlocker
-            alert.informativeText = "You have \(currentVersion)." + (blocker.map { "\n\n\($0)" } ?? "")
+            let note = blocker ?? downloadError.map { "The last download failed: \($0)" }
+            alert.informativeText = "You have \(currentVersion)." + (note.map { "\n\n\($0)" } ?? "")
             if blocker == nil {
                 alert.addButton(withTitle: ready ? "Restart Now" : "Install and Restart")
                 alert.addButton(withTitle: "Release Notes")

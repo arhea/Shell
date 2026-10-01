@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Updates show download progress in Settings › General › Software Update and the Help menu, and the "update is ready" notification has a **Restart Now** button. Help › Restart to Install Shell <version> replaces Restart to Update.
+
+### Fixed
+
+- A failed update download no longer drops the update: Install and Restart reports what went wrong and offers Try Again or the download page, and Settings keeps the update available to retry.
+
 ## [0.3.0] - 2026-09-30
 
 Shell adds a GitHub tab: a kanban board of your repository's pull requests, with stacked PRs grouped together and review, checks, merge and checkout built in. The native Claude Code view also gets a centered composer, sign-in from inside the view, and image paste.
