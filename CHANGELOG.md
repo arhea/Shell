@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- The Worktrees sidebar shows a **Clean up merged worktrees** line when worktrees whose pull request has merged have no uncommitted changes. It lists them for confirmation, then removes them and deletes each branch when it holds nothing beyond what merged. The main checkout, locked worktrees and the one you're in are never touched. ([#27](https://github.com/arhea/Shell/pull/27), fixes [#26](https://github.com/arhea/Shell/issues/26))
+
 ## [0.3.0] - 2026-09-30
 
 Shell adds a GitHub tab: a kanban board of your repository's pull requests, with stacked PRs grouped together and review, checks, merge and checkout built in. The native Claude Code view also gets a centered composer, sign-in from inside the view, and image paste.
