@@ -4,11 +4,17 @@ import SwiftUI
 /// Settings › Agent Storage: what Claude Code and Codex keep on disk, and cleanup.
 struct AgentStoragePane: View {
     /// App-wide model (observed through property access; not state this view owns).
-    private let model = AgentStorageModel.shared
+    private let model: AgentStorageModel
     /// App-wide model (observed through property access; not state this view owns).
     private let store = SettingsStore.shared
-    @State private var maintenance = ScheduledMaintenance.agentStorage
+    @State private var maintenance: ScheduledMaintenance
     @State private var confirm: StorageCategory?
+
+    /// Injectable so unit tests can use temporary folders instead of the real ones.
+    init(model: AgentStorageModel = .shared, maintenance: ScheduledMaintenance = .agentStorage) {
+        self.model = model
+        _maintenance = State(initialValue: maintenance)
+    }
 
     var body: some View {
         Form {

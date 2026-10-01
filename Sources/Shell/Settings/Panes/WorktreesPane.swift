@@ -5,10 +5,18 @@ import SwiftUI
 struct WorktreesSettingsPane: View {
     /// App-wide model (observed through property access; not state this view owns).
     private let store = SettingsStore.shared
-    @State private var maintenance = ScheduledMaintenance.worktrees
+    @State private var maintenance: ScheduledMaintenance
     @State private var preview: [WorktreeCleanupJob.Candidate]?
     @State private var previewSizes: [String: Int64] = [:]
     @State private var previewing = false
+
+    /// Injectable so unit tests can show a given cleanup state and preview.
+    init(maintenance: ScheduledMaintenance = .worktrees,
+         preview: [WorktreeCleanupJob.Candidate]? = nil, previewSizes: [String: Int64] = [:]) {
+        _maintenance = State(initialValue: maintenance)
+        _preview = State(initialValue: preview)
+        _previewSizes = State(initialValue: previewSizes)
+    }
 
     var body: some View {
         Form {

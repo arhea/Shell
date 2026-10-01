@@ -462,8 +462,8 @@ final class SettingsStore {
 
     /// Decodes settings by layering the file over the defaults, so settings
     /// files from older versions (missing keys) still load.
-    private static func load() -> AppSettings? {
-        guard let data = try? Data(contentsOf: fileURL),
+    static func load(from url: URL = fileURL) -> AppSettings? {
+        guard let data = try? Data(contentsOf: url),
               let stored = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let defaultsData = try? JSONEncoder().encode(AppSettings()),
               var merged = try? JSONSerialization.jsonObject(with: defaultsData) as? [String: Any]
