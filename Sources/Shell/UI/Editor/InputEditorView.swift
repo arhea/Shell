@@ -75,8 +75,12 @@ final class InputEditorView: NSView, NSTextViewDelegate {
     private let promptLabel = NSTextField(labelWithString: "❯")
     private let separator = NSView()
     private var contextHost: NSHostingView<EditorContextBar>!
+    private var fixHost: NSHostingView<CommandFixBar>?
+    private let hintsLabel = NSTextField(labelWithString: "")
     let completion = CompletionModel()
     let barState = EditorBarState()
+    /// Repository, pull request, checks and runtime for the chips.
+    let promptContext = PromptContextModel()
 
     var onHeightChange: (() -> Void)?
     var onCompletionVisibilityChange: (() -> Void)?
@@ -113,6 +117,11 @@ final class InputEditorView: NSView, NSTextViewDelegate {
 
         promptLabel.isSelectable = false
         addSubview(promptLabel)
+
+        hintsLabel.isSelectable = false
+        hintsLabel.alignment = .right
+        hintsLabel.isHidden = true
+        addSubview(hintsLabel)
 
         textView.editor = self
         textView.delegate = self
@@ -167,12 +176,25 @@ final class InputEditorView: NSView, NSTextViewDelegate {
         textView.ghostColor = t.background.mixed(with: t.foreground, 0.4).nsColor
         promptLabel.font = NSFont.monospacedSystemFont(ofSize: size, weight: .bold)
         promptLabel.textColor = t.accent.nsColor
+        hintsLabel.font = .systemFont(ofSize: 10.5)
+        hintsLabel.textColor = t.background.mixed(with: t.foreground, 0.42).nsColor
         separator.layer?.backgroundColor = t.background.mixed(with: t.foreground, 0.14).nsColor.cgColor
         layer?.backgroundColor = t.background.mixed(with: t.foreground, t.isDark ? 0.035 : 0.025).nsColor.cgColor
         contextHost.rootView = makeContextBar()
+        if let fix = barState.fix { fixHost?.rootView = makeFixBar(fix) }
         highlight()
         needsLayout = true
         onHeightChange?()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        // Repository watching and checks polling follow the pane being on screen.
+        if window != nil {
+            promptContext.activate(directory: session.workingDirectory)
+        } else {
+            promptContext.deactivate()
+        }
     }
 
     /// Registers the bundled JetBrains Mono (libghostty's default font) so the
@@ -210,6 +232,9 @@ final class InputEditorView: NSView, NSTextViewDelegate {
     }
 
     private var contextHeight: CGFloat { 24 }
+    private static let fixBarHeight: CGFloat = 38
+    private static let fixBarGap: CGFloat = 8
+    private var fixBarSpace: CGFloat { barState.fix == nil ? 0 : Self.fixBarHeight + Self.fixBarGap }
 
     // Spacing around the prompt (points). The text area is at least
     // `minTextLines` tall so the input reads as a roomy entry field.
@@ -233,7 +258,7 @@ final class InputEditorView: NSView, NSTextViewDelegate {
             lm.ensureLayout(for: tc)
             textHeight = max(lineHeight, lm.usedRect(for: tc).height)
         }
-        return Self.topPadding + contextHeight + Self.contextGap + textAreaHeight(textHeight) + Self.bottomPadding
+        return Self.topPadding + fixBarSpace + contextHeight + Self.contextGap + textAreaHeight(textHeight) + Self.bottomPadding
     }
 
     override func layout() {
@@ -241,7 +266,11 @@ final class InputEditorView: NSView, NSTextViewDelegate {
         let w = bounds.width
         let pad = Self.sidePadding
         separator.frame = isAtTop ? NSRect(x: 0, y: bounds.height - 1, width: w, height: 1) : NSRect(x: 0, y: 0, width: w, height: 1)
-        let top = Self.topPadding
+        var top = Self.topPadding
+        if let fixHost, barState.fix != nil {
+            fixHost.frame = NSRect(x: pad - 8, y: top - 2, width: w - pad * 2 + 16, height: Self.fixBarHeight)
+            top += Self.fixBarHeight + Self.fixBarGap
+        }
         contextHost.frame = NSRect(x: pad - 4, y: top - 2, width: w - pad * 2 + 8, height: contextHeight)
         let textTop = top + contextHeight + Self.contextGap
         let promptWidth: CGFloat = 18
@@ -252,15 +281,52 @@ final class InputEditorView: NSView, NSTextViewDelegate {
         textView.minSize = NSSize(width: 0, height: scrollView.contentSize.height)
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.frame.size.width = scrollView.contentSize.width
+        if !hintsLabel.isHidden {
+            hintsLabel.sizeToFit()
+            let hw = hintsLabel.frame.width
+            hintsLabel.frame = NSRect(x: w - pad - hw, y: bounds.height - Self.bottomPadding - 2, width: hw, height: 14)
+        }
     }
 
     func refreshContext() {
+        promptContext.update(directory: session.workingDirectory)
         contextHost.rootView = makeContextBar()
     }
 
     private func makeContextBar() -> EditorContextBar {
-        EditorContextBar(session: session, bar: barState, onCopy: { [weak self] kind in self?.copy(kind) })
+        EditorContextBar(session: session, bar: barState, context: promptContext,
+                         onCopy: { [weak self] kind in self?.copy(kind) },
+                         onFixChecks: { [weak self] jobs, model in self?.fixChecks(jobs, model: model) })
     }
+
+    /// Fix with Claude from the checks popover: a new tab running Claude in
+    /// this folder with the jobs' logs.
+    private func fixChecks(_ jobs: [CheckJob], model: BranchChecksModel) {
+        let context = SidebarContext(
+            directory: session.workingDirectory ?? model.repository.root.path,
+            insert: { [weak self] text in self?.insert(text) },
+            isClaude: false,
+            openTab: { dir, command in ClaudeTerminalLauncher.openTab(directory: dir, command: command) })
+        ChecksFix.start(jobs, model: model, context: context)
+    }
+
+    // MARK: Hints
+
+    /// "→ accept  ⇥ completions  ⌃R history", only while focused and the
+    /// line is empty or showing a suggestion.
+    private func updateHints() {
+        let focused = window?.firstResponder === textView
+        var text = ""
+        if focused, !completion.isVisible, textView.string.isEmpty || textView.ghostText != nil {
+            text = (textView.ghostText != nil ? "→ accept    " : "") + "⇥ completions    ⌃R history"
+        }
+        guard text != (hintsLabel.isHidden ? "" : hintsLabel.stringValue) else { return }
+        hintsLabel.stringValue = text
+        hintsLabel.isHidden = text.isEmpty
+        needsLayout = true
+    }
+
+    var debugHints: String? { hintsLabel.isHidden ? nil : hintsLabel.stringValue }
 
     // MARK: Copy
 
@@ -307,6 +373,8 @@ final class InputEditorView: NSView, NSTextViewDelegate {
     func focusChanged(_ focused: Bool) {
         if focused { onFocus?() }
         if !focused { hideCompletions() }
+        // The first responder changes after this returns.
+        DispatchQueue.main.async { [weak self] in self?.updateHints() }
     }
 
     var text: String {
@@ -340,17 +408,26 @@ final class InputEditorView: NSView, NSTextViewDelegate {
         suggestFixIfNeeded()
     }
 
-    // MARK: Suggested fix (Apple Intelligence)
+    // MARK: Suggested fix
 
-    /// After a failed command, asks the on-device model for a corrected one
-    /// and offers it as ghost text. It's only ever inserted by the user (→).
+    /// After a failed command, offers the fix bar: Fix with Claude, plus a
+    /// corrected command from the on-device model (also shown as ghost text,
+    /// → to accept) when Apple Intelligence command fixes are on. Nothing
+    /// runs unless the user clicks.
     private func suggestFixIfNeeded() {
-        guard Intelligence.isEnabled(.commandFixes), let code = session.lastExitCode, code != 0,
-              let command = session.lastCommand else { return }
+        guard let code = session.lastExitCode, code != 0, let command = session.lastCommand else { return }
         let key = "\(command)\u{0}\(code)\u{0}\(session.lastDuration ?? -1)"
         guard key != fixCheckedFor else { return }
         fixCheckedFor = key
         clearFix()
+        guard !IntelligencePrompts.ignoredExitCodes.contains(code) else { return }
+        let base = CommandFixState(command: command, exitCode: code, duration: session.lastDuration,
+                                   directory: session.workingDirectory ?? NSHomeDirectory())
+        // Fix with Claude for any failure that printed something (checked on the viewport, cheaply).
+        if SettingsStore.shared.settings.showCommandBlocks, code == 127 || session.lastBlockPrintedOutput() {
+            setFix(base)
+        }
+        guard Intelligence.isEnabled(.commandFixes) else { return }
         let output = session.lastOutput() ?? ""
         guard IntelligencePrompts.shouldSuggestFix(exitCode: code, output: output) else { return }
         let directory = session.abbreviatedDirectory
@@ -361,6 +438,9 @@ final class InputEditorView: NSView, NSTextViewDelegate {
                   fix.hasPrefix(textView.string) else { return }
             fixSuggestion = fix
             updateGhost()
+            var state = base
+            state.suggestion = fix
+            setFix(state)
         }
     }
 
@@ -369,6 +449,82 @@ final class InputEditorView: NSView, NSTextViewDelegate {
         fixTask = nil
         fixSuggestion = nil
         barState.suggestedFix = false
+        setFix(nil)
+    }
+
+    /// Shows or hides the fix bar above the chips.
+    private func setFix(_ fix: CommandFixState?) {
+        guard fix != barState.fix else { return }
+        barState.fix = fix
+        if let fix {
+            if let fixHost {
+                fixHost.rootView = makeFixBar(fix)
+            } else {
+                let host = NSHostingView(rootView: makeFixBar(fix))
+                host.translatesAutoresizingMaskIntoConstraints = true
+                addSubview(host)
+                fixHost = host
+            }
+            fixHost?.isHidden = false
+        } else {
+            fixHost?.isHidden = true
+        }
+        needsLayout = true
+        onHeightChange?()
+    }
+
+    private func makeFixBar(_ fix: CommandFixState) -> CommandFixBar {
+        CommandFixBar(fix: fix,
+                      onRun: { [weak self] command in self?.runFix(command) },
+                      onClaude: { [weak self] in self?.fixWithClaude(fix) },
+                      onDismiss: { [weak self] in
+                          self?.textView.ghostText = nil
+                          self?.clearFix()
+                      })
+    }
+
+    /// "Run it": runs the suggested command through the normal submit path.
+    func runFix(_ command: String) {
+        hideCompletions()
+        text = command
+        submit()
+    }
+
+    /// The prompt "Fix with Claude" starts Claude with.
+    static func claudeFixPrompt(_ fix: CommandFixState, outputPath: String?) -> String {
+        var prompt = "The command `\(fix.command)` failed with exit status \(fix.exitCode) in \(fix.directory)."
+        if let outputPath { prompt += " Its output is in \(outputPath)." }
+        if let suggestion = fix.suggestion { prompt += " A suggested fix was `\(suggestion)`." }
+        return prompt + " Find the cause and fix it, then run the command again to check."
+    }
+
+    /// "Fix with Claude": starts Claude in this pane's folder with the
+    /// failing command and its output (saved to a file) as the prompt.
+    func fixWithClaude(_ fix: CommandFixState) {
+        var outputPath: String?
+        if let output = session.lastOutput(), !output.isEmpty {
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("shell-fixes", isDirectory: true)
+                .appendingPathComponent("failed-\(UUID().uuidString.prefix(8)).log")
+            do {
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try IntelligencePrompts.tail(output, maxCharacters: 40_000).write(to: url, atomically: true, encoding: .utf8)
+                outputPath = url.path
+            } catch {
+                Log.app.error("couldn't save the failed command's output: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        let s = SettingsStore.shared.settings
+        let command = s.defaultAgent.command(name: AgentLauncher.randomName(), permissionMode: s.claudePermissionMode)
+            + " " + ShellQuote.quote(Self.claudeFixPrompt(fix, outputPath: outputPath))
+        textView.ghostText = nil
+        clearFix()
+        switch session.state {
+        case .idle: session.submit(command: command)
+        case .unmanaged:
+            session.surfaceView.sendText(command)
+            session.surfaceView.writeRaw("\r")
+        case .running, .starting: session.pendingCommand = command
+        }
     }
 
     func textDidChange(_ notification: Notification) {
@@ -432,15 +588,18 @@ final class InputEditorView: NSView, NSTextViewDelegate {
         if atEnd, !completion.isVisible, let fix = fixSuggestion, fix.hasPrefix(str), fix != str {
             textView.ghostText = String(fix.dropFirst(str.count))
             barState.suggestedFix = true
+            updateHints()
             return
         }
         barState.suggestedFix = false
         guard SettingsStore.shared.settings.historySuggestions, !completion.isVisible, atEnd, !str.isEmpty,
               let suggestion = HistoryStore.shared.suggestion(for: str) else {
             textView.ghostText = nil
+            updateHints()
             return
         }
         textView.ghostText = String(suggestion.dropFirst(str.count))
+        updateHints()
     }
 
     private func acceptGhost(wordOnly: Bool) -> Bool {
@@ -556,7 +715,7 @@ final class InputEditorView: NSView, NSTextViewDelegate {
             return true
         case #selector(NSResponder.cancelOperation(_:)):
             if completion.isVisible { hideCompletions(); return true }
-            if textView.ghostText != nil {
+            if textView.ghostText != nil || barState.fix != nil {
                 textView.ghostText = nil
                 clearFix()
                 return true
@@ -807,12 +966,14 @@ final class InputEditorView: NSView, NSTextViewDelegate {
     }
 }
 
-/// Transient feedback for the Copy button.
+/// Transient feedback for the Copy button, and the fix bar's state.
 @MainActor
 @Observable
 final class EditorBarState {
     /// The ghost text is a suggested fix for the last command.
     var suggestedFix = false
+    /// The failed command the fix bar is offering help with.
+    var fix: CommandFixState?
     var flashMessage: String?
     var flashSuccess = true
     @ObservationIgnored private var clearWork: DispatchWorkItem?
@@ -827,170 +988,331 @@ final class EditorBarState {
     }
 }
 
-/// Bar above the input: context chips (directory, git branch, last status)
-/// and the Copy split button.
-struct EditorContextBar: View {
-    let session: TerminalSession
-    let bar: EditorBarState
-    let onCopy: (InputEditorView.CopyKind) -> Void
+/// A command that just failed, and the on-device suggestion for it if any.
+struct CommandFixState: Equatable {
+    var command: String
+    var exitCode: Int
+    var duration: TimeInterval?
+    /// Absolute working directory.
+    var directory: String
+    /// A corrected command from Apple Intelligence.
+    var suggestion: String?
+}
+
+/// The bar above the prompt after a failure: "◆ Try `make bootstrap`" with
+/// Run it, ✻ Fix with Claude and ✕.
+struct CommandFixBar: View {
+    let fix: CommandFixState
+    var onRun: (String) -> Void
+    var onClaude: () -> Void
+    var onDismiss: () -> Void
 
     var body: some View {
         let palette = EditorPalette.current
-        let theme = ConfigController.shared.theme
+        HStack(spacing: 8) {
+            Image(systemName: "diamond.fill")
+                .font(.system(size: 8))
+                .foregroundStyle(fix.suggestion == nil ? DS.Status.failed : DS.Status.review)
+                .accessibilityHidden(true)
+            message(palette)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 8)
+            if let suggestion = fix.suggestion {
+                Button("Run it") { onRun(suggestion) }
+                    .buttonStyle(.labeled(.primary, compact: true))
+                    .help("Run \(suggestion)")
+            }
+            Button(action: onClaude) {
+                HStack(spacing: 4) { ClaudeMark(size: 10); Text("Fix with Claude") }
+            }
+            .buttonStyle(.labeled(.neutral, compact: true))
+            .help("Start Claude in this folder with the command and its output")
+            Button(action: onDismiss) { Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)) }
+                .buttonStyle(.labeled(.plain, compact: true))
+                .foregroundStyle(palette.dim)
+                .help("Dismiss")
+                .accessibilityLabel("Dismiss")
+        }
+        .font(.system(size: DS.Size.body))
+        .foregroundStyle(palette.foreground)
+        .padding(.horizontal, 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(RoundedRectangle(cornerRadius: DS.Radius.row).fill(palette.surface))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.row).strokeBorder(palette.border, lineWidth: 0.5))
+    }
+
+    @ViewBuilder
+    private func message(_ palette: EditorPalette) -> some View {
+        if let suggestion = fix.suggestion {
+            HStack(spacing: 5) {
+                Text("Try").fontWeight(.semibold)
+                code(suggestion, palette)
+                Text("· suggested on this Mac").foregroundStyle(palette.dim)
+            }
+            .help("Suggested by Apple Intelligence on this Mac. → accepts it in the prompt.")
+        } else {
+            HStack(spacing: 5) {
+                code(fix.command.components(separatedBy: "\n").first ?? fix.command, palette)
+                Text("failed with exit \(fix.exitCode)" + (fix.duration.map { " after " + TerminalSession.format(duration: $0) } ?? ""))
+                    .foregroundStyle(palette.dim)
+            }
+        }
+    }
+
+    private func code(_ text: String, _ palette: EditorPalette) -> some View {
+        Text(text)
+            .font(.system(size: DS.Size.small, design: .monospaced))
+            .padding(.horizontal, 5).padding(.vertical, 1)
+            .background(RoundedRectangle(cornerRadius: 4).fill(palette.foreground.opacity(0.08)))
+    }
+}
+
+/// Bar above the input: context chips (directory, branch, pull request,
+/// checks, runtime, last status) and the Claude and Copy split buttons.
+struct EditorContextBar: View {
+    let session: TerminalSession
+    let bar: EditorBarState
+    var context: PromptContextModel?
+    let onCopy: (InputEditorView.CopyKind) -> Void
+    var onFixChecks: ([CheckJob], BranchChecksModel) -> Void
+    @State private var showChecks = false
+
+    init(session: TerminalSession, bar: EditorBarState, context: PromptContextModel? = nil,
+         onCopy: @escaping (InputEditorView.CopyKind) -> Void,
+         onFixChecks: @escaping ([CheckJob], BranchChecksModel) -> Void = { _, _ in }) {
+        self.session = session
+        self.bar = bar
+        self.context = context
+        self.onCopy = onCopy
+        self.onFixChecks = onFixChecks
+    }
+
+    /// The repository, when it's the one the shell is in.
+    private var repository: GitRepository? {
+        guard let repo = context?.repository, let dir = session.workingDirectory,
+              dir == repo.root.path || dir.hasPrefix(repo.root.path + "/") else { return nil }
+        return repo
+    }
+
+    var body: some View {
+        let palette = EditorPalette.current
         HStack(spacing: 6) {
             if SettingsStore.shared.settings.showContextBar {
-                chip(icon: "folder", text: session.abbreviatedDirectory, color: Color(nsColor: theme.palette[4].nsColor), palette: palette)
-                    .onTapGesture {
-                        if let dir = session.workingDirectory {
-                            NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: dir)
-                        }
-                    }
-                    .help("Reveal in Finder")
-                if let branch = session.gitBranch {
-                    chip(icon: "arrow.triangle.branch", text: branch, color: Color(nsColor: theme.palette[5].nsColor), palette: palette)
-                }
-                if let code = session.lastExitCode {
-                    let ok = code == 0
-                    let dur = session.lastDuration.map { " · " + TerminalSession.format(duration: $0) } ?? ""
-                    chip(icon: ok ? "checkmark" : "xmark", text: (ok ? "" : "exit \(code)") + dur,
-                         color: Color(nsColor: theme.palette[ok ? 2 : 1].nsColor), palette: palette)
-                }
+                chips(palette)
             }
-            Spacer()
+            Spacer(minLength: 6)
             if session.state == .starting {
                 ProgressView().controlSize(.mini)
             }
-            if bar.suggestedFix, bar.flashMessage == nil {
-                Label("Suggested fix · → to accept", systemImage: "sparkles")
-                    .foregroundStyle(palette.dim)
-                    .help("Suggested by Apple Intelligence on this Mac. Esc dismisses it.")
-            }
             if let message = bar.flashMessage {
                 Text(message)
-                    .foregroundStyle(bar.flashSuccess ? Color(nsColor: theme.palette[2].nsColor) : palette.dim)
+                    .foregroundStyle(bar.flashSuccess ? DS.Status.done : palette.dim)
+                    .lineLimit(1)
                     .transition(.opacity)
             }
             AgentLaunchButton(session: session, bar: bar, palette: palette)
             CopyMenuButton(palette: palette, copied: bar.flashMessage != nil && bar.flashSuccess, onCopy: onCopy)
         }
-        .font(.system(size: 11, weight: .medium))
+        .font(.system(size: DS.Size.small, weight: .medium))
         .animation(.easeOut(duration: 0.15), value: bar.flashMessage)
     }
 
-    private func chip(icon: String, text: String, color: Color, palette: EditorPalette) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: icon).foregroundStyle(color)
-            if !text.isEmpty {
-                Text(text).foregroundStyle(palette.foreground.opacity(0.85)).lineLimit(1).truncationMode(.head)
+    @ViewBuilder
+    private func chips(_ palette: EditorPalette) -> some View {
+        PromptChip(color: DS.Status.info) {
+            Text(session.abbreviatedDirectory).lineLimit(1).truncationMode(.head)
+        }
+        .onTapGesture {
+            if let dir = session.workingDirectory { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: dir) }
+        }
+        .help("Reveal in Finder")
+        let repo = repository
+        if let branch = repo?.status.branch ?? session.gitBranch {
+            PromptChip(color: DS.Status.review) {
+                BranchGlyph(size: 10)
+                Text(branch).lineLimit(1).truncationMode(.middle)
+                if let repo {
+                    let changes = repo.status.changeCount
+                    if changes == 0 {
+                        Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(DS.Status.done)
+                            .accessibilityLabel("No changes")
+                    } else {
+                        Circle().fill(DS.Status.working).frame(width: 6, height: 6).accessibilityHidden(true)
+                        Text("\(changes)").foregroundStyle(DS.Status.working).monospacedDigit()
+                            .accessibilityLabel("\(changes) changed files")
+                    }
+                }
+            }
+            .help(repo.map { $0.status.changeCount == 0 ? "\(branch) · no uncommitted changes" : "\(branch) · \($0.status.changeCount) changed files" } ?? branch)
+        }
+        if let pr = repo?.pullRequest {
+            PromptChip(color: pr.state == .merged ? DS.Status.review : pr.state == .closed ? .secondary : DS.Status.done) {
+                Text("PR #\(pr.number)" + (pr.isDraft ? " draft" : "") + (pr.state == .merged ? " merged" : "") + " ↗")
+            }
+            .onTapGesture { NSWorkspace.shared.open(pr.url) }
+            .help(pr.title.isEmpty ? "Open the pull request" : "Open “\(pr.title)”")
+        }
+        if repo?.pullRequest != nil, let checks = context?.checks, let snap = checks.snapshot, let overall = snap.overall {
+            checksChip(checks, snapshot: snap, overall: overall)
+        }
+        if let runtime = context?.runtime {
+            PromptChip(color: nil) { Text(runtime) }
+                .help("Runtime for this folder")
+        }
+        if let code = session.lastExitCode {
+            let ok = code == 0
+            let dur = session.lastDuration.map { TerminalSession.format(duration: $0) }
+            PromptChip(color: ok ? nil : DS.Status.failed) {
+                Image(systemName: ok ? "checkmark" : "xmark").font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(ok ? DS.Status.done : DS.Status.failed)
+                Text(ok ? (dur ?? "") : "exit \(code)" + (dur.map { " · " + $0 } ?? ""))
+            }
+            .help(ok ? "Last command succeeded" : "Last command failed with exit status \(code)")
+        }
+    }
+
+    private func checksChip(_ checks: BranchChecksModel, snapshot snap: BranchChecksSnapshot, overall: CheckJob.State) -> some View {
+        let color: Color = overall == .failed ? DS.Status.failed : overall == .passed ? DS.Status.done : DS.Status.working
+        return Button { showChecks.toggle() } label: {
+            PromptChip(color: color) {
+                switch overall {
+                case .failed:
+                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+                    Text("Checks · \(snap.failing.count) failing")
+                case .passed:
+                    Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
+                    Text("Checks")
+                default:
+                    SpinnerRing(color: color, size: 9)
+                    Text("Checks · running")
+                }
+                Image(systemName: showChecks ? "chevron.down" : "chevron.up").font(.system(size: 7, weight: .bold))
             }
         }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 3)
-        .background(Capsule().fill(palette.surface))
-        .overlay(Capsule().strokeBorder(palette.border, lineWidth: 0.5))
+        .buttonStyle(.plain)
+        .help(snap.summary)
+        .popover(isPresented: $showChecks, arrowEdge: .bottom) {
+            ChecksPopoverView(model: checks,
+                              onFix: { job in
+                                  showChecks = false
+                                  onFixChecks([job], checks)
+                              },
+                              onFixAll: { jobs in
+                                  showChecks = false
+                                  onFixChecks(jobs, checks)
+                              })
+        }
     }
 }
 
-/// "Copy" with a dropdown: click copies the command; the menu offers the
-/// last command and the last command's output.
+/// A prompt chip: a small tinted rounded label ("~/code", "⎇ main ✓", "node 22.9").
+struct PromptChip<Content: View>: View {
+    /// Tint for text and background; nil is neutral.
+    var color: Color?
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        HStack(spacing: 4) { content }
+            .foregroundStyle(color ?? Color.primary.opacity(0.8))
+            .padding(.horizontal, 7)
+            .frame(height: 20)
+            .background(RoundedRectangle(cornerRadius: DS.Radius.pill).fill((color ?? .primary).opacity(color == nil ? 0.07 : 0.13)))
+            .contentShape(Rectangle())
+            .fixedSize()
+    }
+}
+
+/// A labeled split button: click runs the main action, the chevron opens a menu.
+private struct SplitButton<Label: View, MenuContent: View>: View {
+    let palette: EditorPalette
+    let help: String
+    let menuHelp: String
+    let action: () -> Void
+    @ViewBuilder var label: Label
+    @ViewBuilder var menu: MenuContent
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button(action: action) {
+                HStack(spacing: 5) { label }
+                    .padding(.leading, 9)
+                    .padding(.trailing, 7)
+                    .frame(height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(help)
+
+            Rectangle().fill(palette.border).frame(width: 1, height: 12)
+
+            Menu { menu } label: {
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .padding(.horizontal, 6)
+            .frame(height: 22)
+            .help(menuHelp)
+            .accessibilityLabel(menuHelp)
+        }
+        .font(.system(size: DS.Size.small, weight: .medium))
+        .foregroundStyle(palette.foreground.opacity(0.9))
+        .background(RoundedRectangle(cornerRadius: DS.Radius.control).fill(Color.primary.opacity(hovering ? 0.12 : 0.08)))
+        .onHover { hovering = $0 }
+        .fixedSize()
+    }
+}
+
+/// "Copy output" with a dropdown: click copies the last command's output;
+/// the menu also offers the command being typed and the last command.
 struct CopyMenuButton: View {
     let palette: EditorPalette
     let copied: Bool
     let onCopy: (InputEditorView.CopyKind) -> Void
-    @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            Button { onCopy(.command) } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                    Text("Copy")
-                }
-                .padding(.leading, 8)
-                .padding(.trailing, 6)
-                .frame(height: 20)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help("Copy command")
-
-            Rectangle().fill(palette.border).frame(width: 1, height: 12)
-
-            Menu {
-                Button("Copy Command") { onCopy(.command) }
-                Button("Copy Last Command") { onCopy(.lastCommand) }
-                Button("Copy Last Output") { onCopy(.lastOutput) }
-            } label: {
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .padding(.horizontal, 5)
-            .frame(height: 20)
-            .help("More copy options")
-            .accessibilityLabel("More copy options")
+        SplitButton(palette: palette, help: "Copy the last command's output", menuHelp: "More copy options",
+                    action: { onCopy(.lastOutput) }) {
+            if copied { Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)) }
+            Text("Copy output")
+        } menu: {
+            Button("Copy Last Output") { onCopy(.lastOutput) }
+            Button("Copy Command") { onCopy(.command) }
+            Button("Copy Last Command") { onCopy(.lastCommand) }
         }
-        .foregroundStyle(palette.foreground.opacity(0.85))
-        .background(Capsule().fill(hovering ? palette.selection : palette.surface))
-        .overlay(Capsule().strokeBorder(palette.border, lineWidth: 0.5))
-        .onHover { hovering = $0 }
     }
 }
 
-/// "Claude" with a dropdown: click starts the default agent in this pane;
-/// in a git repository the menu also starts it in a worktree: a new branch
-/// (named in the picker, or random) off the default branch, or an existing branch.
+/// "✻ Start Claude" with a dropdown: click starts the default agent in this
+/// pane; in a git repository the menu also starts it in a worktree: a new
+/// branch (named in the picker, or random) off the default branch, or an
+/// existing branch.
 struct AgentLaunchButton: View {
     let session: TerminalSession
     let bar: EditorBarState
     let palette: EditorPalette
-    @State private var hovering = false
 
     var body: some View {
         let agent = SettingsStore.shared.settings.defaultAgent
         let inRepo = session.gitBranch != nil
-        HStack(spacing: 0) {
-            Button { launch(.here) } label: {
-                HStack(spacing: 4) {
-                    if agent == .claude { ClaudeLogo(size: 11) } else { Image(systemName: "sparkles") }
-                    Text(agent.shortName)
-                }
-                .padding(.leading, 8)
-                .padding(.trailing, 6)
-                .frame(height: 20)
-                .contentShape(Rectangle())
+        SplitButton(palette: palette, help: "Start \(agent.displayName) here", menuHelp: "More ways to start \(agent.displayName)",
+                    action: { launch(.here) }) {
+            if agent == .claude { ClaudeMark(size: 11) } else { Image(systemName: "sparkles") }
+            Text("Start \(agent.shortName)")
+        } menu: {
+            Button("Start \(agent.shortName) Here") { launch(.here) }
+            if inRepo {
+                Button("Start \(agent.shortName) in Worktree…") { pickBranch(agent) }
+                Button("Start \(agent.shortName) in New Worktree (Random Name)") { launch(.worktree) }
+            } else {
+                Text("Worktree options need a git repository")
             }
-            .buttonStyle(.plain)
-            .help("Start \(agent.displayName) here")
-
-            Rectangle().fill(palette.border).frame(width: 1, height: 12)
-
-            Menu {
-                Button("Start \(agent.shortName) Here") { launch(.here) }
-                if inRepo {
-                    Button("Start \(agent.shortName) in Worktree…") { pickBranch(agent) }
-                    Button("Start \(agent.shortName) in New Worktree (Random Name)") { launch(.worktree) }
-                } else {
-                    Text("Worktree options need a git repository")
-                }
-                Divider()
-                Button("Default Agent: \(agent.displayName)…") { SettingsWindowController.shared.show(pane: .integrations) }
-            } label: {
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .padding(.horizontal, 5)
-            .frame(height: 20)
-            .help("More ways to start \(agent.displayName)")
-            .accessibilityLabel("More ways to start \(agent.displayName)")
+            Divider()
+            Button("Default Agent: \(agent.displayName)…") { SettingsWindowController.shared.show(pane: .integrations) }
         }
-        .foregroundStyle(palette.foreground.opacity(0.85))
-        .background(Capsule().fill(hovering ? palette.selection : palette.surface))
-        .overlay(Capsule().strokeBorder(palette.border, lineWidth: 0.5))
-        .onHover { hovering = $0 }
     }
 
     private func launch(_ mode: AgentLauncher.Mode) {
