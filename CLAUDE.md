@@ -35,6 +35,7 @@ This is a personal open-source project (MIT, bundle ID `app.bethesdalabs.Shell`)
 | `./scripts/build.sh` | Debug build, printing only this project's errors and warnings. Use this to check a change compiles. |
 | `make run` | Debug build and launch |
 | `xcodebuild -project Shell.xcodeproj -scheme Shell test` | Unit tests (isolated from real settings) |
+| `make coverage` | Unit tests with line coverage per file and in total (see `docs/development.md` › Writing tests) |
 | `make dist` | Release build, sign, notarize and staple the app, then a signed, notarized `.dmg` + `.sha256` in `build/dist/` |
 
 `Shell.xcodeproj` is generated and git-ignored. Edit `project.yml`, never the project file.
