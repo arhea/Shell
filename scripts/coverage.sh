@@ -23,7 +23,11 @@ xcodebuild test \
   "$@" 2>&1 | tee build/coverage.log \
   | grep -E '^/.*error:|error: |Test Case .* failed|Executed [0-9]+ tests|\*\* (TEST|BUILD) (SUCCEEDED|FAILED) \*\*' || true
 
-xcrun xccov view --report --json "$RESULT" | FILTER="${FILTER:-}" python3 -c '
+if [[ ! -d $RESULT ]] || ! xcrun xccov view --report --json "$RESULT" > build/coverage.json 2>/dev/null; then
+  echo "error: no coverage data; the build or test run failed (see build/coverage.log)" >&2
+  exit 1
+fi
+FILTER="${FILTER:-}" python3 -c '
 import json, os, re, sys
 report = json.load(sys.stdin)
 exclude = re.compile(r"/Tests/|Tests?\.swift$")
@@ -44,4 +48,4 @@ for missed, c, e, rel in sorted(rows, reverse=True):
     print(f"{100 * c / e if e else 100:6.1f}%  {c:5d}/{e:5d}  {rel}")
 if executable:
     print(f"TOTAL  {100 * covered / executable:.2f}%  ({covered}/{executable} lines)")
-'
+' < build/coverage.json

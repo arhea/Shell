@@ -85,6 +85,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShortcutActionHandling
         let current = SettingsStore.supportDirectory.lastPathComponent
         for name in (try? FileManager.default.contentsOfDirectory(atPath: tmp.path)) ?? []
         where name.hasPrefix("ShellTests-") && name != current {
+            // Leave folders of test runs that are still going (parallel runs).
+            if let pid = pid_t(name.dropFirst("ShellTests-".count)), kill(pid, 0) == 0 || errno == EPERM { continue }
             try? FileManager.default.removeItem(at: tmp.appendingPathComponent(name))
         }
     }

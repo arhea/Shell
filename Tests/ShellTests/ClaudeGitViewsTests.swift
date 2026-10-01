@@ -17,11 +17,15 @@ private func git(_ args: [String], in dir: URL, file: StaticString = #filePath, 
                      "GIT_TERMINAL_PROMPT": "0"]
     let out = Pipe()
     p.standardOutput = out
-    p.standardError = Pipe()
+    let err = Pipe()
+    p.standardError = err
     try p.run()
     p.waitUntilExit()
     let text = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-    if p.terminationStatus != 0 { XCTFail("git \(args.joined(separator: " ")) failed", file: file, line: line) }
+    if p.terminationStatus != 0 {
+        let message = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        XCTFail("git \(args.joined(separator: " ")) failed: \(message)", file: file, line: line)
+    }
     return text
 }
 

@@ -34,11 +34,12 @@ func withSettings<T>(_ change: (inout AppSettings) -> Void, _ body: () throws ->
     return try body()
 }
 
-/// A fresh, empty temporary directory removed when the test finishes.
+/// A fresh, empty temporary directory removed when the test finishes. Not
+/// named `ShellTests-*`: launch cleans those up (`removeStaleTestFolders`).
 extension XCTestCase {
     func makeTemporaryDirectory(file: StaticString = #filePath, line: UInt = #line) throws -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ShellTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("ShellTestFixture-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }
         return url
