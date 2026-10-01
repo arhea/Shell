@@ -111,7 +111,7 @@ struct ReviewTopBar: View {
             }
             Spacer(minLength: 12)
             SegmentedTabs(items: [.init(id: false, title: "Unified"), .init(id: true, title: "Split")], selection: $model.split)
-                .frame(width: 130)
+                .frame(width: 160)
             Toggle("Hide whitespace", isOn: $model.hideWhitespace)
                 .toggleStyle(.checkbox)
                 .font(.system(size: DS.Size.body))
