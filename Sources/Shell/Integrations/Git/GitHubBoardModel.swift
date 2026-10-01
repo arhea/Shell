@@ -64,14 +64,62 @@ final class GitHubBoardModel {
         self.environment = environment
     }
 
-    var filter: PullRequestBoard.Filter {
-        get { PullRequestBoard.Filter(rawValue: SettingsStore.shared.settings.githubBoardFilter) ?? .all }
-        set { SettingsStore.shared.settings.githubBoardFilter = newValue.rawValue }
+    /// For you / Mine / All, remembered in Settings.
+    var filter: PullRequestBoard.Filter = GitHubBoardModel.savedFilter {
+        didSet {
+            guard filter != oldValue else { return }
+            SettingsStore.shared.settings.githubBoardFilter = filter.rawValue
+            relayout()
+        }
     }
 
-    var columns: [PullRequestBoard.Column: [PullRequestBoard.Stack]] {
-        PullRequestBoard.columns(pullRequests, filter: filter, login: login)
+    static var savedFilter: PullRequestBoard.Filter {
+        PullRequestBoard.Filter(rawValue: SettingsStore.shared.settings.githubBoardFilter) ?? .forYou
     }
+
+    /// The toolbar's search field (title, branch, author, label).
+    var searchText = "" {
+        didSet { if searchText != oldValue { relayout() } }
+    }
+
+    /// The sub-header's "Review requested" / "Assigned" chips.
+    var narrowing: PullRequestBoard.Reasons = [] {
+        didSet { if narrowing != oldValue { relayout() } }
+    }
+
+    /// "Collapse stacks": stacks draw as one compact card until expanded.
+    var collapseStacks = true {
+        didSet { if collapseStacks != oldValue { toggledStacks = [] } }
+    }
+    /// Stacks flipped from the default by their own Expand / Collapse.
+    private(set) var toggledStacks: Set<Int> = []
+
+    func isExpanded(_ stack: PullRequestBoard.Stack) -> Bool {
+        collapseStacks == toggledStacks.contains(stack.id)
+    }
+
+    func setExpanded(_ stack: PullRequestBoard.Stack, _ expanded: Bool) {
+        guard isExpanded(stack) != expanded else { return }
+        if toggledStacks.contains(stack.id) { toggledStacks.remove(stack.id) } else { toggledStacks.insert(stack.id) }
+    }
+
+    func toggleNarrowing(_ reason: PullRequestBoard.Reasons) {
+        if narrowing.isSuperset(of: reason) { narrowing.subtract(reason) } else { narrowing.formUnion(reason) }
+    }
+
+    /// Columns and counts, recomputed when the PRs, filter, chips or search
+    /// change rather than on every view update.
+    private(set) var layout = PullRequestBoard.Layout()
+
+    var columns: [PullRequestBoard.Column: [PullRequestBoard.Stack]] { layout.columns }
+
+    private func relayout() {
+        let next = PullRequestBoard.layout(pullRequests, filter: filter, narrowing: narrowing,
+                                           query: searchText.trimmingCharacters(in: .whitespaces), login: login)
+        if next != layout { layout = next }
+    }
+
+    func reasons(_ pr: OpenPullRequest) -> PullRequestBoard.Reasons { PullRequestBoard.reasons(pr, login: login) }
 
     func pullRequest(_ number: Int) -> OpenPullRequest? { pullRequests.first { $0.number == number } }
 
@@ -140,6 +188,7 @@ final class GitHubBoardModel {
             mergeMethods = snapshot.mergeMethods
             let previous = selection.flatMap { pullRequest($0.number) }
             if snapshot.pullRequests != pullRequests { pullRequests = snapshot.pullRequests }
+            relayout()
             // Refresh the open detail when its PR changed, so the pane follows the board.
             if let n = selection?.number, let now = pullRequest(n), now != previous || now.updatedAt != previous?.updatedAt {
                 loadDetail(n, force: true)
@@ -282,6 +331,18 @@ final class GitHubBoardModel {
     private(set) var worktreePaths: [String: String] = [:]
 
     func worktree(for pr: OpenPullRequest) -> String? { worktreePaths[pr.head] }
+
+    /// The PR's worktree, or where "Check out into a new worktree" will put it.
+    func plannedWorktreePath(for pr: OpenPullRequest) -> String {
+        worktree(for: pr) ?? PullRequestBoard.worktreePath(root: WorktreeService.worktreeRoot(environment: environment),
+                                                            repoName: remote.name, head: pr.head)
+    }
+
+    /// The PR's existing worktree, else a new one. Nil (with a message) when checkout fails.
+    func ensureWorktree(for pr: OpenPullRequest) async -> String? {
+        if let path = worktree(for: pr) { return path }
+        return await createWorktree(for: pr)
+    }
 
     func refreshWorktrees() {
         let repo = repoRoot, git = GitRepository.findGit(environment: environment)

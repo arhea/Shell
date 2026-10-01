@@ -350,8 +350,8 @@ struct AppSettings: Codable, Equatable {
     var worktreeRoot = ""
     /// Pull Requests tab filter: all, review, mine.
     var pullRequestFilter = "all"
-    /// GitHub tab board filter: mine or all.
-    var githubBoardFilter = "all"
+    /// GitHub tab board filter: forYou, mine or all.
+    var githubBoardFilter = "forYou"
     /// When a check fails on a branch open in a Claude session, send the job
     /// log to that session and start a fix (opt-in).
     var sendCheckFailuresToClaude = false
