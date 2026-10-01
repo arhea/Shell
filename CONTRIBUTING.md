@@ -83,7 +83,7 @@ xcodebuild -project Shell.xcodeproj -scheme Shell test
 ```
 
 6. Update the docs in `docs/` if behavior, settings or shortcuts change. Shortcut changes also go in [`docs/keyboard-shortcuts.md`](docs/keyboard-shortcuts.md).
-7. Add a line to [`CHANGELOG.md`](CHANGELOG.md) under **Unreleased** for anything a user would notice.
+7. Don't edit [`CHANGELOG.md`](CHANGELOG.md); it's written when a release is cut, from the merged pull requests. Describe user-visible changes clearly in your PR title and body instead.
 8. Open a pull request against `main`, fill in the template, and link the issue with `Closes #N`. Include screenshots for UI changes. Make sure the **Tests** check passes.
 
 ## Commit messages and PR titles

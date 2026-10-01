@@ -84,7 +84,8 @@ Deeper references: `docs/architecture.md` (key types, data flow, threading, quit
 - Run external tools with `ProcessRunner` or `GitRepository.run`, quote with `ShellQuote`, share repos via `GitRepository.discover` (balance each with `stop()`).
 - Log through the per-area loggers in `Log`; don't swallow failed writes with a bare `try?`.
 - To inspect the running app without Screen Recording, use `"$SHELL_APP_CTL" debug snapshot <dir>` from a Shell tab.
-- Update `docs/` when behavior, settings or shortcuts change, and add user-visible changes to `CHANGELOG.md` under **Unreleased**.
+- Update `docs/` when behavior, settings or shortcuts change.
+- **Don't touch `CHANGELOG.md` in feature or fix PRs.** Only the release PR writes to it (see *Releasing a new version*), so parallel branches never conflict on it. Make the PR title and body describe the user-visible change clearly; that's what the release changelog is written from.
 - Commits use Conventional Commits: `feat:`, `fix:`, `perf:`, `refactor:`, `docs:`, `test:`, `chore:`. No Linear ID.
 
 ## Issues, pull requests and CI
@@ -139,11 +140,11 @@ GitHub's auto-generated notes are useful raw material, never the final notes:
 gh api repos/arhea/Shell/releases/generate-notes -f tag_name="v$VERSION" ${PREV:+-f previous_tag_name="$PREV"} --jq .body
 ```
 
-Cross-check against `CHANGELOG.md` › Unreleased. Anything user-visible that's missing from Unreleased gets added now.
+Feature and fix PRs don't write to `CHANGELOG.md`, so this list of merged PRs and their closing issues is the source for the release notes. Read each PR's title and body to decide whether it's user-visible and how to describe it.
 
 ### 2. Write the changelog
 
-Branch for the release first: `git switch -c release/v$VERSION`. Then edit `CHANGELOG.md`: rename `## [Unreleased]` to `## [$VERSION] - YYYY-MM-DD` and add a fresh, empty `## [Unreleased]` above it. The new section becomes the release notes verbatim, so it must be good:
+Branch for the release first: `git switch -c release/v$VERSION`. Then edit `CHANGELOG.md`: add a `## [$VERSION] - YYYY-MM-DD` section directly below the empty `## [Unreleased]` heading (which stays empty between releases) and write it from the PRs gathered in step 1. The new section becomes the release notes verbatim, so it must be good:
 
 - **Open with one or two sentences** saying what the release is about, before the first heading. Lead with the change a user most cares about.
 - **Group entries** under Keep a Changelog headings, in this order, omitting empty ones: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`.
