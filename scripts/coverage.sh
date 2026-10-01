@@ -49,3 +49,8 @@ for missed, c, e, rel in sorted(rows, reverse=True):
 if executable:
     print(f"TOTAL  {100 * covered / executable:.2f}%  ({covered}/{executable} lines)")
 ' < build/coverage.json
+xcrun xcresulttool get test-results summary --path "$RESULT" --compact 2>/dev/null | python3 -c '
+import json, sys
+s = json.load(sys.stdin)
+print("TESTS  %s: %d passed, %d failed, %d skipped" % (s.get("result"), s.get("passedTests", 0), s.get("failedTests", 0), s.get("skippedTests", 0)))
+' || true
