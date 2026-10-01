@@ -8,11 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- **Past sessions** on the Claude Sessions page: a drawer lists your earlier Claude Code conversations by repository, branch and first prompt, with ahead/behind, pull request and changes like the Worktrees sidebar. Resume one, start a new session in its folder, or open a terminal there. ([#30](https://github.com/arhea/Shell/pull/30), fixes [#29](https://github.com/arhea/Shell/issues/29))
-
-### Changed
-
-- **Claude Sessions now stays pinned to the top of the sidebar whenever Claude Code is installed**, not only while a session runs. Choose Always, When sessions are active, or Never in Settings › Claude & Codex. If you had turned off the old dashboard toggle, it's set to Never. ([#30](https://github.com/arhea/Shell/pull/30), fixes [#29](https://github.com/arhea/Shell/issues/29))
+- The Worktrees sidebar shows a **Clean up merged worktrees** line when worktrees whose pull request has merged have no uncommitted changes. It lists them for confirmation, then removes them and deletes each branch when it holds nothing beyond what merged. The main checkout, locked worktrees and the one you're in are never touched. ([#27](https://github.com/arhea/Shell/pull/27), fixes [#26](https://github.com/arhea/Shell/issues/26))
 
 ## [0.3.0] - 2026-09-30
 

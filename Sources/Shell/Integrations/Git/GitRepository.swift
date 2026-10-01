@@ -154,6 +154,8 @@ struct PullRequestInfo: Equatable {
     var isDraft: Bool
     /// APPROVED, CHANGES_REQUESTED or REVIEW_REQUIRED.
     var reviewDecision: String? = nil
+    /// The PR's head commit (full SHA), when known.
+    var headOID: String? = nil
 }
 
 /// A git repository (or linked worktree) that a native Claude view is working

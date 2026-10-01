@@ -37,9 +37,7 @@ Then make sure the branch is complete:
 
 - Tests added or updated in `Tests/ShellTests` for behavior changes and bug fixes, where practical.
 - Docs updated in `docs/` when behavior, settings or shortcuts change.
-- A line in `CHANGELOG.md` under **Unreleased** for anything user-visible, in the house style: user-facing wording plus full-URL links to the PR and issue, e.g.
-  `- Ghost text survives closing the completion menu. ([#43](https://github.com/arhea/Shell/pull/43), fixes [#42](https://github.com/arhea/Shell/issues/42))`
-  Open the PR first if you need its number, then push the changelog line as a follow-up commit.
+- No `CHANGELOG.md` edits. The changelog is written only by the release PR, from merged PR titles and bodies, to avoid merge conflicts between parallel branches. Describe anything user-visible in the PR body so the release notes can be written from it. (Release PRs are the exception.)
 - Commits follow Conventional Commits (`fix: …`). Keep history readable; squash fixup commits.
 
 ## 3. Write the title
@@ -141,5 +139,5 @@ gh pr create --repo arhea/Shell --base main \
 - [ ] Body has `Closes #N` (or explains why there's no issue).
 - [ ] Changes list is specific enough to review from, grouped by area.
 - [ ] Testing section shows commands and results; UI changes have screenshots.
-- [ ] Tests, docs and `CHANGELOG.md` updated where the change calls for it.
+- [ ] Tests and docs updated where the change calls for it; `CHANGELOG.md` untouched (unless this is a release PR).
 - [ ] Labels match the issue; CI is green before asking for merge.

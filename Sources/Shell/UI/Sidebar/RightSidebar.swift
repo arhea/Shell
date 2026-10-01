@@ -119,13 +119,21 @@ struct WorktreesView: View {
 
     @State private var pendingDelete: WorktreeInfo?
     @State private var confirmCleanup = false
+    /// The merged worktrees the confirmation dialog lists, captured when it opens.
+    @State private var pendingMerged: [WorktreeInfo] = []
+    @State private var confirmMergedCleanup = false
     @State private var hovered: String?
 
     var body: some View {
         let p = ClaudePalette.current
+        let merged = model.merged(excluding: currentPath)
         VStack(spacing: 0) {
             header(p)
             p.border.frame(height: 1)
+            if !merged.isEmpty {
+                mergedCleanupBar(merged, p)
+                p.border.frame(height: 1)
+            }
             ScrollView {
                 LazyVStack(spacing: 6) {
                     if let err = model.lastError {
@@ -163,6 +171,39 @@ struct WorktreesView: View {
                  + "\n\nEach has no uncommitted changes. Branches are "
                  + (SettingsStore.shared.settings.worktreeCleanupDeleteMergedBranches ? "deleted when merged." : "kept."))
         }
+        .confirmationDialog("Remove \(pendingMerged.count) merged worktree\(pendingMerged.count == 1 ? "" : "s")?",
+                            isPresented: $confirmMergedCleanup) {
+            Button("Remove", role: .destructive) {
+                let list = pendingMerged
+                Task { await model.removeMerged(list) }
+            }
+        } message: {
+            Text(pendingMerged.map { wt in wt.name + (wt.pullRequest.map { " (#\($0.number))" } ?? "") }.joined(separator: "\n")
+                 + "\n\nEach PR has merged and the worktree has no uncommitted changes. "
+                 + "A branch is deleted only if it has nothing beyond what merged; otherwise it's kept.")
+        }
+    }
+
+    private func mergedCleanupBar(_ merged: [WorktreeInfo], _ p: ClaudePalette) -> some View {
+        Button {
+            pendingMerged = merged
+            confirmMergedCleanup = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.triangle.merge").foregroundStyle(p.magenta)
+                Text("Clean up merged worktrees")
+                Spacer()
+                Text("\(merged.count)").monospacedDigit().foregroundStyle(p.magenta)
+            }
+            .font(.system(size: 11, weight: .medium))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(p.magenta.opacity(0.08))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(model.busy.count > 0)
+        .help("Remove worktrees whose pull request has merged and that have no uncommitted changes")
     }
 
     private func header(_ p: ClaudePalette) -> some View {

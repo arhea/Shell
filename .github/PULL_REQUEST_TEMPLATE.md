@@ -41,5 +41,5 @@ Closes #
 - [ ] `./scripts/build.sh` shows no new warnings
 - [ ] Tests added or updated in `Tests/ShellTests` where it makes sense
 - [ ] Docs in `docs/` updated if behavior, settings or shortcuts changed
-- [ ] `CHANGELOG.md` updated under **Unreleased** for user-visible changes, linking this PR and the issue
+- [ ] User-visible changes are described in the PR body (`CHANGELOG.md` is written at release time, not in this PR)
 - [ ] `THIRD_PARTY_NOTICES.md` updated if third-party code or assets were added
