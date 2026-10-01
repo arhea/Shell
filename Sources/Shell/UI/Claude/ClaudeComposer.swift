@@ -37,6 +37,29 @@ final class ClaudeComposerModel {
         tv.window?.makeFirstResponder(tv)
     }
 
+    /// Starts an `@` mention or `/` command at the cursor, which opens its
+    /// suggestions. A `/` goes on a line of its own (commands only work there).
+    func beginToken(_ token: Character) {
+        guard let tv = textView else { return }
+        let ns = tv.string as NSString
+        var range = tv.selectedRange()
+        if token == "/" {
+            let lineStart = ns.lineRange(for: NSRange(location: range.location, length: 0)).location
+            let line = ns.substring(with: NSRange(location: lineStart, length: range.location - lineStart))
+            if !line.trimmingCharacters(in: .whitespaces).isEmpty {
+                range = NSRange(location: ns.length, length: 0)
+                tv.insertText((ns.length > 0 && !tv.string.hasSuffix("\n") ? "\n" : "") + "/", replacementRange: range)
+                focus()
+                return
+            }
+            tv.insertText("/", replacementRange: range)
+        } else {
+            let needsSpace = range.location > 0 && !(ns.substring(with: NSRange(location: range.location - 1, length: 1)).first?.isWhitespace ?? true)
+            tv.insertText((needsSpace ? " " : "") + String(token), replacementRange: range)
+        }
+        focus()
+    }
+
     /// Inserts text at the cursor (e.g. "@path" from the file explorer).
     func insert(_ text: String) {
         guard let tv = textView else { return }
@@ -135,6 +158,10 @@ struct ClaudeComposerField: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
+    static func placeholder(started: Bool) -> String {
+        started ? "Reply to Claude…" : "Ask Claude…  / for skills & commands, @ for files & MCP servers"
+    }
+
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSScrollView()
         scroll.drawsBackground = false
@@ -163,7 +190,7 @@ struct ClaudeComposerField: NSViewRepresentable {
         tv.isHorizontallyResizable = false
         tv.autoresizingMask = [.width]
         tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        tv.placeholder = "Ask Claude…  / for skills & commands, @ for files & MCP servers"
+        tv.placeholder = Self.placeholder(started: claude.hasStarted)
         tv.setAccessibilityLabel("Claude prompt")
         tv.keyHandler = { [weak coordinator = context.coordinator] event in coordinator?.handleKey(event) ?? false }
         tv.onFocus = { [weak coordinator = context.coordinator] in coordinator?.parent.onFocus() }
@@ -204,9 +231,10 @@ struct ClaudeComposerField: NSViewRepresentable {
             let p = parent.palette
             let typography = ChatTypography.current
             let spacing = (typography.lineSpacing * 0.6).rounded()
-            let key = "\(parent.fontSize)|\(spacing)|\(typography.family)|\(p.foreground)|\(p.dim)|\(claude.commands.count)|\(claude.mcpServers.count)"
+            let key = "\(parent.fontSize)|\(spacing)|\(typography.family)|\(p.foreground)|\(p.dim)|\(claude.commands.count)|\(claude.mcpServers.count)|\(claude.hasStarted)"
             guard key != lastStyleKey else { return }
             lastStyleKey = key
+            tv.placeholder = ClaudeComposerField.placeholder(started: claude.hasStarted)
             tv.font = baseFont
             tv.textColor = NSColor(p.foreground)
             tv.insertionPointColor = NSColor(p.claude)
@@ -303,7 +331,7 @@ struct ClaudeComposerField: NSViewRepresentable {
             apply(Self.listMarker) { m in [(m.range(at: 1), [.foregroundColor: NSColor(p.claude)])] }
             apply(Self.quote) { m in [(m.range, [.foregroundColor: NSColor(p.dim)])] }
             apply(Self.link) { m in [(m.range(at: 1), [.foregroundColor: NSColor(p.blue)]), (m.range(at: 2), [.foregroundColor: NSColor(p.dim)])] }
-            apply(Self.inlineCode) { m in [(m.range, [.font: self.monoFont, .foregroundColor: NSColor(p.claude), .backgroundColor: NSColor(p.raised)])] }
+            apply(Self.inlineCode) { m in [(m.range, [.font: self.monoFont, .foregroundColor: fg, .backgroundColor: NSColor(p.foreground).withAlphaComponent(0.08)])] }
             let style = mentionStyle
             apply(Self.token) { m in
                 let r = m.range(at: 1)
@@ -517,6 +545,8 @@ struct ClaudeComposerField: NSViewRepresentable {
                         claude.respond(req, allow: true)
                         return true
                     }
+                    // Typed instructions deny the request and go to Claude instead.
+                    if denyWithTypedInstructions(req) { return true }
                 }
                 submit()
                 return true
@@ -634,6 +664,19 @@ struct ClaudeComposerField: NSViewRepresentable {
             claude.draftAttachments = []
             if !text.isEmpty, model.history.last != text { model.history.append(text) }
             clear()
+        }
+
+        /// Denies a permission request with what's typed in the composer as
+        /// instructions for Claude. False when nothing is typed.
+        @discardableResult
+        func denyWithTypedInstructions(_ req: ClaudePermissionRequest) -> Bool {
+            guard let tv = textView else { return false }
+            let text = tv.string.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return false }
+            claude.denyWithInstructions(req, text)
+            if model.history.last != text { model.history.append(text) }
+            clear()
+            return true
         }
 
         /// Adds pasted or dropped files and images to the draft.

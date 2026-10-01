@@ -118,11 +118,18 @@ enum ClaudePermissionMode: String, CaseIterable, Identifiable {
 @MainActor
 @Observable
 final class ClaudeItem: Identifiable {
-    enum Kind { case user, assistant, thinking, tool, notice, error }
+    enum Kind { case user, assistant, thinking, tool, notice, error, checkFailure }
 
     let id = UUID()
+    /// Identifies the end-of-turn summary row that follows this turn.
+    let summaryID = UUID()
     let kind: Kind
     var text: String
+    /// When it began: the block started streaming, the tool started running,
+    /// the message was sent (or its transcript timestamp, for history).
+    var startedAt: Date
+    /// When the block finished streaming or the tool's result arrived.
+    var endedAt: Date?
     // Tool calls
     var toolID: String?
     var toolName = ""
@@ -131,15 +138,31 @@ final class ClaudeItem: Identifiable {
     var result: String?
     var isError = false
     var isRunning = false
+    /// The step's right-hand detail ("L1–184", "5 lines"), set with the result.
+    var meta: String?
+    /// Lines added and removed by an edit, set with the result.
+    var diffStats: ClaudeDiffStats?
+    /// A Write that created the file (Claude Code reports `type: create`).
+    var createdFile = false
     /// AskUserQuestion: the answer per question text, once the user replied.
     var answers: [String: String]?
     /// Images and files sent with a user message.
     var attachments: [ClaudeAttachment] = []
+    /// User messages: how long the turn they started took, and what it cost.
+    var turnDuration: TimeInterval?
+    var turnCost: Double?
+    /// `.checkFailure`: the failed CI job and its log.
+    var checkFailure: ClaudeCheckFailure?
+    /// `.checkFailure`: "Fix with Claude" was used.
+    var checkFixRequested = false
 
-    init(kind: Kind, text: String = "") {
+    init(kind: Kind, text: String = "", at date: Date = Date()) {
         self.kind = kind
         self.text = text
+        startedAt = date
     }
+
+    var duration: TimeInterval? { endedAt.map { $0.timeIntervalSince(startedAt) } }
 
     func setInput(_ input: [String: Any]) {
         var input = input
@@ -262,6 +285,21 @@ final class ClaudeCodeSession {
     private(set) var totalCost: Double = 0
     private(set) var lastTurnDuration: TimeInterval?
     private(set) var contextTokens: Int?
+    /// When the running turn started (nil between turns).
+    private(set) var turnStartedAt: Date?
+    /// Output tokens generated in the running turn, estimated while a
+    /// message streams and exact once its usage arrives.
+    private(set) var turnOutputTokens = 0
+    /// What the running turn is about when Shell started it ("Fixing Build and test").
+    private(set) var turnTitle: String?
+    /// Claude's latest TodoWrite list.
+    private(set) var todos: [ClaudeTodo] = []
+    /// Subagents and `run_in_background` commands, oldest first. Finished ones
+    /// stay (with their status) until the session ends.
+    private(set) var backgroundTasks: [ClaudeBackgroundTask] = []
+    /// Files Claude changed this session, in first-changed order, with summed
+    /// added/removed lines.
+    private(set) var changedFiles: [ClaudeChangedFile] = []
     /// The git repository or worktree the session runs in, if any.
     private(set) var repository: GitRepository?
     private(set) var repositoryChecked = false
@@ -304,6 +342,17 @@ final class ClaudeCodeSession {
     /// again once signed in.
     @ObservationIgnored private var lastSent: SentMessage?
     @ObservationIgnored private var resendAfterLogin: SentMessage?
+    /// The transcript timestamp of the history entry being applied; live
+    /// events use the clock.
+    @ObservationIgnored private var eventDate: Date?
+    private var now: Date { eventDate ?? Date() }
+    /// Output tokens per message in the running turn, the message streaming
+    /// now, and the characters it has streamed (≈4 per token) before its usage arrives.
+    @ObservationIgnored private var outputByMessage: [String: Int] = [:]
+    @ObservationIgnored private var streamMessageID: String?
+    @ObservationIgnored private var streamChars = 0
+    @ObservationIgnored private var costAtTurnStart: Double = 0
+    @ObservationIgnored private var todosUpdatedAt: Date?
 
     private struct SentMessage {
         var text: String
@@ -341,6 +390,38 @@ final class ClaudeCodeSession {
             default: true
             }
         }
+    }
+
+    /// The model's context window, for the composer's meter (see `ClaudeContextWindow`).
+    var contextWindow: Int {
+        max(ClaudeContextWindow.size(model: model, description: currentModel?.description, inUse: contextTokens),
+            ClaudeContextWindow.size(model: resolvedModel))
+    }
+
+    /// Background work still running.
+    var runningBackgroundTasks: [ClaudeBackgroundTask] { backgroundTasks.filter(\.isRunning) }
+
+    /// What the status line says Claude is doing: a status ("Compacting…"),
+    /// the turn's purpose, the to-do in progress, the running tool, or
+    /// thinking / writing.
+    var activityLabel: String {
+        if let statusText { return statusText }
+        if let turnTitle { return turnTitle }
+        if let started = turnStartedAt, let updated = todosUpdatedAt, updated >= started,
+           let todo = todos.first(where: { $0.status == .inProgress }) {
+            return todo.activeForm.isEmpty ? todo.content : todo.activeForm
+        }
+        for item in items.reversed() {
+            if item.kind == .user { break }
+            guard item.isRunning || (item.kind == .assistant && item.endedAt == nil) else { continue }
+            switch item.kind {
+            case .tool: return ClaudeActivity.label(tool: item.toolName, input: item.input)
+            case .thinking: return "Thinking"
+            case .assistant: return "Writing"
+            default: continue
+            }
+        }
+        return "Working"
     }
 
     var modelTitle: String {
@@ -591,8 +672,15 @@ final class ClaudeCodeSession {
     private func endProcessState(reason: String) {
         isRunning = false
         isStarting = false
+        turnStartedAt = nil
+        turnTitle = nil
         pending.removeAll()
-        for item in toolItems.values where item.isRunning { item.isRunning = false }
+        for item in toolItems.values where item.isRunning { item.isRunning = false; item.endedAt = item.endedAt ?? now }
+        // Nothing reports on these any more.
+        for i in backgroundTasks.indices where backgroundTasks[i].isRunning {
+            backgroundTasks[i].status = .stopped
+            backgroundTasks[i].endedAt = now
+        }
         // Nothing will answer these now.
         for callback in callbacks.values { callback(nil, reason) }
         callbacks.removeAll()
@@ -671,7 +759,77 @@ final class ClaudeCodeSession {
         isRunning = true
         turnHadText = false
         statusText = nil
+        turnTitle = nil
+        // A message sent mid-turn joins the running turn.
+        if turnStartedAt == nil {
+            turnStartedAt = item.startedAt
+            costAtTurnStart = totalCost
+            outputByMessage = [:]
+            streamChars = 0
+            turnOutputTokens = 0
+        }
         onEvent?("working", nil)
+    }
+
+    // MARK: CI checks
+
+    /// Shows a failed CI check in the transcript, with Fix with Claude,
+    /// Re-run and Full log. Wiring new failures to sessions is up to the caller.
+    func appendCheckFailure(_ job: CheckJob, log: String) {
+        let item = ClaudeItem(kind: .checkFailure, at: now)
+        item.checkFailure = ClaudeCheckFailure(job: job, log: Self.capped(log), headSHA: checkHeadSHA())
+        append(item)
+    }
+
+    /// Asks Claude to fix a failed check: sends "Fix the failing check: …"
+    /// with the log attached as a file Claude reads. False when nothing could
+    /// be sent (Claude isn't running).
+    @discardableResult
+    func fixCheckFailure(_ job: CheckJob, log: String) -> Bool {
+        guard canSend else { return false }
+        let failure = ClaudeCheckFailure(job: job, log: Self.capped(log), headSHA: checkHeadSHA())
+        for item in items where item.kind == .checkFailure && item.checkFailure?.job.id == job.id { item.checkFixRequested = true }
+        var attachments: [ClaudeAttachment] = []
+        if let url = Self.writeCheckLog(failure), var attachment = ClaudeAttachment.load(url) {
+            attachment.tag = "LOG"
+            attachment.name = failure.slug
+            attachment.note = "\(ClaudeOutput.lineCount(failure.log)) lines"
+            attachments = [attachment]
+        }
+        send("Fix the failing check: \(failure.title).", attachments: attachments)
+        turnTitle = "Fixing \(job.name)"
+        return true
+    }
+
+    private func checkHeadSHA() -> String? {
+        guard let repo = repository else { return nil }
+        let sha = BranchChecksModel.shared(for: repo).snapshot?.headSHA ?? repo.pullRequest?.headOID
+        return sha.map { String($0.prefix(7)) }
+    }
+
+    /// The log, with what it is, in a file Claude reads with its own tools.
+    private static func writeCheckLog(_ failure: ClaudeCheckFailure) -> URL? {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ShellAttachments", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let url = dir.appendingPathComponent((failure.slug.isEmpty ? "check" : failure.slug) + ".log")
+        var header = "Failed check: \(failure.title)\n"
+        if let step = failure.failedStep { header += "Failed step: \(step)\n" }
+        if let sha = failure.headSHA { header += "Commit: \(sha)\n" }
+        if let url = failure.job.url { header += "Run: \(url.absoluteString)\n" }
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try Data((header + "\n" + failure.log).utf8).write(to: url)
+            return url
+        } catch {
+            Log.claude.error("couldn't write the check log: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
+    /// Asks the window to open Review Changes for this session (⌘⇧R).
+    func requestReviewChanges(path: String? = nil) {
+        NotificationCenter.default.post(name: .shellReviewChanges, object: self, userInfo: path.map { ["path": $0] })
     }
 
     func interrupt() {
@@ -768,6 +926,16 @@ final class ClaudeCodeSession {
         if pending.isEmpty, isRunning { onEvent?("working", nil) }
     }
 
+    /// "Deny, and tell Claude what to do instead": denies the request with
+    /// the user's instructions, which also show in the transcript.
+    func denyWithInstructions(_ req: ClaudePermissionRequest, _ instructions: String) {
+        let text = instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return respond(req, allow: false) }
+        append(ClaudeItem(kind: .user, text: text, at: now))
+        respond(req, allow: false, message: "The user doesn't want to proceed with this tool use. The tool use was rejected. "
+                + "Do what they ask instead:\n\n\(text)")
+    }
+
     /// Answers an AskUserQuestion prompt with the chosen labels per question.
     func answer(_ req: ClaudePermissionRequest, answers: [String: String]) {
         pending.removeAll { $0.id == req.id }
@@ -830,7 +998,12 @@ final class ClaudeCodeSession {
                 turnNeedsLogin = true
                 return
             }
-            if !subagent, let message = msg["message"] as? [String: Any] { handleAssistant(message) }
+            guard let message = msg["message"] as? [String: Any] else { return }
+            if subagent {
+                if let parent = msg["parent_tool_use_id"] as? String { recordSubagentActivity(parent, message) }
+            } else {
+                handleAssistant(message)
+            }
         case "user":
             if let message = msg["message"] as? [String: Any] { handleUser(message, subagent: subagent, toolResult: msg["tool_use_result"]) }
         case "result":
@@ -860,17 +1033,28 @@ final class ClaudeCodeSession {
         switch event["type"] as? String {
         case "message_start":
             blockItems = [:]
-            if let id = (event["message"] as? [String: Any])?["id"] as? String { streamed.insert(id) }
+            let message = event["message"] as? [String: Any]
+            if let id = message?["id"] as? String {
+                streamed.insert(id)
+                streamMessageID = id
+                streamChars = 0
+                if let out = (message?["usage"] as? [String: Any])?["output_tokens"] as? Int { recordOutput(id, out) }
+            }
             statusText = nil
+        case "message_delta":
+            if let id = streamMessageID, let out = (event["usage"] as? [String: Any])?["output_tokens"] as? Int {
+                streamChars = 0
+                recordOutput(id, out)
+            }
         case "content_block_start":
             guard let index = event["index"] as? Int, let block = event["content_block"] as? [String: Any] else { return }
             switch block["type"] as? String {
             case "text":
-                let item = ClaudeItem(kind: .assistant)
+                let item = ClaudeItem(kind: .assistant, at: now)
                 blockItems[index] = item
                 append(item)
             case "thinking":
-                let item = ClaudeItem(kind: .thinking)
+                let item = ClaudeItem(kind: .thinking, at: now)
                 item.isRunning = true
                 blockItems[index] = item
                 append(item)
@@ -884,22 +1068,54 @@ final class ClaudeCodeSession {
             guard let index = event["index"] as? Int, let delta = event["delta"] as? [String: Any], let item = blockItems[index] else { return }
             switch delta["type"] as? String {
             case "text_delta":
-                item.text += delta["text"] as? String ?? ""
+                let text = delta["text"] as? String ?? ""
+                item.text += text
                 turnHadText = true
+                countStreamed(text)
             case "thinking_delta":
-                item.text += delta["thinking"] as? String ?? ""
+                let text = delta["thinking"] as? String ?? ""
+                item.text += text
+                countStreamed(text)
+            case "input_json_delta":
+                countStreamed(delta["partial_json"] as? String ?? "")
             default:
                 break
             }
         case "content_block_stop":
             guard let index = event["index"] as? Int, let item = blockItems[index] else { return }
-            if item.kind == .thinking {
+            switch item.kind {
+            case .thinking:
                 item.isRunning = false
+                item.endedAt = now
                 if item.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { items.removeAll { $0 === item } }
+            case .assistant:
+                item.endedAt = now
+            case .tool:
+                // The input is complete: the tool starts running now.
+                if item.result == nil { item.startedAt = now }
+            default:
+                break
             }
         default:
             break
         }
+    }
+
+    private func recordOutput(_ messageID: String, _ tokens: Int) {
+        guard turnStartedAt != nil else { return }
+        outputByMessage[messageID] = max(outputByMessage[messageID] ?? 0, tokens)
+        updateTurnOutput()
+    }
+
+    private func countStreamed(_ text: String) {
+        guard turnStartedAt != nil, !text.isEmpty else { return }
+        streamChars += text.count
+        updateTurnOutput()
+    }
+
+    private func updateTurnOutput() {
+        let total = outputByMessage.values.reduce(0, +) + streamChars / 4
+        if total != turnOutputTokens { turnOutputTokens = total }
     }
 
     private func handleAssistant(_ message: [String: Any]) {
@@ -908,20 +1124,25 @@ final class ClaudeCodeSession {
         if let usage = message["usage"] as? [String: Any] {
             let total = ["input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"].compactMap { usage[$0] as? Int }.reduce(0, +)
             if total > 0 { contextTokens = total }
+            if !wasStreamed, !id.isEmpty, let out = usage["output_tokens"] as? Int { recordOutput(id, out) }
         }
         if let m = message["model"] as? String, m != "<synthetic>" { resolvedModel = m }
         for block in message["content"] as? [[String: Any]] ?? [] {
             switch block["type"] as? String {
             case "text":
                 guard !wasStreamed, let text = block["text"] as? String, !text.isEmpty else { continue }
-                append(ClaudeItem(kind: .assistant, text: text))
+                let item = ClaudeItem(kind: .assistant, text: text, at: now)
+                item.endedAt = item.startedAt
+                append(item)
                 turnHadText = true
             case "thinking":
                 guard !wasStreamed, let text = block["thinking"] as? String, !text.isEmpty else { continue }
-                append(ClaudeItem(kind: .thinking, text: text))
+                append(ClaudeItem(kind: .thinking, text: text, at: now))
             case "tool_use", "server_tool_use":
                 let item = toolItem(id: block["id"] as? String ?? UUID().uuidString, name: block["name"] as? String ?? "Tool")
+                let isNew = item.summary.isEmpty && item.input.isEmpty
                 item.setInput(block["input"] as? [String: Any] ?? [:])
+                if isNew { toolStarted(item) }
             default:
                 continue
             }
@@ -935,21 +1156,159 @@ final class ClaudeCodeSession {
             item.result = Self.capped(Self.text(of: block["content"]))
             item.isError = block["is_error"] as? Bool ?? false
             item.isRunning = false
+            item.endedAt = now
+            item.meta = ClaudeStepMeta.meta(tool: item.toolName, input: item.input, result: item.result, isError: item.isError)
+            if !item.isError {
+                item.diffStats = ClaudeStepMeta.diffStats(tool: item.toolName, input: item.input, structured: toolResult)
+                item.createdFile = item.toolName == "Write" && (toolResult as? [String: Any])?["type"] as? String == "create"
+                if let stats = item.diffStats { recordChange(item, stats) }
+            }
             if item.toolName == "AskUserQuestion", !item.isError,
                let answers = ClaudeQuestion.answers(structured: toolResult, text: item.result ?? "") {
                 item.answers = answers
             }
+            toolFinished(item, structured: toolResult)
             if !subagent, ["Edit", "Write", "MultiEdit", "NotebookEdit", "Bash"].contains(item.toolName) {
                 repository?.refresh()
             }
         }
     }
 
+    // MARK: To-dos, changes and background work
+
+    private func recordChange(_ item: ClaudeItem, _ stats: ClaudeDiffStats) {
+        guard let path = (item.input["file_path"] ?? item.input["notebook_path"]) as? String else { return }
+        if let i = changedFiles.firstIndex(where: { $0.path == path }) {
+            changedFiles[i].added += stats.added
+            changedFiles[i].removed += stats.removed
+        } else {
+            changedFiles.append(ClaudeChangedFile(path: path, added: stats.added, removed: stats.removed, isNew: item.createdFile))
+        }
+    }
+
+    /// A main-thread tool call got its input: track to-dos, subagents and
+    /// background commands.
+    private func toolStarted(_ item: ClaudeItem) {
+        guard let id = item.toolID else { return }
+        let input = item.input
+        func s(_ k: String) -> String? { (input[k] as? String).flatMap { $0.isEmpty ? nil : $0 } }
+        let async = input["run_in_background"] as? Bool == true
+        let kind: ClaudeBackgroundTask.Kind
+        switch item.toolName {
+        case "TodoWrite":
+            todos = ClaudeTodo.parse(input)
+            todosUpdatedAt = now
+            return
+        case "Task", "Agent": kind = .subagent
+        case "Bash" where async: kind = .backgroundTask
+        default: return
+        }
+        guard !backgroundTasks.contains(where: { $0.id == id }) else { return }
+        let command = s("command")
+        let title = kind == .subagent
+            ? (s("subagent_type") ?? s("description") ?? "Subagent")
+            : (s("description") ?? command.map { String(($0.components(separatedBy: "\n").first ?? $0).prefix(60)) } ?? "Background task")
+        var task = ClaudeBackgroundTask(id: id, title: title, kind: kind, status: .running, startedAt: now,
+                                        detail: kind == .subagent ? s("description") : nil, command: command)
+        task.isAsync = async
+        backgroundTasks.append(task)
+    }
+
+    private func toolFinished(_ item: ClaudeItem, structured: Any?) {
+        guard let id = item.toolID else { return }
+        let result = item.result ?? ""
+        if let i = backgroundTasks.firstIndex(where: { $0.id == id }) {
+            var task = backgroundTasks[i]
+            if item.isError {
+                task.status = .failed
+                task.endedAt = now
+                task.detail = ClaudeOutput.lines(ClaudeToolFormat.visibleResult(result)).first.map(String.init) ?? task.detail
+            } else if task.isAsync {
+                // Launched; it reports later. Remember the id Claude Code gave it.
+                let info = structured as? [String: Any]
+                task.taskID = (info?["backgroundTaskId"] ?? info?["agentId"] ?? info?["taskId"]) as? String
+                    ?? result.firstMatch(of: /(?i:\bid)[:=]\s*`?([A-Za-z0-9_\-]+)/).map { String($0.output.1) }
+            } else {
+                task.status = .completed
+                task.endedAt = now
+            }
+            backgroundTasks[i] = task
+            return
+        }
+        let input = item.input
+        let reference = (input["bash_id"] ?? input["shell_id"] ?? input["task_id"]) as? String
+        guard let reference, let i = backgroundTasks.firstIndex(where: { $0.matches(reference) }), !item.isError else { return }
+        var task = backgroundTasks[i]
+        switch item.toolName {
+        case "BashOutput", "TaskOutput":
+            if let m = result.firstMatch(of: /<status>(\w+)<\/status>/) {
+                switch m.output.1 {
+                case "running": task.status = .running
+                case "completed": task.status = .completed
+                case "failed": task.status = .failed
+                case "killed", "stopped": task.status = .stopped
+                default: break
+                }
+            }
+            if let m = result.firstMatch(of: /<exit_code>(\d+)<\/exit_code>/), Int(m.output.1) != 0 { task.status = .failed }
+            let output = result.firstMatch(of: /<stdout>([\s\S]*?)<\/stdout>/).map { String($0.output.1) } ?? ""
+            if let last = ClaudeOutput.lines(ClaudeOutput.stripANSI(output)).last(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) {
+                task.detail = String(last.trimmingCharacters(in: .whitespaces).prefix(200))
+            }
+        case "KillShell", "KillBash", "TaskStop":
+            task.status = .stopped
+        default:
+            return
+        }
+        if !task.isRunning { task.endedAt = task.endedAt ?? now }
+        backgroundTasks[i] = task
+    }
+
+    /// A subagent's own message: count its tool calls and keep its latest activity.
+    private func recordSubagentActivity(_ parentID: String, _ message: [String: Any]) {
+        guard let i = backgroundTasks.firstIndex(where: { $0.id == parentID }) else { return }
+        var task = backgroundTasks[i]
+        for block in message["content"] as? [[String: Any]] ?? [] {
+            switch block["type"] as? String {
+            case "tool_use":
+                let name = block["name"] as? String ?? "Tool"
+                task.toolCounts[ClaudeToolFormat.displayName(name), default: 0] += 1
+                task.detail = ClaudeActivity.label(tool: name, input: block["input"] as? [String: Any] ?? [:])
+            case "text":
+                let line = (block["text"] as? String ?? "").split(separator: "\n").first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                if let line { task.detail = String(line.prefix(200)) }
+            default:
+                continue
+            }
+        }
+        if task != backgroundTasks[i] { backgroundTasks[i] = task }
+    }
+
+    /// Claude Code's task events (`task_started`, `task_progress`,
+    /// `task_notification`) for subagents and background commands.
+    private func handleTaskEvent(_ msg: [String: Any]) {
+        let refs = [msg["task_id"], msg["tool_use_id"]].compactMap { $0 as? String }
+        guard let i = backgroundTasks.firstIndex(where: { t in refs.contains { t.matches($0) } }) else { return }
+        var task = backgroundTasks[i]
+        if let summary = (msg["summary"] ?? msg["description"]) as? String, !summary.isEmpty {
+            task.detail = String(summary.split(separator: "\n").first?.prefix(200) ?? "")
+        }
+        if msg["subtype"] as? String == "task_notification" {
+            switch msg["status"] as? String {
+            case "failed", "error": task.status = .failed
+            case "stopped", "killed", "cancelled": task.status = .stopped
+            default: task.status = .completed
+            }
+            task.endedAt = now
+        }
+        if task != backgroundTasks[i] { backgroundTasks[i] = task }
+    }
+
     private func handleResult(_ msg: [String: Any]) {
         isRunning = false
         statusText = nil
         pending.removeAll()
-        for item in toolItems.values where item.isRunning { item.isRunning = false }
+        for item in toolItems.values where item.isRunning { item.isRunning = false; item.endedAt = item.endedAt ?? now }
         if let cost = msg["total_cost_usd"] as? Double { totalCost = cost }
         if let ms = msg["duration_ms"] as? Double { lastTurnDuration = ms / 1000 }
         let isError = msg["is_error"] as? Bool ?? false
@@ -957,6 +1316,18 @@ final class ClaudeCodeSession {
         let failed = isError || (msg["subtype"] as? String ?? "success") != "success"
         let sent = lastSent
         lastSent = nil
+        // The turn's time and cost go on the message that started it.
+        if let started = turnStartedAt, let user = sent?.item ?? items.last(where: { $0.kind == .user }) {
+            user.turnDuration = (msg["duration_ms"] as? Double).map { $0 / 1000 } ?? now.timeIntervalSince(started)
+            if totalCost > costAtTurnStart { user.turnCost = totalCost - costAtTurnStart }
+        }
+        turnStartedAt = nil
+        turnTitle = nil
+        // Subagents that ran in the foreground are done with the turn.
+        for i in backgroundTasks.indices where backgroundTasks[i].isRunning && !backgroundTasks[i].isAsync {
+            backgroundTasks[i].status = .completed
+            backgroundTasks[i].endedAt = now
+        }
         if turnNeedsLogin || (failed && ClaudeAuth.isLoginError(text)) {
             turnNeedsLogin = false
             resendAfterLogin = sent
@@ -1009,6 +1380,8 @@ final class ClaudeCodeSession {
             statusText = "Retrying request…"
         case "commands_changed":
             if let list = msg["commands"] as? [[String: Any]] { commands = Self.parseCommands(list) }
+        case "task_started", "task_progress", "task_notification":
+            handleTaskEvent(msg)
         default:
             break
         }
@@ -1064,7 +1437,7 @@ final class ClaudeCodeSession {
 
     private func toolItem(id: String, name: String) -> ClaudeItem {
         if let existing = toolItems[id] { return existing }
-        let item = ClaudeItem(kind: .tool)
+        let item = ClaudeItem(kind: .tool, at: now)
         item.toolID = id
         item.toolName = name
         item.isRunning = true
@@ -1091,9 +1464,9 @@ final class ClaudeCodeSession {
     /// Claude Code's transcript in ~/.claude/projects.
     /// A transcript entry read from disk (plain JSON values; applied on the main actor).
     private enum HistoryEntry: @unchecked Sendable {
-        case userText(String)
-        case userBlocks(texts: [String], images: [ClaudeAttachment], message: [String: Any], toolResult: Any?)
-        case assistant([String: Any])
+        case userText(String, Date?)
+        case userBlocks(texts: [String], images: [ClaudeAttachment], message: [String: Any], toolResult: Any?, date: Date?)
+        case assistant([String: Any], Date?)
     }
 
     /// Shows the conversation being continued. The transcript (often tens of
@@ -1130,14 +1503,17 @@ final class ClaudeCodeSession {
         }
         guard let file, let data = try? Data(contentsOf: file, options: .mappedIfSafe) else { return [] }
         var entries: [HistoryEntry] = []
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         for line in data.split(separator: 0x0A) {
             guard let obj = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
                   obj["isSidechain"] as? Bool != true, obj["isMeta"] as? Bool != true,
                   let message = obj["message"] as? [String: Any] else { continue }
+            let date = (obj["timestamp"] as? String).flatMap { isoFormatter.date(from: $0) }
             switch obj["type"] as? String {
             case "user":
                 if let text = message["content"] as? String {
-                    if let shown = historyPrompt(text) { entries.append(.userText(shown)) }
+                    if let shown = historyPrompt(text) { entries.append(.userText(shown, date)) }
                 } else if let blocks = message["content"] as? [[String: Any]] {
                     let texts = blocks.compactMap { $0["type"] as? String == "text" ? ($0["text"] as? String).flatMap(historyPrompt) : nil }
                     let images = blocks.compactMap { block -> ClaudeAttachment? in
@@ -1146,10 +1522,10 @@ final class ClaudeCodeSession {
                               let type = (source["media_type"] as? String).flatMap({ UTType(mimeType: $0) }) else { return nil }
                         return ClaudeAttachment.historyImage(data, type: type)
                     }
-                    entries.append(.userBlocks(texts: texts, images: images, message: message, toolResult: obj["toolUseResult"]))
+                    entries.append(.userBlocks(texts: texts, images: images, message: message, toolResult: obj["toolUseResult"], date: date))
                 }
             case "assistant":
-                entries.append(.assistant(message))
+                entries.append(.assistant(message, date))
             default:
                 continue
             }
@@ -1160,23 +1536,30 @@ final class ClaudeCodeSession {
     private func applyHistory(_ entries: [HistoryEntry]) {
         // Build the history on its own, then put it ahead of anything live.
         let live = items
+        // Background work from the earlier process isn't running any more.
+        let liveTasks = backgroundTasks
         items = []
         for entry in entries {
             switch entry {
-            case .userText(let text):
-                append(ClaudeItem(kind: .user, text: text))
-            case .userBlocks(let texts, let images, let message, let toolResult):
+            case .userText(let text, let date):
+                eventDate = date
+                append(ClaudeItem(kind: .user, text: text, at: now))
+            case .userBlocks(let texts, let images, let message, let toolResult, let date):
+                eventDate = date
                 if !texts.isEmpty || !images.isEmpty {
-                    let item = ClaudeItem(kind: .user, text: texts.joined(separator: "\n"))
+                    let item = ClaudeItem(kind: .user, text: texts.joined(separator: "\n"), at: now)
                     item.attachments = images
                     append(item)
                 }
                 handleUser(message, subagent: false, toolResult: toolResult)
-            case .assistant(let message):
+            case .assistant(let message, let date):
+                eventDate = date
                 handleAssistant(message)
             }
         }
-        for item in toolItems.values { item.isRunning = false }
+        eventDate = nil
+        backgroundTasks = liveTasks
+        for item in toolItems.values where item.isRunning { item.isRunning = false; item.endedAt = item.endedAt ?? item.startedAt }
         if !items.isEmpty { append(ClaudeItem(kind: .notice, text: "Continuing the conversation above")) }
         items += live
     }
@@ -1269,19 +1652,9 @@ enum ClaudeToolFormat {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    struct Todo: Hashable {
-        enum Status: String { case pending, inProgress = "in_progress", completed }
-        var content: String
-        var activeForm: String
-        var status: Status
-    }
+    typealias Todo = ClaudeTodo
 
-    static func todos(_ input: [String: Any]) -> [Todo] {
-        (input["todos"] as? [[String: Any]] ?? []).map {
-            Todo(content: $0["content"] as? String ?? "", activeForm: $0["activeForm"] as? String ?? "",
-                 status: Todo.Status(rawValue: $0["status"] as? String ?? "") ?? .pending)
-        }
-    }
+    static func todos(_ input: [String: Any]) -> [Todo] { ClaudeTodo.parse(input) }
 
     static func shortPath(_ path: String) -> String {
         let home = NSHomeDirectory()
