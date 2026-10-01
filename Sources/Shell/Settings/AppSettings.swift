@@ -81,6 +81,27 @@ enum ChatComposerWidth: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// When the Claude Sessions entry is pinned to the top of the tab sidebar
+/// (and the front of the horizontal tab bar).
+enum ClaudeSessionsButton: String, Codable, CaseIterable, Identifiable {
+    /// Whenever Claude Code is installed.
+    case always
+    /// Only while a Claude Code session is running.
+    case whenActive
+    case never
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .always: "Always"
+        case .whenActive: "When sessions are active"
+        case .never: "Never"
+        }
+    }
+    init(from decoder: Decoder) throws {
+        self = ClaudeSessionsButton(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .always
+    }
+}
+
 /// How the native Claude view draws file edits.
 enum DiffStyle: String, Codable, CaseIterable, Identifiable {
     /// Side by side when the pane is wide enough, else unified.
@@ -296,9 +317,11 @@ struct AppSettings: Codable, Equatable {
     var claudePermissionMode = "auto"
     var claudeEffort = ""
     var claudeFileExplorer = true
-    /// Pin a Claude dashboard (every Claude session, tiled) to the front of the
-    /// tabs while any Claude Code session is running.
-    var claudeDashboard = true
+    /// When to pin the Claude Sessions entry (the dashboard of every Claude
+    /// session) to the top of the tabs.
+    var claudeSessionsButton: ClaudeSessionsButton = .always
+    /// Show past sessions in a drawer on the Claude Sessions page.
+    var claudeSessionsHistory = true
     /// Treat a linked git worktree as trusted when its main checkout is trusted
     /// in Claude Code (and record it), so new worktrees don't ask again.
     var claudeTrustWorktrees = true
@@ -458,11 +481,17 @@ final class SettingsStore {
 
     /// Carries older settings forward. Before `chatComposerWidth`, turning off
     /// the reading width (`chatMaxWidth` 0) made the whole chat fill the pane;
-    /// keep that as Full width.
+    /// keep that as Full width. Turning off the old Claude dashboard toggle
+    /// becomes Never.
     nonisolated static func migrate(stored: [String: Any], into merged: inout [String: Any]) {
         if stored["chatComposerWidth"] == nil, let width = stored["chatMaxWidth"] as? Double, width <= 0 {
             merged["chatComposerWidth"] = ChatComposerWidth.full.rawValue
         }
+        // `claudeDashboard: false` (before `claudeSessionsButton`) hid the entry.
+        if stored["claudeSessionsButton"] == nil, stored["claudeDashboard"] as? Bool == false {
+            merged["claudeSessionsButton"] = ClaudeSessionsButton.never.rawValue
+        }
+        merged["claudeDashboard"] = nil
     }
 
     private func scheduleSave() {

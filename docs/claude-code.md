@@ -56,7 +56,15 @@ The fetch is best-effort, so it still works offline. `--no-track` keeps the new 
 
 ## Claude dashboard
 
-While at least one Claude Code session is running, a **Claude** entry is pinned to the front of the tab bar (the top of the sidebar in vertical-tabs mode). It shows how many sessions are running and turns yellow when one needs you. Click it, or press ⌃⌘A, to replace the terminal area with a tiled view of every session in every window:
+When Claude Code is installed (the `claude` binary is on your `PATH` or `~/.claude` exists), a **Claude Sessions** entry is pinned to the top of the sidebar in vertical-tabs mode (the front of the tab bar with horizontal tabs). It shows how many sessions are running and turns yellow when one needs you. Settings › Claude & Codex › **Show Claude Sessions in the tabs** chooses when it appears:
+
+| Setting | The entry shows |
+| --- | --- |
+| Always (default) | Whenever Claude Code is installed, even with nothing running |
+| When sessions are active | Only while a Claude Code session is running |
+| Never | Never; ⌃⌘A still opens the dashboard |
+
+Click it, or press ⌃⌘A, to replace the terminal area with a tiled view of every session in every window:
 
 | On each tile | Source |
 | --- | --- |
@@ -77,6 +85,23 @@ Nothing is sent anywhere, and Shell never reads your Claude credentials.
 In the terminal UI, clicking an option presses its number key, then Return if the prompt is still showing, just as if you'd typed it. Shell only offers this when it sees Claude Code's `❯ 1.` selector under a question, so numbered lists in Claude's replies are left alone.
 
 Click a session tile to jump to that pane. Selecting any tab (or ⌃⌘A again) closes the dashboard.
+
+### Past sessions
+
+A drawer on the right of the dashboard lists your past Claude Code conversations, newest first, read from the transcripts in `~/.claude/projects` (up to the 200 most recent; sessions in temporary folders are left out). Hide it with its sidebar button and bring it back with the clock button in the dashboard's header. Type in the filter box to search by title, prompt, folder or branch.
+
+Each card leads with the repository and branch (with ahead/behind or **not pushed**, and **main** for the main checkout), then the session's first prompt. The `/rename` or Claude-generated title stands in when there's no prompt. Below that are the branch's pull request, whether the worktree is clean or has changes, the folder, and when the session was last active, the same details as the Worktrees sidebar. Git details are read only for cards on screen, and pull requests come from your `gh`, once per repository.
+
+Hover a card for its actions, or right-click it:
+
+| Action | What it does |
+| --- | --- |
+| **Resume** | Opens a tab in the session's folder and runs `claude --resume <id>` (double-click does the same) |
+| **New** | Opens a tab in the session's folder and runs `claude` |
+| **Terminal** | Opens a tab in the session's folder |
+| **Show** | Replaces Resume when the conversation is already open in a native view, and jumps to that pane |
+
+The commands are typed at your prompt, so your **Typing `claude` opens** choice (native view or terminal UI) applies. The actions are disabled when the folder no longer exists. Shell only reads the transcripts; it never changes or deletes them.
 
 A pane counts as a Claude session when it's running the native view, a `claude` command (including `command claude`, a path to the binary or `npx @anthropic-ai/claude-code`), or when Claude Code's hooks report from its running command, which covers aliases. Without the hooks, terminal sessions show as *idle*. Turn the pinned entry off in Settings › Claude & Codex.
 

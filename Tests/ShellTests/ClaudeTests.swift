@@ -337,6 +337,38 @@ final class WorktreeTests: XCTestCase {
         XCTAssertTrue(list[2].isDetached)
         XCTAssertTrue(list[2].isPrunable)
         XCTAssertEqual(list[2].head, "33333333")
+        XCTAssertEqual(list[2].headOID, "3333333333333333333333333333333333333333")
+    }
+
+    func testMergedRule() {
+        let sha = String(repeating: "a", count: 40)
+        var wt = WorktreeInfo(path: "/wt/a", headOID: sha)
+        wt.changes = 0
+        var pr = PullRequestInfo(number: 1, title: "t", url: URL(string: "https://github.com/o/r/pull/1")!,
+                                 state: .merged, isDraft: false, headOID: sha)
+        wt.pullRequest = pr
+        XCTAssertTrue(wt.isMergedAndClean)
+        XCTAssertTrue(wt.headMatchesMergedPR)
+        wt.headOID = String(repeating: "b", count: 40)
+        XCTAssertTrue(wt.isMergedAndClean)
+        XCTAssertFalse(wt.headMatchesMergedPR, "local commits after the merge keep the branch")
+        wt.changes = 1
+        XCTAssertFalse(wt.isMergedAndClean, "uncommitted changes are never cleaned up")
+        wt.changes = nil
+        XCTAssertFalse(wt.isMergedAndClean, "unknown status is not cleaned up")
+        wt.changes = 0
+        wt.isMain = true
+        XCTAssertFalse(wt.isMergedAndClean, "the main checkout is never cleaned up")
+        wt.isMain = false
+        wt.isLocked = true
+        XCTAssertFalse(wt.isMergedAndClean)
+        wt.isLocked = false
+        pr.state = .open
+        wt.pullRequest = pr
+        XCTAssertFalse(wt.isMergedAndClean)
+        pr.state = .closed
+        wt.pullRequest = pr
+        XCTAssertFalse(wt.isMergedAndClean, "closed without merging is not merged")
     }
 
     func testStaleRule() {

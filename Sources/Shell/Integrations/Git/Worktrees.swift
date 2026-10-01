@@ -4,7 +4,10 @@ import Observation
 /// One entry of `git worktree list --porcelain`, plus what Shell learned about it.
 struct WorktreeInfo: Identifiable, Equatable {
     var path: String
+    /// Short HEAD commit, for display.
     var head: String?
+    /// Full HEAD commit.
+    var headOID: String?
     var branch: String?
     var isMain = false
     var isBare = false
@@ -33,6 +36,16 @@ struct WorktreeInfo: Identifiable, Equatable {
 
     /// Merged PR or deleted upstream: the work landed, so the worktree is likely done.
     var looksFinished: Bool { pullRequest?.state == .merged || (upstreamGone && pullRequest?.state != .open) }
+    /// Clean, removable, and its branch's PR has merged.
+    var isMergedAndClean: Bool {
+        !isMain && !isBare && !isLocked && changes == 0 && pullRequest?.state == .merged
+    }
+    /// HEAD is exactly the merged PR's head, so the branch holds nothing that didn't merge.
+    /// (Squash merges make `git branch -d` refuse, so this is what makes `-D` safe.)
+    var headMatchesMergedPR: Bool {
+        guard let pr = pullRequest, pr.state == .merged, let oid = headOID, let prOID = pr.headOID else { return false }
+        return oid == prOID
+    }
     var name: String { (path as NSString).lastPathComponent }
     var isPrunable: Bool { prunableReason != nil }
     var exists: Bool { FileManager.default.fileExists(atPath: path) }
@@ -73,7 +86,9 @@ struct WorktreeInfo: Identifiable, Equatable {
             case "worktree":
                 flush()
                 cur = WorktreeInfo(path: value ?? "")
-            case "HEAD": cur?.head = value.map { String($0.prefix(8)) }
+            case "HEAD":
+                cur?.headOID = value
+                cur?.head = value.map { String($0.prefix(8)) }
             case "branch": cur?.branch = value.map { $0.hasPrefix("refs/heads/") ? String($0.dropFirst(11)) : $0 }
             case "bare": cur?.isBare = true
             case "detached": cur?.isDetached = true
@@ -151,7 +166,7 @@ enum WorktreeService {
     static func pullRequests(repo: String, environment: [String: String]) async -> [String: PullRequestInfo] {
         guard let gh = GitRepository.findExecutable("gh", environment: environment),
               let out = await GitRepository.run(gh, ["pr", "list", "--state", "all", "--limit", "200",
-                                                     "--json", "number,title,url,state,isDraft,headRefName,reviewDecision"],
+                                                     "--json", "number,title,url,state,isDraft,headRefName,headRefOid,reviewDecision"],
                                                 in: repo, environment: environment),
               let data = out.data(using: .utf8),
               let list = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [:] }
@@ -162,7 +177,8 @@ enum WorktreeService {
             let pr = PullRequestInfo(number: number, title: obj["title"] as? String ?? "", url: url,
                                      state: PullRequestInfo.State(rawValue: obj["state"] as? String ?? "") ?? .open,
                                      isDraft: obj["isDraft"] as? Bool ?? false,
-                                     reviewDecision: (obj["reviewDecision"] as? String).flatMap { $0.isEmpty ? nil : $0 })
+                                     reviewDecision: (obj["reviewDecision"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+                                     headOID: obj["headRefOid"] as? String)
             // Newest first; an open PR replaces older merged/closed ones.
             if let existing = result[branch], existing.state == .open || pr.state != .open { continue }
             result[branch] = pr
@@ -179,8 +195,10 @@ enum WorktreeService {
     }
 
     /// `git worktree remove` (refuses dirty worktrees unless `force`), then
-    /// optionally `git branch -d` (refuses unmerged branches). Returns an error or nil.
-    static func remove(_ wt: WorktreeInfo, repo: String, git: String, force: Bool, deleteBranch: Bool) async -> String? {
+    /// optionally `git branch -d` (refuses unmerged branches), or `-D` with
+    /// `forceDeleteBranch`. Returns an error or nil.
+    static func remove(_ wt: WorktreeInfo, repo: String, git: String, force: Bool, deleteBranch: Bool,
+                       forceDeleteBranch: Bool = false) async -> String? {
         guard !wt.isMain else { return "The main worktree can't be removed." }
         if wt.isPrunable || !wt.exists {
             _ = await GitRepository.run(git, ["worktree", "prune"], in: repo)
@@ -189,7 +207,7 @@ enum WorktreeService {
         let args = ["worktree", "remove"] + (force ? ["--force"] : []) + [wt.path]
         if let err = await runReportingError(git, args, in: repo) { return err }
         if deleteBranch, let branch = wt.branch,
-           let err = await runReportingError(git, ["branch", "-d", branch], in: repo) {
+           let err = await runReportingError(git, ["branch", forceDeleteBranch ? "-D" : "-d", branch], in: repo) {
             return "Removed the worktree, but kept branch \(branch): \(err)"
         }
         return nil
@@ -345,6 +363,32 @@ final class WorktreesModel {
 
     func removeStale(deleteBranch: Bool) async {
         for wt in stale { await remove(wt, force: false, deleteBranch: deleteBranch) }
+    }
+
+    /// Merged and clean worktrees, excluding the one at `currentPath` (a pane is in it).
+    func merged(excluding currentPath: String) -> [WorktreeInfo] {
+        let current = URL(fileURLWithPath: currentPath).standardizedFileURL.path
+        return worktrees.filter { $0.isMergedAndClean && URL(fileURLWithPath: $0.path).standardizedFileURL.path != current }
+    }
+
+    /// Removes each worktree (never forced). Deletes its branch only when HEAD is
+    /// the merged PR's head; otherwise the branch is kept.
+    func removeMerged(_ list: [WorktreeInfo]) async {
+        var errors: [String] = []
+        for wt in list {
+            busy.insert(wt.path)
+            let match = wt.headMatchesMergedPR
+            if let err = await WorktreeService.remove(wt, repo: repoRoot, git: git, force: false,
+                                                      deleteBranch: match, forceDeleteBranch: match) {
+                errors.append("\(wt.name): \(err)")
+            } else {
+                worktrees.removeAll { $0.path == wt.path }
+            }
+            busy.remove(wt.path)
+        }
+        if !errors.isEmpty { lastError = errors.joined(separator: "\n") }
+        loadedAt = nil
+        refresh()
     }
 }
 

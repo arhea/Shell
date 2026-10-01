@@ -7,11 +7,20 @@ import AppKit
 final class NotificationManager: NSObject {
     static let shared = NotificationManager()
 
+    /// Update notifications carry a Restart Now button.
+    static let updateCategory = "update"
+    nonisolated private static let restartAction = "restart-to-update"
+
     private var authorized: Bool?
     private var delivered: [UUID: [String]] = [:]
 
     func start() {
-        UNUserNotificationCenter.current().delegate = self
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        let restart = UNNotificationAction(identifier: Self.restartAction, title: "Restart Now", options: [.foreground])
+        center.setNotificationCategories([
+            UNNotificationCategory(identifier: Self.updateCategory, actions: [restart], intentIdentifiers: []),
+        ])
     }
 
     /// `timeSensitive` lets the alert break through Focus. It only takes effect
@@ -49,10 +58,11 @@ final class NotificationManager: NSObject {
     }
 
     /// A notification not tied to a pane; clicking it opens a Settings pane.
-    func postAppNotification(title: String, body: String, pane: SettingsPane?) {
+    func postAppNotification(title: String, body: String, pane: SettingsPane?, category: String? = nil) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
+        if let category { content.categoryIdentifier = category }
         if SettingsStore.shared.settings.notificationSound { content.sound = .default }
         if let pane { content.userInfo = ["pane": pane.rawValue] }
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
@@ -91,10 +101,13 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
                                             withCompletionHandler completionHandler: @escaping () -> Void) {
         let sid = response.notification.request.content.userInfo["session"] as? String
         let pane = response.notification.request.content.userInfo["pane"] as? String
+        let restart = response.actionIdentifier == Self.restartAction
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
                 NSApp.activate()
-                if let sid, let uuid = UUID(uuidString: sid), let session = SessionRegistry.shared.session(uuid) {
+                if restart {
+                    SoftwareUpdater.shared.installAndRelaunch()
+                } else if let sid, let uuid = UUID(uuidString: sid), let session = SessionRegistry.shared.session(uuid) {
                     session.onRequestFocus?()
                 } else if let pane, let p = SettingsPane(rawValue: pane) {
                     SettingsWindowController.shared.show(pane: p)

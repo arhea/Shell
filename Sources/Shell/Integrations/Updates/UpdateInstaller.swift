@@ -77,9 +77,23 @@ enum UpdateInstaller {
 
     // MARK: Staging
 
+    /// Captures the DMG's download task so the updater can show progress.
+    /// Lock-protected: URLSession sets the task on its delegate queue, the main actor reads it.
+    final class DownloadMonitor: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+        private let lock = NSLock()
+        private var task: URLSessionTask?
+
+        func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
+            lock.withLock { self.task = task }
+        }
+
+        var bytesReceived: Int64 { lock.withLock { task?.countOfBytesReceived ?? 0 } }
+    }
+
     /// Downloads the release's DMG, checks it against the published SHA-256,
     /// copies the app out and verifies it. Returns the staged `Shell.app`.
-    static func stage(_ release: UpdateRelease, teamID: String, bundleID: String) async throws -> URL {
+    static func stage(_ release: UpdateRelease, teamID: String, bundleID: String,
+                      monitor: DownloadMonitor? = nil) async throws -> URL {
         let fm = FileManager.default
         let dir = stagingRoot.appendingPathComponent(release.version, isDirectory: true)
         try? fm.removeItem(at: dir)
@@ -91,7 +105,7 @@ enum UpdateInstaller {
             throw Failure("The release's checksum file is missing or malformed.")
         }
 
-        let (downloaded, response) = try await session.download(from: release.dmgURL)
+        let (downloaded, response) = try await session.download(from: release.dmgURL, delegate: monitor)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             try? fm.removeItem(at: downloaded)
             throw Failure("Downloading \(release.dmgName) failed (HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)).")
