@@ -119,13 +119,21 @@ struct WorktreesView: View {
 
     @State private var pendingDelete: WorktreeInfo?
     @State private var confirmCleanup = false
+    /// The merged worktrees the confirmation dialog lists, captured when it opens.
+    @State private var pendingMerged: [WorktreeInfo] = []
+    @State private var confirmMergedCleanup = false
     @State private var hovered: String?
 
     var body: some View {
         let p = ClaudePalette.current
+        let merged = model.merged(excluding: currentPath)
         VStack(spacing: 0) {
             header(p)
             p.border.frame(height: 1)
+            if !merged.isEmpty {
+                mergedCleanupBar(merged, p)
+                p.border.frame(height: 1)
+            }
             ScrollView {
                 LazyVStack(spacing: 6) {
                     if let err = model.lastError {
@@ -163,6 +171,39 @@ struct WorktreesView: View {
                  + "\n\nEach has no uncommitted changes. Branches are "
                  + (SettingsStore.shared.settings.worktreeCleanupDeleteMergedBranches ? "deleted when merged." : "kept."))
         }
+        .confirmationDialog("Remove \(pendingMerged.count) merged worktree\(pendingMerged.count == 1 ? "" : "s")?",
+                            isPresented: $confirmMergedCleanup) {
+            Button("Remove", role: .destructive) {
+                let list = pendingMerged
+                Task { await model.removeMerged(list) }
+            }
+        } message: {
+            Text(pendingMerged.map { wt in wt.name + (wt.pullRequest.map { " (#\($0.number))" } ?? "") }.joined(separator: "\n")
+                 + "\n\nEach PR has merged and the worktree has no uncommitted changes. "
+                 + "A branch is deleted only if it has nothing beyond what merged; otherwise it's kept.")
+        }
+    }
+
+    private func mergedCleanupBar(_ merged: [WorktreeInfo], _ p: ClaudePalette) -> some View {
+        Button {
+            pendingMerged = merged
+            confirmMergedCleanup = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.triangle.merge").foregroundStyle(p.magenta)
+                Text("Clean up merged worktrees")
+                Spacer()
+                Text("\(merged.count)").monospacedDigit().foregroundStyle(p.magenta)
+            }
+            .font(.system(size: 11, weight: .medium))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(p.magenta.opacity(0.08))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(model.busy.count > 0)
+        .help("Remove worktrees whose pull request has merged and that have no uncommitted changes")
     }
 
     private func header(_ p: ClaudePalette) -> some View {
@@ -222,12 +263,12 @@ struct WorktreesView: View {
                 Text(wt.name).font(.system(size: 12, weight: .semibold)).lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 4)
                 if busy { ProgressView().controlSize(.mini) }
-                if current { badge("here", p.claude, p) }
-                if wt.isMain { badge("main", p.cyan, p) }
-                if stale { badge("stale", p.yellow, p) }
-                if wt.looksFinished && !wt.isMain { badge(wt.pullRequest?.state == .merged ? "merged" : "done?", p.magenta, p) }
-                if wt.isLocked { badge("locked", p.dim, p) }
-                if wt.isPrunable { badge("missing", p.red, p) }
+                if current { WorktreeLabels.badge("here", p.claude) }
+                if wt.isMain { WorktreeLabels.badge("main", p.cyan) }
+                if stale { WorktreeLabels.badge("stale", p.yellow) }
+                if wt.looksFinished && !wt.isMain { WorktreeLabels.badge(wt.pullRequest?.state == .merged ? "merged" : "done?", p.magenta) }
+                if wt.isLocked { WorktreeLabels.badge("locked", p.dim) }
+                if wt.isPrunable { WorktreeLabels.badge("missing", p.red) }
             }
             HStack(spacing: 5) {
                 Image(systemName: "arrow.triangle.branch").foregroundStyle(p.magenta).font(.system(size: 9))
@@ -240,10 +281,10 @@ struct WorktreesView: View {
             .foregroundStyle(p.foreground.opacity(0.85))
             // The main checkout's branch (develop/main) only has release PRs; skip them.
             if let pr = wt.pullRequest, !wt.isMain {
-                prLine(pr, p)
+                WorktreeLabels.pullRequest(pr, p)
             }
             HStack(spacing: 8) {
-                changesLabel(wt, p)
+                WorktreeLabels.changes(wt, p)
                 if let age = wt.ageDescription { Text(age) }
                 Spacer()
                 if let size = wt.sizeBytes { Text(WorktreeService.formatBytes(size)).monospacedDigit() }
@@ -266,61 +307,7 @@ struct WorktreesView: View {
     @ViewBuilder
     private func trackingLabel(_ wt: WorktreeInfo, _ p: ClaudePalette) -> some View {
         if wt.branch != nil, !wt.isMain || wt.ahead + wt.behind > 0 {
-            trackingText(wt, p).fixedSize()
-        }
-    }
-
-    @ViewBuilder
-    private func trackingText(_ wt: WorktreeInfo, _ p: ClaudePalette) -> some View {
-        if wt.upstreamGone {
-            Text("upstream deleted").foregroundStyle(p.dim).help("The remote branch is gone — usually deleted after its PR merged")
-        } else if wt.upstream == nil && wt.trackingKnown {
-            Text("not pushed").foregroundStyle(p.yellow).help("No upstream branch: commits here exist only locally")
-        } else if wt.ahead > 0 || wt.behind > 0 {
-            HStack(spacing: 3) {
-                if wt.ahead > 0 { Text("↑\(wt.ahead)").foregroundStyle(p.yellow) }
-                if wt.behind > 0 { Text("↓\(wt.behind)").foregroundStyle(p.dim) }
-            }
-            .help("\(wt.ahead) commit\(wt.ahead == 1 ? "" : "s") not pushed, \(wt.behind) behind \(wt.upstream ?? "upstream")")
-        }
-    }
-
-    private func prLine(_ pr: PullRequestInfo, _ p: ClaudePalette) -> some View {
-        let (label, color, icon): (String, Color, String) = switch pr.state {
-        case .merged: ("merged", p.magenta, "arrow.triangle.merge")
-        case .closed: ("closed", p.red, "xmark.circle")
-        case .open: pr.isDraft ? ("draft", p.dim, "circle.dashed") : ("open", p.green, "arrow.triangle.pull")
-        }
-        return Button { NSWorkspace.shared.open(pr.url) } label: {
-            HStack(spacing: 4) {
-                Image(systemName: icon).foregroundStyle(color)
-                Text("#\(pr.number)").fontWeight(.semibold).foregroundStyle(color)
-                Text(label).foregroundStyle(color)
-                if pr.state == .open, let review = pr.reviewDecision {
-                    Text(review == "APPROVED" ? "· approved" : review == "CHANGES_REQUESTED" ? "· changes requested" : "· review required")
-                        .foregroundStyle(review == "APPROVED" ? p.green : review == "CHANGES_REQUESTED" ? p.red : p.dim)
-                }
-                Text(pr.title).foregroundStyle(p.dim).lineLimit(1).truncationMode(.tail)
-            }
-            .font(.system(size: 10.5))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help("\(pr.title)\nOpen #\(pr.number) on GitHub")
-    }
-
-    @ViewBuilder
-    private func changesLabel(_ wt: WorktreeInfo, _ p: ClaudePalette) -> some View {
-        if let n = wt.changes {
-            if n == 0 {
-                Label("clean", systemImage: "checkmark.circle").foregroundStyle(p.green)
-            } else {
-                Label("\(n) change\(n == 1 ? "" : "s")", systemImage: "pencil.circle").foregroundStyle(p.yellow)
-            }
-        } else if wt.isPrunable {
-            Text("folder missing").foregroundStyle(p.red)
-        } else {
-            Text("checking…")
+            WorktreeLabels.tracking(wt, p).fixedSize()
         }
     }
 
@@ -374,15 +361,74 @@ struct WorktreesView: View {
         }
     }
 
-    private func badge(_ text: String, _ color: Color, _ p: ClaudePalette) -> some View {
+    private func shellQuote(_ s: String) -> String { ShellQuote.quote(s) }
+}
+
+/// A worktree's tracking, pull request and changes, as the Worktrees sidebar
+/// shows them. Shared with the Claude Sessions page's past sessions drawer.
+@MainActor
+enum WorktreeLabels {
+    @ViewBuilder
+    static func tracking(_ wt: WorktreeInfo, _ p: ClaudePalette) -> some View {
+        if wt.upstreamGone {
+            Text("upstream deleted").foregroundStyle(p.dim).help("The remote branch is gone — usually deleted after its PR merged")
+        } else if wt.upstream == nil && wt.trackingKnown {
+            Text("not pushed").foregroundStyle(p.yellow).help("No upstream branch: commits here exist only locally")
+        } else if wt.ahead > 0 || wt.behind > 0 {
+            HStack(spacing: 3) {
+                if wt.ahead > 0 { Text("↑\(wt.ahead)").foregroundStyle(p.yellow) }
+                if wt.behind > 0 { Text("↓\(wt.behind)").foregroundStyle(p.dim) }
+            }
+            .help("\(wt.ahead) commit\(wt.ahead == 1 ? "" : "s") not pushed, \(wt.behind) behind \(wt.upstream ?? "upstream")")
+        }
+    }
+
+    static func pullRequest(_ pr: PullRequestInfo, _ p: ClaudePalette) -> some View {
+        let (label, color, icon): (String, Color, String) = switch pr.state {
+        case .merged: ("merged", p.magenta, "arrow.triangle.merge")
+        case .closed: ("closed", p.red, "xmark.circle")
+        case .open: pr.isDraft ? ("draft", p.dim, "circle.dashed") : ("open", p.green, "arrow.triangle.pull")
+        }
+        return Button { NSWorkspace.shared.open(pr.url) } label: {
+            HStack(spacing: 4) {
+                Image(systemName: icon).foregroundStyle(color)
+                Text("#\(pr.number)").fontWeight(.semibold).foregroundStyle(color)
+                Text(label).foregroundStyle(color)
+                if pr.state == .open, let review = pr.reviewDecision {
+                    Text(review == "APPROVED" ? "· approved" : review == "CHANGES_REQUESTED" ? "· changes requested" : "· review required")
+                        .foregroundStyle(review == "APPROVED" ? p.green : review == "CHANGES_REQUESTED" ? p.red : p.dim)
+                }
+                Text(pr.title).foregroundStyle(p.dim).lineLimit(1).truncationMode(.tail)
+            }
+            .font(.system(size: 10.5))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("\(pr.title)\nOpen #\(pr.number) on GitHub")
+    }
+
+    @ViewBuilder
+    static func changes(_ wt: WorktreeInfo, _ p: ClaudePalette) -> some View {
+        if let n = wt.changes {
+            if n == 0 {
+                Label("clean", systemImage: "checkmark.circle").foregroundStyle(p.green)
+            } else {
+                Label("\(n) change\(n == 1 ? "" : "s")", systemImage: "pencil.circle").foregroundStyle(p.yellow)
+            }
+        } else if wt.isPrunable {
+            Text("folder missing").foregroundStyle(p.red)
+        } else {
+            Text("checking…")
+        }
+    }
+
+    static func badge(_ text: String, _ color: Color) -> some View {
         Text(text)
             .font(.system(size: 9, weight: .bold))
             .foregroundStyle(color)
             .padding(.horizontal, 5).padding(.vertical, 1)
             .background(Capsule().fill(color.opacity(0.15)))
     }
-
-    private func shellQuote(_ s: String) -> String { ShellQuote.quote(s) }
 }
 
 struct DeleteWorktreeSheet: View {

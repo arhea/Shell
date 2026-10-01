@@ -6,13 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Changed
+### Added
 
-- Updates show download progress in Settings › General › Software Update and the Help menu, and the "update is ready" notification has a **Restart Now** button. Help › Restart to Install Shell <version> replaces Restart to Update. ([#31](https://github.com/arhea/Shell/pull/31))
-
-### Fixed
-
-- A failed update download no longer drops the update: Install and Restart reports what went wrong and offers Try Again or the download page, and Settings keeps the update available to retry. ([#31](https://github.com/arhea/Shell/pull/31))
+- The Worktrees sidebar shows a **Clean up merged worktrees** line when worktrees whose pull request has merged have no uncommitted changes. It lists them for confirmation, then removes them and deletes each branch when it holds nothing beyond what merged. The main checkout, locked worktrees and the one you're in are never touched. ([#27](https://github.com/arhea/Shell/pull/27), fixes [#26](https://github.com/arhea/Shell/issues/26))
 
 ## [0.3.0] - 2026-09-30
 
