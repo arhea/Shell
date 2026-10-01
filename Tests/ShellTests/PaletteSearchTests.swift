@@ -112,8 +112,11 @@ final class PaletteSearchTests: XCTestCase {
                             additions: 0, deletions: 0, isCrossRepository: false, labels: [], checks: .none, checksSummary: "",
                             reviewRequestedLogins: requested)
         }
+        var assigned = pr(4, author: "mk", requested: ["x"])
+        assigned.assignees = ["me"]
+        // For you matches the board: review requested or assigned (not authored).
         let prs = [pr(1, author: "me", requested: []), pr(2, author: "jl", requested: ["me"]), pr(3, author: "mk", requested: ["me", "x"]),
-                   pr(4, author: "mk", requested: ["x"])]
+                   assigned, pr(5, author: "mk", requested: ["x"])]
         XCTAssertTrue(GitHubSidebarRow.counts(prs, login: "me") == (2, 3))
         XCTAssertTrue(GitHubSidebarRow.counts(prs, login: nil) == (0, 0))
     }
