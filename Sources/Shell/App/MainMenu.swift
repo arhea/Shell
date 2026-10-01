@@ -206,11 +206,15 @@ final class UpdateMenuItem: NSMenuItem, NSMenuDelegate {
         isEnabled = true
         switch updater.phase {
         case .ready(let r):
-            title = "Restart to Update to Shell \(r.version)"
+            title = "Restart to Install Shell \(r.version)"
         case .available(let r):
             title = updater.installBlocker == nil ? "Install Shell \(r.version) and Restart" : "Download Shell \(r.version)…"
         case .downloading(let r):
-            title = "Downloading Shell \(r.version)…"
+            title = switch updater.downloadFraction {
+            case let f? where f >= 1: "Verifying Shell \(r.version)…"
+            case let f?: "Downloading Shell \(r.version)… \(f.formatted(.percent.precision(.fractionLength(0))))"
+            case nil: "Downloading Shell \(r.version)…"
+            }
             isEnabled = false
         default:
             isHidden = true

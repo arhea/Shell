@@ -32,7 +32,7 @@ Shell has no account, no sign-in and no telemetry. Features that need an externa
 2. Open the disk image and drag `Shell` onto the `Applications` shortcut.
 3. Open it. Release builds are signed with a Developer ID and notarized by Apple, so Gatekeeper opens them without a warning.
 
-Shell checks for new releases every six hours. When one is found it downloads and verifies it in the background, notifies you, and installs it when you quit, or right away from **Help › Restart to Update**. **Help › Check for Updates…** checks on demand. Turn either behavior off in Settings › General › Software Update. Updates install only into a copy you can write to, such as `/Applications/Shell.app` for an admin user.
+Shell checks for new releases every six hours. When one is found it downloads and verifies it in the background, notifies you, and installs it when you quit, or right away from the notification's **Restart Now** button or **Help › Restart to Install Shell <version>**. **Help › Check for Updates…** checks on demand and offers **Install and Restart**, which downloads the update, quits, installs it and reopens Shell with your tabs restored. Download progress shows in the Help menu and in Settings › General › Software Update; if a download fails, Shell tells you and lets you try again. Turn either behavior off in Settings › General › Software Update. Updates install only into a copy you can write to, such as `/Applications/Shell.app` for an admin user.
 
 ### Build from source
 
