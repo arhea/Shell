@@ -22,6 +22,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShortcutActionHandling
         for key in ["TERM_PROGRAM", "TERM_PROGRAM_VERSION", "TERM_SESSION_ID", "ITERM_SESSION_ID", "GHOSTTY_BIN_DIR", "SHELL_APP_SESSION"] {
             unsetenv(key)
         }
+        Self.installBrokenPipeHandler()
+    }
+
+    /// Writing to a child's stdin after it exits (Claude Code, an MCP server,
+    /// the login helper) raises SIGPIPE, whose default action ends the app
+    /// silently: no crash report, no error. With a handler installed the
+    /// write fails with EPIPE instead, which the callers already catch.
+    /// A no-op handler rather than SIG_IGN, for the reason in
+    /// `installTerminationSignalHandler`.
+    nonisolated static func installBrokenPipeHandler() {
+        signal(SIGPIPE) { _ in }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
