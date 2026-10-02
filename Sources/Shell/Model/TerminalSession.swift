@@ -346,6 +346,13 @@ final class TerminalSession: Identifiable {
 
     func block(id: UUID) -> CommandBlock? { blocks.last { $0.id == id } }
 
+    /// The recorded block just before `block` (for a block not recorded yet,
+    /// the newest one).
+    private func olderBlock(than block: CommandBlock) -> CommandBlock? {
+        guard let i = blocks.lastIndex(where: { $0.id == block.id }) else { return blocks.last }
+        return i > 0 ? blocks[i - 1] : nil
+    }
+
     // MARK: Command output
 
     /// The output of the last finished command, found by locating its header
@@ -370,9 +377,9 @@ final class TerminalSession: Identifiable {
         }
         var end = lines.count
         for b in newer {
-            if let idx = Self.headerIndex(of: b, in: lines, before: end) { end = idx }
+            if let idx = Self.headerIndex(of: b, in: lines, before: end, older: olderBlock(than: b)) { end = idx }
         }
-        guard let header = Self.headerIndex(of: block, in: lines, before: end) else { return nil }
+        guard let header = Self.headerIndex(of: block, in: lines, before: end, older: olderBlock(than: block)) else { return nil }
         let commandLines = block.command.components(separatedBy: "\n").count
         let start = min(header + commandLines, end)
         var output = Array(lines[start..<end])
@@ -395,7 +402,7 @@ final class TerminalSession: Identifiable {
         guard let block = lastBlock else { return false }
         let lines = surfaceView.readText().components(separatedBy: "\n")
             .map { $0.replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression) }
-        guard let header = Self.headerIndex(of: block, in: lines, before: lines.count) else { return true }
+        guard let header = Self.headerIndex(of: block, in: lines, before: lines.count, older: olderBlock(than: block)) else { return true }
         let start = header + block.command.components(separatedBy: "\n").count
         return lines.dropFirst(start).contains { !$0.isEmpty && !$0.hasPrefix("✗ exit ") }
     }
@@ -403,10 +410,38 @@ final class TerminalSession: Identifiable {
     /// Finds the last line (before `end`) that shows `block`'s command:
     /// the exact compact header first, then any line ending in "❯ cmd",
     /// then (custom themes) any line ending in the command.
-    static func headerIndex(of block: CommandBlock, in lines: [String], before end: Int) -> Int? {
+    ///
+    /// A command typed ahead while the previous one ran is read by zsh with
+    /// the idle prompt hidden, so its line is the bare command ("make test")
+    /// with no header. Such a line is taken when nothing better matches, or
+    /// when `older` (the block just before this one) shows its header between
+    /// the best header-style match and it: that match must then belong to an
+    /// earlier run of the same command.
+    static func headerIndex(of block: CommandBlock, in lines: [String], before end: Int,
+                            older: CommandBlock? = nil) -> Int? {
+        guard let first = firstCommandLine(block) else { return nil }
+        let end = max(0, min(end, lines.count))
+        let styled = styledHeaderIndex(first: first, block: block, in: lines, before: end)
+        guard let bare = lines.indices.prefix(end).last(where: { lines[$0] == first }),
+              bare > (styled ?? -1) else { return styled }
+        guard let styled else { return bare }
+        if let older, let olderFirst = firstCommandLine(older),
+           let o = styledHeaderIndex(first: olderFirst, block: older, in: lines, before: bare), o > styled {
+            return bare
+        }
+        return styled
+    }
+
+    /// The command's first line without trailing whitespace; nil when blank.
+    nonisolated static func firstCommandLine(_ block: CommandBlock) -> String? {
         let first = (block.command.components(separatedBy: "\n").first ?? block.command)
             .replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression)
-        guard !first.isEmpty else { return nil }
+        return first.isEmpty ? nil : first
+    }
+
+    /// The last header-style line before `end`: the exact compact header,
+    /// then "… ❯ cmd", then (custom themes) any line ending in " cmd".
+    private static func styledHeaderIndex(first: String, block: CommandBlock, in lines: [String], before end: Int) -> Int? {
         let compact = "\(block.directory)\(block.branch.map { " " + $0 } ?? "") ❯ \(first)"
         let range = lines.indices.prefix(end).reversed()
         if let i = range.first(where: { lines[$0] == compact }) { return i }
