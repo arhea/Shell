@@ -47,6 +47,21 @@ private func busySession() -> ClaudeCodeSession {
 
 @MainActor
 final class ClaudePaneViewTests: XCTestCase {
+    private var savedTabBarStyle: TabBarStyle?
+
+    /// These tests count and press the pane's own header controls, which only
+    /// show with horizontal tabs (vertical tabs move them to the window toolbar).
+    override func setUp() async throws {
+        try await super.setUp()
+        savedTabBarStyle = SettingsStore.shared.settings.tabBarStyle
+        SettingsStore.shared.settings.tabBarStyle = .horizontal
+    }
+
+    override func tearDown() async throws {
+        if let savedTabBarStyle { SettingsStore.shared.settings.tabBarStyle = savedTabBarStyle }
+        try await super.tearDown()
+    }
+
     func testEmptyStateShowsTheWelcomeAndComposer() {
         let claude = F.session()
         XCTAssertFalse(claude.hasStarted)
