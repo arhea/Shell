@@ -147,6 +147,8 @@ final class Workspace {
     var selectedTabID: UUID?
     /// The Claude dashboard is showing in place of the selected tab.
     var showsDashboard = false
+    /// The Claude Sessions page's filter (the field lives in the window toolbar).
+    var dashboardQuery = ""
     /// The GitHub tab's board, while that tab is open (it stays in the tab
     /// bar after you switch away, until closed).
     var githubBoard: GitHubBoardModel?

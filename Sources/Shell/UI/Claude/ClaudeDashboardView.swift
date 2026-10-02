@@ -20,7 +20,8 @@ struct ClaudeDashboardView: View {
     var usage: ClaudeUsage = .shared
     var history: ClaudeHistory = .shared
     var elsewhere: [ClaudeRunningSession]?
-    @State private var query = ""
+    /// The filter typed in the toolbar's "Filter sessions" field.
+    private var query: String { controller.workspace.dashboardQuery }
 
     private let workingColumns = [GridItem(.adaptive(minimum: 300), spacing: 12, alignment: .top)]
 
@@ -33,8 +34,6 @@ struct ClaudeDashboardView: View {
         HStack(spacing: 0) {
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 14) {
-                    // Page actions, right-aligned under the toolbar's trailing items.
-                    DashboardControls(controller: controller, query: $query, showsHistory: showsHistory)
                     VStack(alignment: .leading, spacing: 22) {
                         if agents.claude != .installed { hooksBanner(palette) }
                         ClaudeUsageTile(palette: palette, usage: usage)

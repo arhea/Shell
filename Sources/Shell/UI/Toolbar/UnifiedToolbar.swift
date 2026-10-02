@@ -106,6 +106,10 @@ struct UnifiedToolbar: View {
     @ViewBuilder private var trailing: some View {
         if workspace.showsGitHub, let board = workspace.githubBoard {
             GitHubToolbarControls(model: board)
+        } else if workspace.showsDashboard {
+            DashboardControls(controller: controller,
+                              query: Binding(get: { workspace.dashboardQuery }, set: { workspace.dashboardQuery = $0 }),
+                              showsHistory: SettingsStore.shared.settings.claudeSessionsHistory)
         } else if !workspace.showsNativePage, let session = workspace.selectedTab?.focusedSession {
             if let claude = session.nativeClaude {
                 ClaudeToolbarControls(

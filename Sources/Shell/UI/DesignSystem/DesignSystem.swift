@@ -47,7 +47,12 @@ enum DS {
                 ? NSColor(srgbRed: 0xF0 / 255, green: 0x9A / 255, blue: 0x72 / 255, alpha: 1)
                 : NSColor(srgbRed: 0xC4 / 255, green: 0x62 / 255, blue: 0x3F / 255, alpha: 1)
         })
-        static let needsYou = Color(nsColor: .systemYellow)
+        /// Yellow; a deeper amber in light appearances so it reads as text on white.
+        static let needsYou = Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor(srgbRed: 0xFF / 255, green: 0xD6 / 255, blue: 0x0A / 255, alpha: 1)
+                : NSColor(srgbRed: 0xB2 / 255, green: 0x83 / 255, blue: 0x00 / 255, alpha: 1)
+        })
         static let done = Color(nsColor: .systemGreen)
         static let failed = Color(nsColor: .systemRed)
         static let info = Color(nsColor: .systemBlue)
