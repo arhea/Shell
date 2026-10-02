@@ -303,24 +303,27 @@ final class PaletteModel {
 struct PaletteView: View {
     @Bindable var model: PaletteModel
     @FocusState private var focused: Bool
+    @Environment(\.colorScheme) private var colorScheme
+    /// The design's palette corner: rounder than other panels.
+    static let radius: CGFloat = 16
 
     var body: some View {
         VStack(spacing: 0) {
             searchField
-            Divider().opacity(0.6)
+            Color.primary.opacity(0.09).frame(height: 0.5)
             results
-            Divider().opacity(0.6)
+            Color.primary.opacity(0.09).frame(height: 0.5)
             footer
         }
         .frame(width: CommandPalette.size.width, height: CommandPalette.size.height)
         .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.panel, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: DS.Radius.panel, style: .continuous).strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5))
+        .clipShape(RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Self.radius, style: .continuous).strokeBorder(Color.primary.opacity(0.16), lineWidth: 0.5))
         .onAppear { focused = true }
     }
 
     private var searchField: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Image(systemName: "magnifyingglass").font(.system(size: 15, weight: .medium)).foregroundStyle(.secondary)
             TextField("Go to a tab, worktree, folder or action…", text: $model.query)
                 .textFieldStyle(.plain)
@@ -341,14 +344,14 @@ struct PaletteView: View {
                 }
             KeyHint("esc", boxed: true)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 18)
         .frame(height: 54)
     }
 
     private var results: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 1) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     if model.rows.isEmpty {
                         Text("No matches").font(.system(size: DS.Size.body)).foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity).padding(.vertical, 24)
@@ -359,8 +362,8 @@ struct PaletteView: View {
                             .font(.system(size: DS.Size.small, weight: .semibold))
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 10)
-                            .padding(.top, si == 0 ? 4 : 10)
-                            .padding(.bottom, 3)
+                            .padding(.top, si == 0 ? 8 : 10)
+                            .padding(.bottom, 4)
                         ForEach(Array(section.items.enumerated()), id: \.element.id) { i, item in
                             let idx = offsets[si] + i
                             PaletteRow(item: item, selected: idx == model.selected)
@@ -374,7 +377,9 @@ struct PaletteView: View {
                         }
                     }
                 }
-                .padding(8)
+                .padding(.horizontal, 8)
+                .padding(.top, 6)
+                .padding(.bottom, 8)
             }
             .onChange(of: model.selected) { _, i in
                 if model.rows.indices.contains(i) { proxy.scrollTo(model.rows[i].id) }
@@ -400,17 +405,20 @@ struct PaletteView: View {
             hint("⌘⏎", "open in new tab")
             hint("⌥⏎", "start Claude there")
             Spacer(minLength: 8)
-            Text("Type > for commands, @ for folders").foregroundStyle(.secondary)
+            Text("Type > for commands, @ for folders")
         }
-        .font(.system(size: DS.Size.small))
-        .padding(.horizontal, 16)
-        .frame(height: 34)
+        .font(.system(size: DS.Size.subtitle))
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .padding(.horizontal, 18)
+        .frame(height: 36)
+        .background(Color.black.opacity(colorScheme == .dark ? 0.12 : 0.03))
     }
 
     private func hint(_ keys: String, _ label: String) -> some View {
         HStack(spacing: 4) {
-            Text(keys).foregroundStyle(.secondary)
-            Text(label).foregroundStyle(.primary.opacity(0.75))
+            Text(keys)
+            Text(label)
         }
     }
 }
@@ -421,7 +429,7 @@ struct PaletteRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            KindTile(kind: item.tile, size: 22)
+            PaletteTile(kind: item.tile, bare: item.subtitle.isEmpty, selected: selected)
             VStack(alignment: .leading, spacing: 1) {
                 highlightedTitle
                     .font(.system(size: DS.Size.title))
@@ -438,15 +446,16 @@ struct PaletteRow: View {
             Spacer(minLength: 8)
             if let trailing = item.trailing {
                 Text(trailing)
-                    .font(.system(size: DS.Size.small))
-                    .foregroundStyle(selected ? Color.white.opacity(0.85) : .secondary)
+                    .font(.system(size: DS.Size.subtitle))
+                    .foregroundStyle(selected ? Color.white.opacity(0.85) : Color.secondary.opacity(0.8))
                     .lineLimit(1)
                     .fixedSize()
             }
         }
         .foregroundStyle(selected ? Color.white : Color.primary)
         .padding(.horizontal, 10)
-        .padding(.vertical, item.subtitle.isEmpty ? 6 : 5)
+        // Places (two lines) are 40pt, actions 34pt, as designed.
+        .frame(height: item.subtitle.isEmpty ? 34 : 40)
         .background(RoundedRectangle(cornerRadius: DS.Radius.row).fill(selected ? DS.Status.selection : .clear))
     }
 
@@ -461,5 +470,39 @@ struct PaletteRow: View {
             attributed += piece
         }
         return Text(attributed)
+    }
+}
+
+/// A result's leading mark: the 22pt kind tile for places and tabs, a bare
+/// glyph for one-line actions, and a white-on-translucent tile on the
+/// selected (blue) row.
+struct PaletteTile: View {
+    let kind: TileKind
+    var bare = false
+    var selected = false
+
+    var body: some View {
+        if selected {
+            glyph(color: .white)
+                .frame(width: 22, height: 22)
+                .background(RoundedRectangle(cornerRadius: DS.Radius.control).fill(Color.white.opacity(bare ? 0 : 0.18)))
+        } else if bare {
+            glyph(color: nil).frame(width: 22, height: 22)
+        } else {
+            KindTile(kind: kind, size: 22)
+        }
+    }
+
+    @ViewBuilder private func glyph(color: Color?) -> some View {
+        let tint = color ?? Color.secondary
+        switch kind {
+        case .claude: ClaudeMark(size: 12, color: color ?? DS.claude)
+        case .terminal: Text("›_").font(.system(size: 9, weight: .semibold, design: .monospaced)).foregroundStyle(tint)
+        case .codex: Image(systemName: "chevron.left.forwardslash.chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(tint)
+        case .github: GitHubMark().fill(color ?? Color.primary.opacity(0.9)).frame(width: 13, height: 13)
+        case .worktree: BranchGlyph(size: 11).foregroundStyle(tint)
+        case .folder: Image(systemName: "folder").font(.system(size: 11)).foregroundStyle(tint)
+        case .symbol(let name): Image(systemName: name).font(.system(size: 11)).foregroundStyle(tint)
+        }
     }
 }
