@@ -336,7 +336,7 @@ struct ChecksPopoverView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header.padding(12)
+            header.padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 10)
             Divider()
             if let empty = ChecksText.emptyState(model) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -346,15 +346,17 @@ struct ChecksPopoverView: View {
                 .padding(12)
             } else if let snap = model.snapshot {
                 ScrollView {
-                    VStack(spacing: 0) { ForEach(sorted(snap.jobs)) { job in row(job) } }
-                        .padding(.vertical, 4)
+                    VStack(spacing: 0) { ForEach(sorted(snap.jobs)) { job in ChecksPopoverRow(job: job, onFix: onFix) } }
+                        .padding(6)
                 }
                 .frame(maxHeight: 360)
                 Divider()
-                footer(snap).padding(12)
+                footer(snap)
+                    .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 10)
+                    .background(Color.black.opacity(0.12))
             }
         }
-        .frame(width: 456)
+        .frame(width: 470)
         .onAppear { model.refresh() }
     }
 
@@ -363,7 +365,7 @@ struct ChecksPopoverView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Checks for \(branch)").font(.system(size: DS.Size.title, weight: .semibold)).lineLimit(1).truncationMode(.middle)
                 TimelineView(.periodic(from: .now, by: 30)) { ctx in
-                    Text(subtitle(now: ctx.date)).font(.system(size: DS.Size.small)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(subtitle(now: ctx.date)).font(.system(size: DS.Size.subtitle)).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             Spacer(minLength: 6)
@@ -394,33 +396,9 @@ struct ChecksPopoverView: View {
         return jobs.enumerated().sorted { (rank($0.element.state), $0.offset) < (rank($1.element.state), $1.offset) }.map(\.element)
     }
 
-    private func row(_ job: CheckJob) -> some View {
-        HStack(spacing: 10) {
-            CheckStateMark(state: job.state, size: 11)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(job.name).font(.system(size: DS.Size.body, weight: .medium)).lineLimit(1)
-                if let detail = job.detail {
-                    Text(detail).font(.system(size: DS.Size.small)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
-                }
-            }
-            Spacer(minLength: 6)
-            if let d = ChecksText.duration(job) {
-                Text(d).font(.system(size: DS.Size.small)).monospacedDigit().foregroundStyle(.secondary)
-            }
-            if job.state == .failed {
-                Button { onFix(job) } label: { HStack(spacing: 3) { ClaudeMark(size: 9); Text("Fix") } }
-                    .buttonStyle(.labeled(.claude, compact: true))
-                    .help("Start Claude on \(job.name) with its log attached")
-            }
-        }
-        .foregroundStyle(job.state == .skipped || job.state == .cancelled ? .secondary : .primary)
-        .padding(.horizontal, 12)
-        .frame(minHeight: 46)
-    }
-
     private func footer(_ snap: BranchChecksSnapshot) -> some View {
         let failing = snap.failing
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 6) {
                 if !failing.isEmpty {
                     Button { onFixAll(failing) } label: {
@@ -437,14 +415,51 @@ struct ChecksPopoverView: View {
                 if let url = snap.prURL ?? model.repository.github?.url {
                     Button("Open on GitHub ↗") { NSWorkspace.shared.open(url) }
                         .buttonStyle(.labeled(.plain))
+                    .foregroundStyle(.primary.opacity(0.8))
                 }
             }
             if !failing.isEmpty {
                 Text(failing.count == 1 ? "Starts Claude in this folder with the job log attached"
                      : failing.count == 2 ? "Starts Claude in this folder with both job logs attached"
                      : "Starts Claude in this folder with all \(failing.count) job logs attached")
-                    .font(.system(size: DS.Size.small)).foregroundStyle(.secondary)
+                    .font(.system(size: DS.Size.small)).foregroundStyle(.tertiary)
             }
         }
+    }
+}
+
+/// One job in the checks popover: state, name and detail, duration, and a
+/// Fix button for a failure. Highlights on hover.
+private struct ChecksPopoverRow: View {
+    let job: CheckJob
+    var onFix: (CheckJob) -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            CheckStateMark(state: job.state, size: 11).frame(width: 12)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(job.name).font(.system(size: DS.Size.body)).lineLimit(1).truncationMode(.middle)
+                if let detail = job.detail {
+                    Text(detail).font(.system(size: DS.Size.small)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
+                }
+            }
+            Spacer(minLength: 6)
+            if let d = ChecksText.duration(job) {
+                Text(d).font(.system(size: DS.Size.subtitle)).monospacedDigit().foregroundStyle(.tertiary)
+            }
+            if job.state == .failed {
+                Button { onFix(job) } label: { HStack(spacing: 4) { ClaudeMark(size: 9); Text("Fix") } }
+                    .buttonStyle(.labeled(.neutral, compact: true))
+                    .help("Start Claude on \(job.name) with its log attached")
+            }
+        }
+        .foregroundStyle(job.state == .skipped || job.state == .cancelled ? .secondary : .primary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .frame(minHeight: 40)
+        .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(hovering ? 0.05 : 0)))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
     }
 }

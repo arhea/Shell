@@ -113,9 +113,8 @@ final class InputEditorView: NSView, NSTextViewDelegate {
         separator.wantsLayer = true
         addSubview(separator)
         field.wantsLayer = true
-        field.layer?.cornerRadius = DS.Radius.row
+        field.layer?.cornerRadius = DS.Radius.card
         field.layer?.cornerCurve = .continuous
-        field.layer?.borderWidth = 1
         addSubview(field)
 
         contextHost = NSHostingView(rootView: EditorContextBar(session: session, bar: barState, onCopy: { _ in }))
@@ -182,14 +181,16 @@ final class InputEditorView: NSView, NSTextViewDelegate {
         textView.typingAttributes = [.font: editorFont, .foregroundColor: t.foreground.nsColor]
         textView.ghostColor = t.background.mixed(with: t.foreground, 0.4).nsColor
         promptLabel.font = NSFont.monospacedSystemFont(ofSize: size, weight: .bold)
-        promptLabel.textColor = t.accent.nsColor
-        hintsLabel.font = .systemFont(ofSize: 10.5)
-        hintsLabel.textColor = t.background.mixed(with: t.foreground, 0.42).nsColor
-        separator.layer?.backgroundColor = t.background.mixed(with: t.foreground, 0.14).nsColor.cgColor
+        // The same green ❯ as the block headers in the terminal (ANSI green).
+        promptLabel.textColor = (t.palette.count > 2 ? t.palette[2] : t.accent).nsColor
+        hintsLabel.font = .systemFont(ofSize: DS.Size.subtitle)
+        hintsLabel.textColor = t.background.mixed(with: t.foreground, 0.5).nsColor
+        // A hairline, like the toolbar's.
+        separator.layer?.backgroundColor = t.background.mixed(with: t.foreground, t.isDark ? 0.1 : 0.12).nsColor.cgColor
         // The prompt area shares the terminal's background; the field is raised.
         layer?.backgroundColor = t.background.nsColor.cgColor
         field.layer?.backgroundColor = t.background.mixed(with: t.foreground, t.isDark ? 0.045 : 0.03).nsColor.cgColor
-        field.layer?.borderColor = t.background.mixed(with: t.foreground, t.isDark ? 0.12 : 0.1).nsColor.cgColor
+        field.layer?.borderColor = t.background.mixed(with: t.foreground, t.isDark ? 0.16 : 0.14).nsColor.cgColor
         contextHost.rootView = makeContextBar()
         if let fix = barState.fix { fixHost?.rootView = makeFixBar(fix) }
         highlight()
@@ -242,16 +243,16 @@ final class InputEditorView: NSView, NSTextViewDelegate {
     }
 
     private var contextHeight: CGFloat { 26 }
-    private static let fixBarHeight: CGFloat = 38
-    private static let fixBarGap: CGFloat = 8
+    private static let fixBarHeight: CGFloat = 42
+    private static let fixBarGap: CGFloat = 10
     private var fixBarSpace: CGFloat { barState.fix == nil ? 0 : Self.fixBarHeight + Self.fixBarGap }
 
     // Spacing around the prompt (points). The text area is at least
     // `minTextLines` tall so the input reads as a roomy entry field.
     private static let sidePadding: CGFloat = 20
-    private static let topPadding: CGFloat = 12
-    private static let contextGap: CGFloat = 8
-    private static let bottomPadding: CGFloat = 12
+    private static let topPadding: CGFloat = 10
+    private static let contextGap: CGFloat = 10
+    private static let bottomPadding: CGFloat = 14
     private static let textInset: CGFloat = 4
     /// Padding inside the rounded field.
     private static let fieldPadding: CGFloat = 8
@@ -278,16 +279,19 @@ final class InputEditorView: NSView, NSTextViewDelegate {
         super.layout()
         let w = bounds.width
         let pad = Self.sidePadding
-        separator.frame = isAtTop ? NSRect(x: 0, y: bounds.height - 1, width: w, height: 1) : NSRect(x: 0, y: 0, width: w, height: 1)
+        let hairline = 1 / max(1, window?.backingScaleFactor ?? 2)
+        separator.frame = isAtTop ? NSRect(x: 0, y: bounds.height - hairline, width: w, height: hairline)
+            : NSRect(x: 0, y: 0, width: w, height: hairline)
+        field.layer?.borderWidth = hairline
         var top = Self.topPadding
         if let fixHost, barState.fix != nil {
-            fixHost.frame = NSRect(x: pad - 8, y: top - 2, width: w - pad * 2 + 16, height: Self.fixBarHeight)
+            fixHost.frame = NSRect(x: pad, y: top, width: w - pad * 2, height: Self.fixBarHeight)
             top += Self.fixBarHeight + Self.fixBarGap
         }
-        contextHost.frame = NSRect(x: pad - 4, y: top - 2, width: w - pad * 2 + 8, height: contextHeight)
+        contextHost.frame = NSRect(x: pad, y: top, width: w - pad * 2, height: contextHeight)
         // The rounded input field: ❯, the text and, on the right, key hints.
         let fieldTop = top + contextHeight + Self.contextGap
-        let fieldFrame = NSRect(x: pad - 4, y: fieldTop, width: w - pad * 2 + 8, height: max(0, bounds.height - fieldTop - Self.bottomPadding))
+        let fieldFrame = NSRect(x: pad, y: fieldTop, width: w - pad * 2, height: max(0, bounds.height - fieldTop - Self.bottomPadding))
         field.frame = fieldFrame
         let inner = fieldFrame.insetBy(dx: 12, dy: Self.fieldPadding)
         let promptWidth: CGFloat = 18
@@ -1033,26 +1037,23 @@ struct CommandFixBar: View {
 
     var body: some View {
         let palette = EditorPalette.current
-        HStack(spacing: 8) {
-            Image(systemName: "diamond.fill")
-                .font(.system(size: 8))
-                .foregroundStyle(fix.suggestion == nil ? DS.Status.failed : DS.Status.review)
-                .accessibilityHidden(true)
+        HStack(spacing: 10) {
+            FixDiamond(suggested: fix.suggestion != nil)
             message(palette)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 8)
             if let suggestion = fix.suggestion {
                 Button("Run it") { onRun(suggestion) }
-                    .buttonStyle(.labeled(.primary, compact: true))
+                    .buttonStyle(.labeled(.primary))
                     .help("Run \(suggestion)")
             }
             Button(action: onClaude) {
-                HStack(spacing: 4) { ClaudeMark(size: 10); Text("Fix with Claude") }
+                HStack(spacing: 5) { ClaudeMark(size: 10); Text("Fix with Claude") }
             }
-            .buttonStyle(.labeled(.neutral, compact: true))
+            .buttonStyle(.labeled(.neutral))
             .help("Start Claude in this folder with the command and its output")
-            Button(action: onDismiss) { Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)) }
+            Button(action: onDismiss) { Image(systemName: "xmark").font(.system(size: 10, weight: .medium)) }
                 .buttonStyle(.labeled(.plain, compact: true))
                 .foregroundStyle(palette.dim)
                 .help("Dismiss")
@@ -1060,7 +1061,8 @@ struct CommandFixBar: View {
         }
         .font(.system(size: DS.Size.body))
         .foregroundStyle(palette.foreground)
-        .padding(.horizontal, 10)
+        .padding(.leading, 10)
+        .padding(.trailing, 6)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(RoundedRectangle(cornerRadius: DS.Radius.row).fill(palette.surface))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.row).strokeBorder(palette.border, lineWidth: 0.5))
@@ -1092,9 +1094,27 @@ struct CommandFixBar: View {
 
     private func code(_ text: String, _ palette: EditorPalette) -> some View {
         Text(text)
-            .font(.system(size: DS.Size.small, design: .monospaced))
+            .font(.system(size: 12, design: .monospaced))
             .padding(.horizontal, 5).padding(.vertical, 1)
             .background(RoundedRectangle(cornerRadius: 4).fill(palette.foreground.opacity(0.08)))
+    }
+}
+
+/// The fix bar's mark: a small rotated square, blue to purple like the
+/// design's "suggestion" diamond, or red when there's only the failure.
+private struct FixDiamond: View {
+    var suggested: Bool
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 2)
+            .fill(suggested
+                  ? AnyShapeStyle(LinearGradient(colors: [Color(nsColor: .systemBlue), Color(nsColor: .systemPurple)],
+                                                 startPoint: .topLeading, endPoint: .bottomTrailing))
+                  : AnyShapeStyle(DS.Status.failed))
+            .frame(width: 8, height: 8)
+            .rotationEffect(.degrees(45))
+            .padding(.horizontal, 2)
+            .accessibilityHidden(true)
     }
 }
 
@@ -1144,7 +1164,7 @@ struct EditorContextBar: View {
             AgentLaunchButton(session: session, bar: bar, palette: palette)
             CopyMenuButton(palette: palette, copied: bar.flashMessage != nil && bar.flashSuccess, onCopy: onCopy)
         }
-        .font(.system(size: DS.Size.small, weight: .medium))
+        .font(.system(size: DS.Size.subtitle))
         .animation(.easeOut(duration: 0.15), value: bar.flashMessage)
     }
 
@@ -1193,7 +1213,7 @@ struct EditorContextBar: View {
         if let code = session.lastExitCode {
             let ok = code == 0
             let dur = session.lastDuration.map { TerminalSession.format(duration: $0) }
-            PromptChip(color: ok ? nil : DS.Status.failed) {
+            PromptChip(color: ok ? nil : DS.Status.failed, fill: ok ? .neutral : .tinted) {
                 Image(systemName: ok ? "checkmark" : "xmark").font(.system(size: 9, weight: .bold))
                     .foregroundStyle(ok ? DS.Status.done : DS.Status.failed)
                 Text(ok ? (dur ?? "") : "exit \(code)" + (dur.map { " · " + $0 } ?? ""))
@@ -1205,7 +1225,7 @@ struct EditorContextBar: View {
     private func checksChip(_ checks: BranchChecksModel, snapshot snap: BranchChecksSnapshot, overall: CheckJob.State) -> some View {
         let color: Color = overall == .failed ? DS.Status.failed : overall == .passed ? DS.Status.done : DS.Status.working
         return Button { showChecks.toggle() } label: {
-            PromptChip(color: color) {
+            PromptChip(color: color, fill: overall == .failed ? .alert : .neutral) {
                 switch overall {
                 case .failed:
                     Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
@@ -1236,21 +1256,29 @@ struct EditorContextBar: View {
     }
 }
 
-/// A prompt chip: a small tinted rounded label ("~/code", "⎇ main ✓", "node 22.9").
+/// A prompt chip: a small rounded label ("~/code", "⎇ main ✓", "node 22.9").
+/// Chips sit on a neutral fill with colored text; only a failure (the last
+/// exit status, failing checks) tints the fill.
 struct PromptChip<Content: View>: View {
-    /// Tint for text and background; nil is neutral.
+    enum Fill { case neutral, tinted, alert }
+
+    /// Text color; nil is the neutral secondary text.
     var color: Color?
+    var fill: Fill = .neutral
     /// Lets the chip shrink (its text truncates) when the row is narrow.
     /// Other chips keep their size.
     var compressible = false
     @ViewBuilder var content: Content
 
     var body: some View {
-        let chip = HStack(spacing: 4) { content }
+        let tint = color ?? .primary
+        let shape = RoundedRectangle(cornerRadius: DS.Radius.control)
+        let chip = HStack(spacing: 5) { content }
             .foregroundStyle(color ?? Color.primary.opacity(0.8))
-            .padding(.horizontal, 7)
+            .padding(.horizontal, 8)
             .frame(height: 22)
-            .background(RoundedRectangle(cornerRadius: DS.Radius.control).fill((color ?? .primary).opacity(color == nil ? 0.08 : 0.13)))
+            .background(shape.fill(fill == .neutral ? Color.primary.opacity(0.06) : tint.opacity(fill == .alert ? 0.2 : 0.12)))
+            .overlay { if fill == .alert { shape.strokeBorder(tint.opacity(0.45), lineWidth: 1) } }
             .contentShape(Rectangle())
         if compressible {
             chip.layoutPriority(-1)
@@ -1273,31 +1301,31 @@ private struct SplitButton<Label: View, MenuContent: View>: View {
     var body: some View {
         HStack(spacing: 0) {
             Button(action: action) {
-                HStack(spacing: 5) { label }
-                    .padding(.leading, 9)
-                    .padding(.trailing, 7)
-                    .frame(height: 22)
+                HStack(spacing: 6) { label }
+                    .padding(.horizontal, 10)
+                    .frame(height: 26)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(help)
 
-            Rectangle().fill(palette.border).frame(width: 1, height: 12)
+            Rectangle().fill(Color.primary.opacity(0.15)).frame(width: 0.5, height: 14)
 
             Menu { menu } label: {
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .padding(.horizontal, 6)
-            .frame(height: 22)
+            .foregroundStyle(palette.dim)
+            .padding(.horizontal, 7)
+            .frame(height: 26)
             .help(menuHelp)
             .accessibilityLabel(menuHelp)
         }
-        .font(.system(size: DS.Size.small, weight: .medium))
-        .foregroundStyle(palette.foreground.opacity(0.9))
-        .background(RoundedRectangle(cornerRadius: DS.Radius.control).fill(Color.primary.opacity(hovering ? 0.12 : 0.08)))
+        .font(.system(size: 12))
+        .foregroundStyle(palette.foreground.opacity(0.92))
+        .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(hovering ? 0.12 : 0.08)))
         .onHover { hovering = $0 }
         .fixedSize()
     }
