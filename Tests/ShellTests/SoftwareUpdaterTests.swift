@@ -523,18 +523,28 @@ final class UpdateInstallerTests: XCTestCase {
         XCTAssertTrue(error?.localizedDescription.hasPrefix("Couldn't open Shell-9.9.9.dmg") ?? false, error?.localizedDescription ?? "nil")
     }
 
-    /// Builds a small read-only disk image from `folder`, or nil if hdiutil isn't usable here.
-    private func makeDMG(from folder: URL) throws -> Data? {
+    /// Builds a small read-only disk image of `folder`, or throws `XCTSkip`
+    /// with hdiutil's error where it can't. `hdiutil create` fails now and
+    /// then on a busy Mac ("Resource temporarily unavailable", "image not
+    /// recognized"), so it gets a few tries.
+    private func makeDMG(from folder: URL) throws -> Data {
         let dmg = dir.appendingPathComponent("image-\(UUID().uuidString.prefix(6)).dmg")
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
-        p.arguments = ["create", "-quiet", "-fs", "HFS+", "-format", "UDZO", "-volname", "ShellTest", "-srcfolder", folder.path, dmg.path]
-        p.standardOutput = FileHandle.nullDevice
-        p.standardError = FileHandle.nullDevice
-        try p.run()
-        p.waitUntilExit()
-        guard p.terminationStatus == 0 else { return nil }
-        return try Data(contentsOf: dmg)
+        var error = ""
+        for attempt in 0..<4 {
+            if attempt > 0 { Thread.sleep(forTimeInterval: 0.25 * Double(attempt)) }
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+            p.arguments = ["create", "-ov", "-fs", "HFS+", "-format", "UDZO", "-volname", "ShellTest", "-srcfolder", folder.path, dmg.path]
+            let err = Pipe()
+            p.standardOutput = FileHandle.nullDevice
+            p.standardError = err
+            try p.run()
+            let data = err.fileHandleForReading.readDataToEndOfFile()
+            p.waitUntilExit()
+            if p.terminationStatus == 0 { return try Data(contentsOf: dmg) }
+            error = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        throw XCTSkip("hdiutil can't create disk images here: \(error)")
     }
 
     func testStageCopiesTheAppOutOfTheImageAndVerifiesIt() async throws {
@@ -543,7 +553,7 @@ final class UpdateInstallerTests: XCTestCase {
         try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
         let plist: NSDictionary = ["CFBundleIdentifier": "app.bethesdalabs.Shell", "CFBundleShortVersionString": "9.9.9"]
         plist.write(to: app.appendingPathComponent("Info.plist"), atomically: true)
-        guard let dmg = try makeDMG(from: src) else { throw XCTSkip("hdiutil can't create disk images here") }
+        let dmg = try makeDMG(from: src)
         serve(dmg: dmg)
         let error = await stage(testRelease)
         // The copy is unsigned, so the signature check is what rejects it.
@@ -557,7 +567,7 @@ final class UpdateInstallerTests: XCTestCase {
         let src = dir.appendingPathComponent("empty")
         try FileManager.default.createDirectory(at: src, withIntermediateDirectories: true)
         try Data("readme".utf8).write(to: src.appendingPathComponent("README"))
-        guard let dmg = try makeDMG(from: src) else { throw XCTSkip("hdiutil can't create disk images here") }
+        let dmg = try makeDMG(from: src)
         serve(dmg: dmg)
         let error = await stage(testRelease)
         XCTAssertEqual(error?.localizedDescription, "Couldn't copy Shell from the disk image: no app in the disk image")

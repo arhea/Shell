@@ -209,7 +209,7 @@ enum ClaudeDashboard {
     static func choose(_ option: TerminalPrompt.Option, in session: TerminalSession) {
         let before = terminalPrompt(fromViewport: session.surfaceView.readText())
         session.surfaceView.sendText(option.key)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + AppEnvironment.wait(0.35)) {
             MainActor.assumeIsolated {
                 if let now = terminalPrompt(fromViewport: session.surfaceView.readText()), now == before { session.surfaceView.writeRaw("\r") }
             }
