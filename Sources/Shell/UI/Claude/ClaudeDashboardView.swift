@@ -14,6 +14,12 @@ struct ClaudeDashboardView: View {
     let controller: TerminalWindowController
     /// App-wide model (observed through property access; not state this view owns).
     private let agents = AgentIntegrations.shared
+    /// Data sources, replaceable for tests: plan limits and tokens, past
+    /// sessions, and a fixed list of sessions running elsewhere (nil: ask
+    /// Claude Code).
+    var usage: ClaudeUsage = .shared
+    var history: ClaudeHistory = .shared
+    var elsewhere: [ClaudeRunningSession]?
     @State private var query = ""
 
     private let workingColumns = [GridItem(.adaptive(minimum: 300), spacing: 12, alignment: .top)]
@@ -26,47 +32,51 @@ struct ClaudeDashboardView: View {
         let showsHistory = SettingsStore.shared.settings.claudeSessionsHistory
         HStack(spacing: 0) {
             ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: 14) {
+                    // Page actions, right-aligned under the toolbar's trailing items.
                     DashboardControls(controller: controller, query: $query, showsHistory: showsHistory)
-                    if agents.claude != .installed { hooksBanner(palette) }
-                    ClaudeUsageTile(palette: palette)
-                    if !groups.needsYou.isEmpty {
-                        section(.needsYou, count: groups.needsYou.count) {
-                            VStack(spacing: 10) { tiles(groups.needsYou, palette) }
-                        }
-                    }
-                    if !groups.working.isEmpty {
-                        section(.working, count: groups.working.count) {
-                            LazyVGrid(columns: workingColumns, alignment: .leading, spacing: 12) { tiles(groups.working, palette) }
-                        }
-                    }
-                    if !groups.idle.isEmpty {
-                        section(.idle, count: groups.idle.count) {
-                            VStack(spacing: 0) {
-                                ForEach(Array(groups.idle.enumerated()), id: \.element.id) { i, entry in
-                                    if i > 0 { Divider().padding(.leading, 40) }
-                                    tile(entry, palette)
-                                }
+                    VStack(alignment: .leading, spacing: 22) {
+                        if agents.claude != .installed { hooksBanner(palette) }
+                        ClaudeUsageTile(palette: palette, usage: usage)
+                        if !groups.needsYou.isEmpty {
+                            section(.needsYou, count: groups.needsYou.count) {
+                                VStack(spacing: 10) { tiles(groups.needsYou, palette) }
                             }
-                            .cardSurface()
                         }
+                        if !groups.working.isEmpty {
+                            section(.working, count: groups.working.count) {
+                                LazyVGrid(columns: workingColumns, alignment: .leading, spacing: 12) { tiles(groups.working, palette) }
+                            }
+                        }
+                        if !groups.idle.isEmpty {
+                            section(.idle, count: groups.idle.count) {
+                                VStack(spacing: 0) {
+                                    ForEach(Array(groups.idle.enumerated()), id: \.element.id) { i, entry in
+                                        if i > 0 { Divider().padding(.leading, 40) }
+                                        tile(entry, palette)
+                                    }
+                                }
+                                .dashboardCard()
+                            }
+                        }
+                        if all.isEmpty {
+                            emptyState(palette)
+                        } else if entries.isEmpty {
+                            Text("No sessions in Shell match “\(query)”.")
+                                .font(.system(size: DS.Size.body))
+                                .foregroundStyle(.secondary)
+                        }
+                        RunningElsewhereSection(controller: controller, palette: palette, query: query, fixed: elsewhere)
                     }
-                    if all.isEmpty {
-                        emptyState(palette)
-                    } else if entries.isEmpty {
-                        Text("No sessions in Shell match “\(query)”.")
-                            .font(.system(size: DS.Size.body))
-                            .foregroundStyle(.secondary)
-                    }
-                    RunningElsewhereSection(controller: controller, palette: palette, query: query)
                 }
                 .padding(.horizontal, 24)
-                .padding(.vertical, 18)
+                .padding(.top, 12)
+                .padding(.bottom, 20)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             if showsHistory {
-                PastSessionsDrawer(controller: controller, live: all)
-                    .frame(width: 330)
+                PastSessionsDrawer(controller: controller, live: all, history: history)
+                    .frame(width: 340)
                     .transition(.move(edge: .trailing))
             }
         }
@@ -83,14 +93,12 @@ struct ClaudeDashboardView: View {
 
     private func section<Content: View>(_ section: ClaudeDashboard.Section, count: Int, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 7) {
+            DashboardSectionHeader(title: section.title, count: count) {
                 switch section {
-                case .needsYou: Circle().fill(DS.Status.needsYou).frame(width: 7, height: 7)
+                case .needsYou: Circle().fill(DS.Status.needsYou).frame(width: 8, height: 8)
                 case .working: SpinnerRing(size: 10)
                 case .idle: EmptyView()
                 }
-                Text(section.title).font(.system(size: DS.Size.heading, weight: .semibold))
-                Text("\(count)").font(.system(size: DS.Size.body).monospacedDigit()).foregroundStyle(.secondary)
             }
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isHeader)
@@ -124,46 +132,70 @@ struct ClaudeDashboardView: View {
 
 // MARK: - Controls
 
-/// Filter field, New Session split button and the Recent drawer toggle.
+/// The page's actions, styled and sized like the toolbar's trailing items
+/// (28pt tall, 8pt corners) and right-aligned under them: the filter field,
+/// the New Session split button and the Recent drawer toggle.
 struct DashboardControls: View {
     let controller: TerminalWindowController
     @Binding var query: String
     let showsHistory: Bool
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
+            Spacer(minLength: 0)
             DashboardSearchField(placeholder: "Filter sessions", text: $query)
-                .frame(maxWidth: 320)
-            Spacer(minLength: 8)
-            Menu {
-                Button("New Session") { DashboardActions.newSession(directory: nil, controller: controller) }
-                Button("New Session in Folder…") { DashboardActions.chooseFolder(controller: controller) }
-                Button("Claude in New Worktree…") { controller.perform(.claudeInNewWorktree) }
-                let recent = DashboardActions.recentFolders(ClaudeHistory.shared.sessions)
-                if !recent.isEmpty {
-                    Divider()
-                    Section("Recent Folders") {
-                        ForEach(recent, id: \.self) { dir in
-                            Button(PastSessionCard.homeRelative(dir)) { DashboardActions.newSession(directory: dir, controller: controller) }
+                .frame(width: 220)
+            HStack(spacing: 0) {
+                Button { DashboardActions.newSession(directory: nil, controller: controller) } label: {
+                    HStack(spacing: 6) {
+                        Text("✻").foregroundStyle(DS.claude)
+                        Text("New Session")
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Start a Claude session in a new tab")
+                Color.primary.opacity(0.15).frame(width: 0.5, height: 14)
+                Menu {
+                    Button("New Session") { DashboardActions.newSession(directory: nil, controller: controller) }
+                    Button("New Session in Folder…") { DashboardActions.chooseFolder(controller: controller) }
+                    Button("Claude in New Worktree…") { controller.perform(.claudeInNewWorktree) }
+                    let recent = DashboardActions.recentFolders(ClaudeHistory.shared.sessions)
+                    if !recent.isEmpty {
+                        Divider()
+                        Section("Recent Folders") {
+                            ForEach(recent, id: \.self) { dir in
+                                Button(PastSessionCard.homeRelative(dir)) { DashboardActions.newSession(directory: dir, controller: controller) }
+                            }
                         }
                     }
+                } label: {
+                    Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
                 }
-            } label: {
-                // A menu button's label drops custom views, so the ✻ is text.
-                Text("\(Text("✻").foregroundStyle(DS.claude)) New Session")
-            } primaryAction: {
-                DashboardActions.newSession(directory: nil, controller: controller)
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .foregroundStyle(.secondary)
+                .frame(width: 26)
+                .help("More ways to start a session")
             }
-            .menuStyle(.button)
+            .font(.system(size: DS.Size.body))
+            .frame(height: 28)
+            .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.Radius.row))
             .fixedSize()
-            .help("Start a Claude session in a new tab")
             Button {
                 withAnimation(.easeOut(duration: 0.2)) { SettingsStore.shared.settings.claudeSessionsHistory.toggle() }
             } label: {
-                Label("Recent", systemImage: "sidebar.right")
+                Image(systemName: "sidebar.right")
+                    .font(.system(size: 13))
+                    .frame(width: 32, height: 28)
+                    .background(Color.primary.opacity(showsHistory ? 0.10 : 0.05), in: RoundedRectangle(cornerRadius: DS.Radius.row))
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.labeled(showsHistory ? .neutral : .plain))
+            .buttonStyle(.plain)
             .help(showsHistory ? "Hide recent sessions" : "Show recent sessions")
+            .accessibilityLabel("Recent Sessions")
             .accessibilityAddTraits(showsHistory ? .isSelected : [])
         }
     }
@@ -175,8 +207,8 @@ struct DashboardSearchField: View {
     @Binding var text: String
 
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(.secondary)
+        HStack(spacing: 7) {
+            Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(.tertiary)
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
                 .font(.system(size: DS.Size.body))
@@ -189,8 +221,62 @@ struct DashboardSearchField: View {
         }
         .padding(.horizontal, 9)
         .frame(height: 28)
-        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.row))
-        .overlay(RoundedRectangle(cornerRadius: DS.Radius.row).strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
+        .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: DS.Radius.row))
+    }
+}
+
+/// "● Needs you  1": a 14pt section title with its marker and count.
+struct DashboardSectionHeader<Marker: View>: View {
+    let title: String
+    let count: Int
+    @ViewBuilder var marker: Marker
+
+    var body: some View {
+        HStack(spacing: 8) {
+            marker
+            Text(title).font(.system(size: 14, weight: .semibold))
+            Text("\(count)").font(.system(size: 12).monospacedDigit()).foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// The page's buttons: 28pt (24pt compact) with 7pt corners, as designed.
+struct DashboardButtonStyle: ButtonStyle {
+    var primary = false
+    var compact = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        DashboardButtonBody(label: configuration.label, pressed: configuration.isPressed, primary: primary, compact: compact)
+    }
+}
+
+private struct DashboardButtonBody<Label: View>: View {
+    let label: Label
+    let pressed: Bool
+    let primary: Bool
+    let compact: Bool
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        let radius: CGFloat = compact ? DS.Radius.control : 7
+        label
+            .font(.system(size: compact ? 12 : DS.Size.body, weight: primary ? .medium : .regular))
+            .foregroundStyle(primary ? Color.white : Color.primary)
+            .lineLimit(1)
+            .padding(.horizontal, compact ? 10 : primary ? 14 : 12)
+            .frame(height: compact ? 24 : 28)
+            .background(primary ? DS.Status.selection.opacity(pressed ? 0.8 : 1) : Color.primary.opacity(pressed ? 0.14 : 0.08),
+                        in: RoundedRectangle(cornerRadius: radius))
+            .contentShape(RoundedRectangle(cornerRadius: radius))
+            .opacity(isEnabled ? 1 : 0.45)
+    }
+}
+
+extension View {
+    /// The page's raised card: a faint fill, a hairline and 12pt corners.
+    func dashboardCard(hovering: Bool = false) -> some View {
+        background(RoundedRectangle(cornerRadius: DS.Radius.panel).fill(Color.primary.opacity(hovering ? 0.05 : 0.03)))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.panel).strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
     }
 }
 
@@ -317,12 +403,13 @@ private enum TileParts {
 private struct OpenLink: View {
     let title: String
     let shortcut: String?
+    var size: CGFloat = 12
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Text(shortcut.map { "\(title) \($0)" } ?? title)
-                .font(.system(size: DS.Size.subtitle, weight: .medium))
+                .font(.system(size: size))
                 .foregroundStyle(DS.Status.info)
                 .contentShape(Rectangle())
         }
@@ -332,28 +419,37 @@ private struct OpenLink: View {
     }
 }
 
-/// "Shell / ⎇ feature/editor-tabs  PR #39 · 18 changes · waiting 4 min".
+/// "Shell / ⎇ feature/editor-tabs · 18 changes · waiting 4 min" (dotted, on
+/// the Needs you card) or "Shell / ⎇ bug/38-…  PR #39  12 changes" (Working).
 private struct SessionSubtitle: View {
     let session: TerminalSession
     let palette: ChromePalette
     var trailing: [String] = []
+    var dotted = false
 
     var body: some View {
         let repo = DashboardRepos.shared.repository(for: session)
-        HStack(spacing: 6) {
+        var details: [String] = []
+        if let changes = repo?.status.changeCount, changes > 0 { details.append("\(changes) change\(changes == 1 ? "" : "s")") }
+        details += trailing
+        return HStack(spacing: dotted ? 0 : 8) {
             if let repo {
                 let name = ClaudeDashboard.repoName(slug: repo.github?.slug, folder: repo.name)
                 Text("\(name) / \(Image(systemName: "arrow.triangle.branch")) \(repo.branchLabel)")
                     .lineLimit(1).truncationMode(.middle)
-                if let pr = repo.pullRequest { PullRequestLink(pr: pr, palette: palette, plain: true) }
-                let changes = repo.status.changeCount
-                if changes > 0 { Text("\(changes) change\(changes == 1 ? "" : "s")").foregroundStyle(DS.Status.working).fixedSize() }
+                if let pr = repo.pullRequest {
+                    PullRequestLink(pr: pr, palette: palette, plain: true).padding(.leading, dotted ? 8 : 0)
+                }
             } else {
                 Text(ClaudeDashboard.directory(for: session)).lineLimit(1).truncationMode(.head)
             }
-            ForEach(trailing, id: \.self) { Text("· " + $0).fixedSize() }
+            if dotted {
+                if !details.isEmpty { Text(" · " + details.joined(separator: " · ")).lineLimit(1).fixedSize() }
+            } else {
+                ForEach(details, id: \.self) { Text($0).lineLimit(1).fixedSize() }
+            }
         }
-        .font(.system(size: DS.Size.subtitle))
+        .font(.system(size: 12))
         .foregroundStyle(.secondary)
     }
 }
@@ -370,15 +466,21 @@ private struct NeedsYouCard: View {
     private var session: TerminalSession { entry.session }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .center, spacing: 24) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 8) {
-                        Text(ClaudeDashboard.title(for: entry)).font(.system(size: DS.Size.heading - 1, weight: .semibold)).lineLimit(1)
-                        Pill("\(TileParts.kind(session)) · \(entry.location)", color: .secondary)
+                        Text(ClaudeDashboard.title(for: entry)).font(.system(size: 14, weight: .semibold)).lineLimit(1)
+                        Text("\(TileParts.kind(session)) · \(entry.location)")
+                            .font(.system(size: DS.Size.small))
+                            .foregroundStyle(.primary.opacity(0.75))
+                            .lineLimit(1)
+                            .padding(.horizontal, 6).padding(.vertical, 1)
+                            .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
+                            .fixedSize()
                     }
                     TimelineView(.periodic(from: .now, by: 30)) { context in
-                        SessionSubtitle(session: session, palette: palette, trailing: [ClaudeDashboard.waiting(context.date.timeIntervalSince(since))])
+                        SessionSubtitle(session: session, palette: palette, trailing: [ClaudeDashboard.waiting(context.date.timeIntervalSince(since))], dotted: true)
                     }
                 }
                 Spacer(minLength: 8)
@@ -386,9 +488,11 @@ private struct NeedsYouCard: View {
             }
             request
         }
-        .padding(16)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardSurface(tint: DS.Status.needsYou)
+        .background(RoundedRectangle(cornerRadius: DS.Radius.panel).fill(DS.Status.needsYou.opacity(0.07)))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.panel).strokeBorder(DS.Status.needsYou.opacity(0.3), lineWidth: 1))
         .contentShape(Rectangle())
         .onTapGesture(count: 2, perform: open)
     }
@@ -426,23 +530,24 @@ private struct WorkingCard: View {
     private var session: TerminalSession { entry.session }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(ClaudeDashboard.title(for: entry)).font(.system(size: DS.Size.title + 1, weight: .semibold)).lineLimit(1)
+                Text(ClaudeDashboard.title(for: entry)).font(.system(size: 14, weight: .semibold)).lineLimit(1)
                 Spacer(minLength: 4)
                 // Only this text redraws each second.
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     Text(ClaudeDashboard.elapsed(context.date.timeIntervalSince(since)))
-                        .font(.system(size: DS.Size.subtitle, weight: .medium).monospacedDigit())
+                        .font(.system(size: DS.Size.subtitle).monospacedDigit())
                         .foregroundStyle(DS.Status.working)
                 }
             }
             SessionSubtitle(session: session, palette: palette)
             preview
-                .font(.system(size: DS.Size.body))
-                .foregroundStyle(.primary.opacity(0.88))
+                .font(.system(size: DS.Size.title))
+                .lineSpacing(3)
+                .foregroundStyle(.primary.opacity(0.86))
                 .lineLimit(2)
-                .frame(maxWidth: .infinity, minHeight: 34, alignment: .topLeading)
+                .frame(maxWidth: .infinity, minHeight: 38, alignment: .topLeading)
             Spacer(minLength: 0)
             HStack(spacing: 6) {
                 if let group = TileParts.groupDot(entry) {
@@ -450,15 +555,17 @@ private struct WorkingCard: View {
                 }
                 Text(TileParts.footer(entry)).lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 6)
-                OpenLink(title: "Open", shortcut: TileParts.shortcut(entry), action: open)
+                OpenLink(title: "Open", shortcut: TileParts.shortcut(entry), size: DS.Size.subtitle, action: open)
             }
-            .font(.system(size: DS.Size.small))
-            .foregroundStyle(.secondary)
+            .font(.system(size: DS.Size.subtitle))
+            .foregroundStyle(.tertiary)
+            .padding(.top, 10)
+            .overlay(alignment: .top) { Color.primary.opacity(0.06).frame(height: 0.5) }
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
-        .background(hovering ? Color.primary.opacity(0.03) : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.card))
-        .cardSurface()
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .dashboardCard(hovering: hovering)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(perform: open)
@@ -612,12 +719,16 @@ struct DashboardApproval: View {
 struct DashboardPermissionRow: View {
     let request: ClaudePermissionRequest
     let onDecide: (_ allow: Bool, _ always: Bool) -> Void
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(alignment: .center, spacing: 16) {
-                summary.layoutPriority(1)
-                Spacer(minLength: 0)
+            HStack(alignment: .center, spacing: 24) {
+                // Side by side whenever the request gets ~280pt: long chips
+                // truncate rather than pushing the buttons underneath.
+                summary
+                    .frame(minWidth: 0, idealWidth: 280, maxWidth: .infinity, alignment: .leading)
+                    .layoutPriority(1)
                 buttons
             }
             VStack(alignment: .leading, spacing: 10) {
@@ -632,18 +743,20 @@ struct DashboardPermissionRow: View {
         let chips = DashboardRequestText.chips(toolName: request.toolName, input: request.input)
         let detail = request.description.flatMap { $0.isEmpty ? nil : $0 }
         return VStack(alignment: .leading, spacing: 6) {
-            Text("\(Text(headline).fontWeight(.semibold))\(Text(detail.map { "  " + $0 } ?? "").foregroundStyle(.secondary))")
-                .font(.system(size: DS.Size.body))
+            Text("\(Text(headline).fontWeight(.semibold))\(Text(detail.map { " " + $0 } ?? "").foregroundStyle(.primary.opacity(0.78)))")
+                .font(.system(size: DS.Size.title))
                 .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
             if !chips.isEmpty {
                 HStack(spacing: 6) {
                     ForEach(chips, id: \.self) { chip in
                         Text(chip)
-                            .font(.system(size: DS.Size.small, weight: .medium, design: .monospaced))
+                            .font(.system(size: DS.Size.subtitle, design: .monospaced))
                             .lineLimit(1).truncationMode(.middle)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.Radius.pill))
+                            .padding(.horizontal, 7).padding(.vertical, 2)
+                            // Recessed into the yellow card: darker in dark mode, a faint tint in light.
+                            .background(colorScheme == .dark ? Color.black.opacity(0.25) : Color.primary.opacity(0.06),
+                                        in: RoundedRectangle(cornerRadius: DS.Radius.pill))
                     }
                 }
             }
@@ -654,17 +767,17 @@ struct DashboardPermissionRow: View {
     }
 
     private var buttons: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Button("Deny") { onDecide(false, false) }
-                .buttonStyle(.labeled(.neutral))
+                .buttonStyle(DashboardButtonStyle())
                 .help("Deny this request; Claude continues without it")
             if let always = DashboardRequestText.alwaysLabel(suggestions: request.suggestions) {
                 Button(always) { onDecide(true, true) }
-                    .buttonStyle(.labeled(.neutral))
+                    .buttonStyle(DashboardButtonStyle())
                     .help("Allow and apply Claude Code’s suggested permission update")
             }
             Button("Allow once") { onDecide(true, false) }
-                .buttonStyle(.labeled(.primary))
+                .buttonStyle(DashboardButtonStyle(primary: true))
                 .help("Allow this request only")
         }
         .fixedSize()

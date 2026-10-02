@@ -9,7 +9,7 @@ struct PastSessionsDrawer: View {
     /// Sessions open in Shell right now, to mark (and jump to) the live ones.
     let live: [ClaudeDashboard.Entry]
     /// App-wide model (observed through property access; not state this view owns).
-    private let history = ClaudeHistory.shared
+    var history: ClaudeHistory = .shared
     @State private var query = ""
     /// Rescans transcripts while the drawer is open. Off in unit tests, so
     /// rendering the drawer never reads the user's ~/.claude/projects.
@@ -27,10 +27,10 @@ struct PastSessionsDrawer: View {
                         ForEach(groups) { group in
                             Text(group.title)
                                 .font(.system(size: DS.Size.small, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 10)
-                                .padding(.top, 10)
-                                .padding(.bottom, 2)
+                                .foregroundStyle(.tertiary)
+                                .padding(.horizontal, 8)
+                                .padding(.top, group.id == groups.first?.id ? 6 : 10)
+                                .padding(.bottom, 4)
                                 .accessibilityAddTraits(.isHeader)
                             ForEach(group.sessions) { session in
                                 PastSessionCard(session: session, liveEntry: liveEntry(for: session), palette: p) { action in
@@ -117,13 +117,13 @@ struct PastSessionsDrawer: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("Recent").font(.system(size: DS.Size.title, weight: .semibold))
                 Spacer()
                 if history.isLoading { ProgressView().controlSize(.mini) }
                 if !history.sessions.isEmpty {
                     Text("\(history.sessions.count) session\(history.sessions.count == 1 ? "" : "s")")
-                        .font(.system(size: DS.Size.small).monospacedDigit())
+                        .font(.system(size: DS.Size.subtitle).monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
                 Menu {
@@ -146,7 +146,7 @@ struct PastSessionsDrawer: View {
         }
         .padding(.horizontal, 14)
         .padding(.top, 14)
-        .padding(.bottom, 4)
+        .padding(.bottom, 10)
     }
 
     private var emptyState: some View {
@@ -205,6 +205,7 @@ struct PastSessionCard: View {
     let palette: ClaudePalette
     let perform: (PastSessionAction) -> Void
     @State var hovering = false
+    @Environment(\.colorScheme) private var colorScheme
 
     private var status: DirectoryWorktreeStatus { DirectoryWorktreeStatus.shared }
 
@@ -213,7 +214,7 @@ struct PastSessionCard: View {
         let (wt, repo): (WorktreeInfo?, String?) = if case .worktree(let w, let r)? = state { (w, r) } else { (nil, nil) }
         let missing = state == .missing
         let branch = wt?.branch ?? (wt?.isDetached == true ? "detached @ \(wt?.head ?? "?")" : session.branch)
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: hovering ? 6 : 4) {
             HStack(spacing: 6) {
                 Group {
                     if let branch {
@@ -222,7 +223,7 @@ struct PastSessionCard: View {
                         Text(repo ?? (session.directory as NSString).lastPathComponent)
                     }
                 }
-                .font(.system(size: DS.Size.subtitle))
+                .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 4)
@@ -230,20 +231,17 @@ struct PastSessionCard: View {
                 if missing { Pill("Missing", color: DS.Status.failed) }
             }
             Text(session.prompt ?? session.title)
-                .font(.system(size: DS.Size.title, weight: .semibold))
+                .font(.system(size: DS.Size.title, weight: .medium))
+                .lineSpacing(2)
                 .lineLimit(2)
                 .truncationMode(.tail)
                 .fixedSize(horizontal: false, vertical: true)
-            if hovering {
-                actions(missing: missing).padding(.top, 5)
-            } else {
-                meta(wt: wt, state: state)
-            }
+            meta(wt: wt, state: state)
+            if hovering { actions(missing: missing).padding(.top, 2) }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .rowBackground(selected: false, hovering: hovering)
+        .background(hovering ? Color.primary.opacity(0.06) : .clear, in: RoundedRectangle(cornerRadius: 9))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(count: 2) { if !missing { perform(primaryAction) } }
@@ -256,6 +254,9 @@ struct PastSessionCard: View {
 
     private var primaryAction: PastSessionAction { liveEntry.map { .show($0) } ?? .resume }
 
+    /// Uncommitted changes: yellow as designed, orange on light backgrounds where yellow washes out.
+    private var changesColor: Color { colorScheme == .dark ? DS.Status.needsYou : DS.Status.working }
+
     /// "#674 open · clean · 20 min ago".
     private func meta(wt: WorktreeInfo?, state: DirectoryWorktreeStatus.State?) -> some View {
         HStack(spacing: 4) {
@@ -266,7 +267,7 @@ struct PastSessionCard: View {
             }
             if let wt {
                 if let n = wt.changes {
-                    if n == 0 { Text("clean") } else { Text("\(n) change\(n == 1 ? "" : "s")").foregroundStyle(DS.Status.working) }
+                    if n == 0 { Text("clean") } else { Text("\(n) change\(n == 1 ? "" : "s")").foregroundStyle(changesColor) }
                 } else {
                     Text("checking…")
                 }
@@ -280,8 +281,8 @@ struct PastSessionCard: View {
             Text("·")
             Text(session.lastActive.formatted(.relative(presentation: .named))).fixedSize()
         }
-        .font(.system(size: DS.Size.small))
-        .foregroundStyle(.secondary)
+        .font(.system(size: DS.Size.subtitle))
+        .foregroundStyle(.tertiary)
         .lineLimit(1)
     }
 
@@ -298,20 +299,20 @@ struct PastSessionCard: View {
         HStack(spacing: 6) {
             if let liveEntry {
                 Button("Show") { perform(.show(liveEntry)) }
-                    .buttonStyle(.labeled(.primary, compact: true))
+                    .buttonStyle(DashboardButtonStyle(primary: true, compact: true))
                     .help("Go to the pane where this session is open")
             } else {
                 Button("Resume") { perform(.resume) }
-                    .buttonStyle(.labeled(.primary, compact: true))
+                    .buttonStyle(DashboardButtonStyle(primary: true, compact: true))
                     .help("Resume this conversation in a new tab (claude --resume)")
                     .disabled(missing)
             }
             Button("New") { perform(.newSession) }
-                .buttonStyle(.labeled(.neutral, compact: true))
+                .buttonStyle(DashboardButtonStyle(compact: true))
                 .help("Start a new Claude session in this folder")
                 .disabled(missing)
             Button("Terminal") { perform(.terminal) }
-                .buttonStyle(.labeled(.neutral, compact: true))
+                .buttonStyle(DashboardButtonStyle(compact: true))
                 .help("Open a terminal tab in this folder")
                 .disabled(missing)
             Spacer(minLength: 0)
