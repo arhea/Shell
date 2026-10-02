@@ -63,6 +63,8 @@ struct RightSidebarView: View {
         }
         .background(p.surface)
         .foregroundStyle(p.foreground)
+        // Secondary text and controls follow the terminal theme the panel is drawn in.
+        .environment(\.colorScheme, p.isDark ? .dark : .light)
         // The toolbar's failing-checks capsule asks for the Checks view.
         .onReceive(NotificationCenter.default.publisher(for: BranchChecksRequest.notification)) { note in
             guard note.object == nil || (note.object as AnyObject?) === repo, available.contains(.checks) else { return }
@@ -107,14 +109,17 @@ struct RightSidebarView: View {
         }
         return HStack(spacing: 6) {
             SegmentedTabs(items: items, selection: Binding(get: { tab }, set: { select($0) }))
-            Button(action: onClose) { Image(systemName: "sidebar.right") }
-                .buttonStyle(.labeled(.plain, compact: true))
-                .help(context.isClaude ? "Hide inspector" : "Hide inspector (⌃⌘B)")
-                .accessibilityLabel("Hide inspector")
+            // With vertical tabs the window toolbar has the inspector toggle.
+            if SettingsStore.shared.settings.tabBarStyle != .vertical {
+                Button(action: onClose) { Image(systemName: "sidebar.right") }
+                    .buttonStyle(.labeled(.plain, compact: true))
+                    .help(context.isClaude ? "Hide inspector" : "Hide inspector (⌃⌘B)")
+                    .accessibilityLabel("Hide inspector")
+            }
         }
-        .padding(.horizontal, 10)
-        .padding(.top, 8)
-        .padding(.bottom, 6)
+        .padding(.horizontal, 14)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
     }
 
     private func select(_ t: InspectorTab) {

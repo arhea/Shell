@@ -8,7 +8,7 @@ import SwiftUI
 enum ChecksFix {
     /// "Fix the failing CI check Test / Build and test on PR #39. …"
     static func prompt(for jobs: [CheckJob], logPaths: [String], prNumber: Int?) -> String {
-        let names = jobs.map { job in job.workflow.map { "\($0.components(separatedBy: " · ").first ?? $0) / \(job.name)" } ?? job.name }
+        let names = jobs.map(ChecksText.title)
         let what = names.count == 1 ? "the failing CI check \(names[0])" : "the failing CI checks " + names.joined(separator: ", ")
         var text = "Fix \(what)" + (prNumber.map { " on PR #\($0)" } ?? "") + "."
         if !logPaths.isEmpty {
@@ -80,6 +80,21 @@ struct CheckStateMark: View {
 /// Shared wording for check states and the empty states of both views.
 @MainActor
 enum ChecksText {
+    /// "Test / Build and test": the workflow's name (without its " · file.yml")
+    /// and the job's, or just the job's when the workflow is unknown or already in it.
+    static func title(_ job: CheckJob) -> String {
+        guard let workflow = job.workflow?.components(separatedBy: " · ").first?.trimmingCharacters(in: .whitespaces),
+              !workflow.isEmpty, workflow != job.name, !job.name.hasPrefix(workflow + " / ") else { return job.name }
+        return "\(workflow) / \(job.name)"
+    }
+
+    /// "test.yml" from "Test · test.yml", shown under a job's title.
+    static func workflowFile(_ job: CheckJob) -> String? {
+        guard let parts = job.workflow?.components(separatedBy: " · "), parts.count > 1 else { return nil }
+        let file = parts.dropFirst().joined(separator: " · ").trimmingCharacters(in: .whitespaces)
+        return file.isEmpty ? nil : file
+    }
+
     static func duration(_ job: CheckJob) -> String? {
         switch job.state {
         case .skipped: "skipped"
@@ -140,7 +155,7 @@ struct InspectorChecksView: View {
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 14) {
                     header
                     if let empty = ChecksText.emptyState(model) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -160,16 +175,18 @@ struct InspectorChecksView: View {
                     }
                     if let extra { extra }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+                .padding(.horizontal, 14)
+                .padding(.top, 4)
+                .padding(.bottom, 14)
             }
             VStack(alignment: .leading, spacing: 8) {
                 if showsAutoFix { autoFixCard }
                 Text("Refreshes every 10s while a run is active · via gh")
-                    .font(.system(size: DS.Size.caption)).foregroundStyle(.tertiary)
+                    .font(.system(size: DS.Size.small)).foregroundStyle(.tertiary)
+                    .padding(.horizontal, 2)
             }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 10)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 14)
             .padding(.top, 4)
         }
         .onAppear { model.refresh() }
@@ -177,14 +194,15 @@ struct InspectorChecksView: View {
 
     private var header: some View {
         HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text("Checks on this branch").font(.system(size: DS.Size.title, weight: .semibold))
                 if let snap = model.snapshot {
                     TimelineView(.periodic(from: .now, by: 30)) { ctx in
-                        Text(ChecksText.subtitle(snap, now: ctx.date)).font(.system(size: DS.Size.small)).foregroundStyle(.secondary)
+                        Text(ChecksText.subtitle(snap, now: ctx.date)).font(.system(size: DS.Size.subtitle)).foregroundStyle(.secondary)
                     }
                 }
             }
+            .padding(.horizontal, 2)
             Spacer(minLength: 4)
             if model.isLoading && model.snapshot != nil { ProgressView().controlSize(.mini) }
             Button { model.refresh() } label: { Image(systemName: "arrow.clockwise") }
@@ -195,92 +213,147 @@ struct InspectorChecksView: View {
     }
 
     private func chips(_ snap: BranchChecksSnapshot) -> some View {
-        HStack(spacing: 6) {
-            if !snap.failing.isEmpty { Pill("\(snap.failing.count) failing", color: DS.Status.failed) }
-            if !snap.running.isEmpty { Pill("\(snap.running.count) running", color: DS.Status.working) }
-            if !snap.passed.isEmpty { Pill("\(snap.passed.count) passed", color: DS.Status.done) }
-            if !snap.skipped.isEmpty { Pill("\(snap.skipped.count) skipped", color: .secondary) }
+        HStack(spacing: 4) {
+            if !snap.failing.isEmpty { CheckCountChip(text: "\(snap.failing.count) failing", color: DS.Status.failed) }
+            if !snap.running.isEmpty { CheckCountChip(text: "\(snap.running.count) running", color: DS.Status.working) }
+            if !snap.passed.isEmpty { CheckCountChip(text: "\(snap.passed.count) passed", color: DS.Status.done) }
+            if !snap.skipped.isEmpty { CheckCountChip(text: "\(snap.skipped.count) skipped", color: nil) }
         }
     }
 
     private func failingCard(_ job: CheckJob) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 8) {
-                CheckStateMark(state: .failed)
+                CheckStateMark(state: .failed).padding(.top, 1)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(job.name).font(.system(size: DS.Size.body, weight: .semibold)).lineLimit(2)
-                    if let wf = job.workflow { Text(wf).font(.system(size: DS.Size.small)).foregroundStyle(.secondary).lineLimit(1) }
+                    Text(ChecksText.title(job)).font(.system(size: DS.Size.body, weight: .semibold)).lineLimit(2)
+                    if let file = ChecksText.workflowFile(job) {
+                        Text(file).font(.system(size: DS.Size.small)).foregroundStyle(.secondary).lineLimit(1)
+                    }
                 }
                 Spacer(minLength: 4)
-                if let d = ChecksText.duration(job) { Text(d).font(.system(size: DS.Size.small)).monospacedDigit().foregroundStyle(.secondary) }
+                if let d = ChecksText.duration(job) {
+                    Text(d).font(.system(size: DS.Size.subtitle)).monospacedDigit().foregroundStyle(.tertiary).padding(.top, 1)
+                }
             }
+            .padding(.horizontal, 10).padding(.top, 10).padding(.bottom, 8)
             if !job.steps.isEmpty {
                 VStack(spacing: 4) {
                     ForEach(job.steps, id: \.self) { step in
+                        let color: Color = step.state == .failed ? DS.Status.failed : .secondary
                         HStack(spacing: 8) {
-                            CheckStateMark(state: step.state, size: 11)
-                            Text(step.name)
-                                .foregroundStyle(step.state == .failed ? DS.Status.failed : step.state == .skipped ? .secondary : .primary)
-                                .lineLimit(1)
+                            CheckStateMark(state: step.state, size: 10)
+                            Text(step.name).font(.system(size: 12)).lineLimit(1)
                             Spacer(minLength: 4)
                             if let d = ChecksText.duration(step) {
-                                Text(d).monospacedDigit().foregroundStyle(step.state == .failed ? DS.Status.failed : .secondary)
+                                Text(d).font(.system(size: DS.Size.subtitle)).monospacedDigit()
                             }
                         }
-                        .font(.system(size: DS.Size.small))
+                        .foregroundStyle(step.state == .skipped ? AnyShapeStyle(.tertiary) : AnyShapeStyle(color))
                     }
                 }
-                .padding(.leading, 22)
+                .padding(.leading, 30).padding(.trailing, 10).padding(.top, 2).padding(.bottom, 10)
             } else if let detail = job.detail {
-                Text(detail).font(.system(size: DS.Size.small)).foregroundStyle(.secondary).lineLimit(3).padding(.leading, 22)
+                Text(detail).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(3)
+                    .padding(.leading, 30).padding(.trailing, 10).padding(.bottom, 10)
             }
+            Color.primary.opacity(0.07).frame(height: 0.5)
             HStack(spacing: 6) {
                 if fixing.contains(job.id) {
-                    Button {} label: { HStack(spacing: 5) { SpinnerRing(size: 10); Text("Claude is fixing") } }
-                        .buttonStyle(.labeled(.claude, compact: true))
-                        .disabled(true)
+                    HStack(spacing: 5) {
+                        SpinnerRing(color: DS.claude, size: 9)
+                        Text("Claude is fixing")
+                    }
+                    .font(.system(size: 12))
+                    .foregroundStyle(DS.claude)
+                    .frame(maxWidth: .infinity, minHeight: 26)
+                    .background(DS.claude.opacity(0.18), in: RoundedRectangle(cornerRadius: 7))
+                    .accessibilityElement(children: .combine)
                 } else {
-                    Button { onFix(job) } label: { HStack(spacing: 4) { ClaudeMark(size: 10); Text("Fix with Claude") } }
-                        .buttonStyle(.labeled(.claude, compact: true))
-                        .help("Start Claude on this failure with the job's log attached")
+                    Button { onFix(job) } label: {
+                        HStack(spacing: 5) { ClaudeMark(size: 10, color: .white); Text("Fix with Claude") }
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity, minHeight: 26)
+                            .background(DS.Status.selection, in: RoundedRectangle(cornerRadius: 7))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Start Claude on this failure with the job's log attached")
                 }
                 Button("Re-run") { Task { await model.rerun(job) } }
-                    .buttonStyle(.labeled(.neutral, compact: true))
+                    .buttonStyle(CheckCardButtonStyle())
                 if let url = job.url {
                     Button("Log ↗") { NSWorkspace.shared.open(url) }
-                        .buttonStyle(.labeled(.neutral, compact: true))
+                        .buttonStyle(CheckCardButtonStyle())
                         .help("Open the job's log on GitHub")
                 }
-                Spacer(minLength: 0)
             }
+            .padding(.horizontal, 10).padding(.vertical, 8)
         }
-        .padding(10)
-        .cardSurface(tint: DS.Status.failed)
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: DS.Radius.card))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card).strokeBorder(DS.Status.failed.opacity(0.35), lineWidth: 1))
     }
 
     private func otherJobs(_ jobs: [CheckJob]) -> some View {
         VStack(spacing: 0) {
             ForEach(Array(jobs.enumerated()), id: \.element.id) { i, job in
-                if i > 0 { Divider().opacity(0.5) }
+                if i > 0 { Color.primary.opacity(0.06).frame(height: 0.5) }
                 CheckJobRow(job: job)
             }
         }
-        .cardSurface()
+        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card))
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: DS.Radius.card))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card).strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
     }
 
     private var autoFixCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Toggle(isOn: Binding(get: { model.sendFailuresToClaude }, set: { model.sendFailuresToClaude = $0 })) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
                 Text("Send failures to Claude").font(.system(size: DS.Size.body, weight: .semibold))
+                Spacer(minLength: 4)
+                Toggle("Send failures to Claude", isOn: Binding(get: { model.sendFailuresToClaude }, set: { model.sendFailuresToClaude = $0 }))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
             }
-            .toggleStyle(.switch)
-            .controlSize(.small)
             Text("When a check fails on this branch, Claude gets the log and starts a fix. Auto mode still asks before pushing.")
-                .font(.system(size: DS.Size.small)).foregroundStyle(.secondary)
+                .font(.system(size: DS.Size.subtitle)).foregroundStyle(.secondary)
+                .lineSpacing(2)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(10)
-        .cardSurface()
+        .padding(.horizontal, 12).padding(.vertical, 11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: DS.Radius.card))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card).strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
+    }
+}
+
+/// "1 failing", "3 passed": a count of jobs in a state, as a tinted capsule.
+struct CheckCountChip: View {
+    let text: String
+    /// Nil is the neutral chip (skipped).
+    let color: Color?
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: DS.Size.subtitle))
+            .foregroundStyle(color.map { AnyShapeStyle($0) } ?? AnyShapeStyle(Color.primary.opacity(0.8)))
+            .padding(.horizontal, 9).padding(.vertical, 3)
+            .background(color.map { $0.opacity(0.14) } ?? Color.primary.opacity(0.06), in: Capsule())
+            .fixedSize()
+    }
+}
+
+/// The failing card's quiet "Re-run" and "Log ↗".
+struct CheckCardButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12))
+            .padding(.horizontal, 9)
+            .frame(minHeight: 26)
+            .background(Color.primary.opacity(configuration.isPressed ? 0.14 : 0.08), in: RoundedRectangle(cornerRadius: 7))
+            .contentShape(Rectangle())
     }
 }
 
@@ -295,14 +368,14 @@ struct CheckJobRow: View {
             HStack(spacing: 8) {
                 CheckStateMark(state: job.state, size: 11)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(job.name).font(.system(size: DS.Size.body)).lineLimit(1).truncationMode(.middle)
+                    Text(ChecksText.title(job)).font(.system(size: DS.Size.body)).lineLimit(1).truncationMode(.tail)
                     if job.state == .running, let detail = job.detail {
                         Text(detail).font(.system(size: DS.Size.caption)).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
                 Spacer(minLength: 4)
                 if let d = ChecksText.duration(job) {
-                    Text(d).font(.system(size: DS.Size.small)).monospacedDigit().foregroundStyle(.secondary)
+                    Text(d).font(.system(size: DS.Size.subtitle)).monospacedDigit().foregroundStyle(.tertiary)
                 }
             }
             .foregroundStyle(dim ? .secondary : .primary)
@@ -313,7 +386,7 @@ struct CheckJobRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help(job.url == nil ? job.name : "Open \(job.name) on GitHub")
+        .help(job.url == nil ? ChecksText.title(job) : "Open \(ChecksText.title(job)) on GitHub")
     }
 }
 

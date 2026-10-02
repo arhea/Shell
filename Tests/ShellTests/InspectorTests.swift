@@ -188,6 +188,12 @@ final class InspectorLogicTests: XCTestCase {
     func testCheckWording() {
         var job = CheckJob(id: "1", name: "Build and test", workflow: "Test · test.yml", state: .failed, duration: 242)
         XCTAssertEqual(ChecksText.duration(job), "4m 02s")
+        XCTAssertEqual(ChecksText.title(job), "Test / Build and test")
+        XCTAssertEqual(ChecksText.workflowFile(job), "test.yml")
+        XCTAssertEqual(ChecksText.title(CheckJob(id: "2", name: "swiftlint", state: .passed)), "swiftlint")
+        XCTAssertEqual(ChecksText.title(CheckJob(id: "3", name: "Lint", workflow: "Lint", state: .passed)), "Lint")
+        XCTAssertEqual(ChecksText.title(CheckJob(id: "4", name: "Lint / swiftlint", workflow: "Lint", state: .passed)), "Lint / swiftlint")
+        XCTAssertNil(ChecksText.workflowFile(CheckJob(id: "5", name: "x", workflow: "Test", state: .passed)))
         job.state = .skipped
         XCTAssertEqual(ChecksText.duration(job), "skipped")
         job.state = .queued

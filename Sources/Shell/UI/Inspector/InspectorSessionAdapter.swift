@@ -3,15 +3,21 @@ import Foundation
 // Turns a native Claude session's live state into the inspector's plain
 // inputs, so the inspector views stay independent of ClaudeCodeSession.
 
-extension InspectorTodo {
-    init(_ todo: ClaudeTodo, index: Int) {
-        let state: State = switch todo.status {
+extension InspectorTodo.State {
+    init(_ status: ClaudeTodo.Status) {
+        self = switch status {
         case .pending: .pending
         case .inProgress: .inProgress
         case .completed: .completed
         }
-        self.init(id: "\(index)-\(todo.content)", title: todo.status == .inProgress && !todo.activeForm.isEmpty ? todo.activeForm : todo.content,
-                  state: state)
+    }
+}
+
+extension InspectorTodo {
+    /// The to-do as written ("File the issue and PR"); the status line above
+    /// the composer says what's happening now ("Writing the PR description").
+    init(_ todo: ClaudeTodo, index: Int) {
+        self.init(id: "\(index)-\(todo.content)", title: todo.content, state: State(todo.status))
     }
 }
 

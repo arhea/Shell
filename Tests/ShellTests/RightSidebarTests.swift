@@ -179,8 +179,15 @@ final class RightSidebarTests: GitAreaTestCase {
             XCTAssertGreaterThan(host.fittingSize.height, 0, "\(tab)")
         }
 
-        // The tab bar for a terminal pane: Worktrees, Checks, Files, then the close button.
+        // With vertical tabs the window toolbar has the inspector toggle, so the
+        // tab bar is just the tabs.
         SettingsStore.shared.settings.sidebarTab = .files
+        SettingsStore.shared.settings.tabBarStyle = .vertical
+        let vertical = claudeWindow(sidebar(f, repo: repo, worktrees: worktrees, prs: prs, actions: actions), width: 380, height: 700)
+        XCTAssertEqual(vertical.controls().filter { $0.frame.minY < 40 }.count, 3)
+
+        // With horizontal tabs, a terminal pane's tab bar: Worktrees, Checks, Files, then the close button.
+        SettingsStore.shared.settings.tabBarStyle = .horizontal
         let w = claudeWindow(sidebar(f, repo: repo, worktrees: worktrees, prs: prs, actions: actions) { closes += 1 }, width: 380, height: 700)
         func bar() -> [NSView] { w.controls().filter { $0.frame.minY < 40 }.sorted { $0.frame.minX < $1.frame.minX } }
         XCTAssertEqual(bar().count, 4)
