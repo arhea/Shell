@@ -43,30 +43,45 @@ final class TerminalWindow: NSWindow {
     }
     private var defaultTitlebarHeight: CGFloat?
     private var defaultButtonOrigins: [NSPoint] = []
-    nonisolated(unsafe) private var buttonObserver: NSObjectProtocol?
+    nonisolated(unsafe) private var frameObservers: [NSObjectProtocol] = []
+    private var isLayingOutTrafficLights = false
 
     private var trafficLights: [NSButton] {
         [.closeButton, .miniaturizeButton, .zoomButton].compactMap { standardWindowButton($0) }
     }
 
+    // AppKit re-lays out the titlebar when the window becomes or stops being
+    // key or main (the first click into a window), sometimes resetting only
+    // the container's height, so put the buttons back after each change.
+    override func becomeKey() { super.becomeKey(); layoutTrafficLights() }
+    override func resignKey() { super.resignKey(); layoutTrafficLights() }
+    override func becomeMain() { super.becomeMain(); layoutTrafficLights() }
+    override func resignMain() { super.resignMain(); layoutTrafficLights() }
+
     /// Moves the traffic lights to `trafficLightCenter`. AppKit resets them on
     /// resize, key changes and full-screen transitions, so this runs again
-    /// whenever the close button's frame changes. (Electron and Tauri move
-    /// them the same way: grow the titlebar container, then offset each button.)
+    /// whenever the close button, the titlebar view or its container changes
+    /// frame. (Electron and Tauri move them the same way: grow the titlebar
+    /// container, then offset each button.)
     func layoutTrafficLights() {
+        guard !isLayingOutTrafficLights else { return }
         let buttons = trafficLights
         guard buttons.count == 3, let titlebar = buttons[0].superview, let container = titlebar.superview,
               !styleMask.contains(.fullScreen) else { return }
+        isLayingOutTrafficLights = true
+        defer { isLayingOutTrafficLights = false }
         if defaultTitlebarHeight == nil {
             defaultTitlebarHeight = container.frame.height
             defaultButtonOrigins = buttons.map(\.frame.origin)
-            buttons[0].postsFrameChangedNotifications = true
-            buttonObserver = NotificationCenter.default.addObserver(
-                forName: NSView.frameDidChangeNotification, object: buttons[0], queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self, self.trafficLightCenter != nil else { return }
-                    self.layoutTrafficLights()
-                }
+            for view in [buttons[0], titlebar, container] {
+                view.postsFrameChangedNotifications = true
+                frameObservers.append(NotificationCenter.default.addObserver(
+                    forName: NSView.frameDidChangeNotification, object: view, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        guard let self, self.trafficLightCenter != nil else { return }
+                        self.layoutTrafficLights()
+                    }
+                })
             }
         }
         let baseHeight = defaultTitlebarHeight ?? 28
@@ -92,7 +107,7 @@ final class TerminalWindow: NSWindow {
     }
 
     deinit {
-        if let buttonObserver { NotificationCenter.default.removeObserver(buttonObserver) }
+        for observer in frameObservers { NotificationCenter.default.removeObserver(observer) }
     }
 }
 
