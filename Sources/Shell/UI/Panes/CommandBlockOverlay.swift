@@ -230,6 +230,9 @@ final class CommandBlockOverlayView: NSView {
             lost.formIntersection(live)
         }
         scheduleRefresh()
+        // The shell prints "✗ exit N" just after the command finishes; look
+        // again shortly so a failed block's card takes in that line too.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.scheduleRefresh(after: 0) }
     }
 
     /// Size, font or settings changed.
