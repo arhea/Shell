@@ -419,6 +419,12 @@ enum AppEnvironment {
     /// minimum and nothing is read from or written to the user's real files.
     static let isRunningTests: Bool =
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil || NSClassFromString("XCTestCase") != nil
+
+    /// A fixed wait (a settle or debounce delay, a status poll, a kill grace
+    /// period), a 20th as long under tests so the suite doesn't sit through
+    /// them. Only the gaps shrink; the order of events stays the same.
+    static func wait(_ duration: Duration) -> Duration { isRunningTests ? duration / 20 : duration }
+    static func wait(_ seconds: TimeInterval) -> TimeInterval { isRunningTests ? seconds / 20 : seconds }
 }
 
 /// Loads, stores and publishes the user's settings. Persisted as JSON so it
@@ -444,7 +450,7 @@ final class SettingsStore {
     /// tests get a throwaway folder so they never touch the real one.
     /// Debug builds honor `SHELL_APP_SUPPORT_DIR`, so a dev build can run
     /// beside the installed app without sharing its settings or session restore.
-    static let supportDirectory: URL = {
+    nonisolated static let supportDirectory: URL = {
         #if DEBUG
         if let dir = ProcessInfo.processInfo.environment["SHELL_APP_SUPPORT_DIR"], !dir.isEmpty, !AppEnvironment.isRunningTests {
             let url = URL(fileURLWithPath: (dir as NSString).expandingTildeInPath, isDirectory: true)
@@ -514,7 +520,7 @@ final class SettingsStore {
         saveWork?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.saveNow() }
         saveWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + AppEnvironment.wait(0.3), execute: work)
     }
 
     func saveNow() {

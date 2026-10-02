@@ -260,7 +260,12 @@ final class GitRepository {
             refreshAgain = false
             if let out = await Self.run(git, ["status", "--porcelain=v1", "-z", "-b", "--untracked-files=all", "--ignored=matching"], in: root.path) {
                 let snap = GitStatusSnapshot.parse(out)
-                if snap != status { status = snap }
+                if snap != status {
+                    // Drop the PR as soon as HEAD leaves its branch, not after the
+                    // rest of this refresh, so it never shows against the new HEAD.
+                    if pullRequest != nil, snap.detached || snap.branch != prBranch { pullRequest = nil }
+                    status = snap
+                }
             }
             if status.detached || status.branch == nil {
                 headCommit = await Self.run(git, ["rev-parse", "--short", "HEAD"], in: root.path)?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -326,7 +331,7 @@ final class GitRepository {
 
     private func startWatching() {
         // A 1 s latency coalesces bursts (a build writes thousands of files).
-        watcher = DirectoryWatcher(path: root.path, latency: 1.0) { [weak self] paths in
+        watcher = DirectoryWatcher(path: root.path, latency: AppEnvironment.wait(1.0)) { [weak self] paths in
             guard let self else { return }
             if paths.contains(where: { self.affectsStatus($0) }) { self.refresh() }
         }

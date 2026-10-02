@@ -162,7 +162,7 @@ final class ClaudeDashboardModelTests: XCTestCase {
         defer { session.close() }
         // No terminal engine in tests: this exercises the path without effect.
         ClaudeDashboard.choose(.init(key: "1", label: "Yes"), in: session)
-        _ = waitUntil(timeout: 0.6) { false }
+        _ = waitUntil(timeout: AppEnvironment.wait(0.35) + 0.1) { false } // let the delayed Return check run
     }
 
     func testSummaryRefreshIsOffWithoutAppleIntelligence() async {

@@ -218,7 +218,7 @@ final class ActionsModel {
             if let err = await WorktreeService.runReportingError(gh, args, in: repoRoot, environment: environment) {
                 message = err
             }
-            try? await Task.sleep(for: .seconds(2))
+            try? await Task.sleep(for: AppEnvironment.wait(.seconds(2)))
             await load()
         }
     }

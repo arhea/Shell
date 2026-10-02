@@ -36,8 +36,15 @@ final class ProcessCleanupTests: XCTestCase {
     }
 
     func testTerminateKillsProcessesThatIgnoreSIGTERM() throws {
-        let p = try spawn("trap '' TERM; while :; do sleep 0.05; done")
-        usleep(100_000) // let the trap install
+        // The script says when the trap is in place; terminating it before
+        // then would end it with SIGTERM instead.
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", "trap '' TERM; echo ready; while :; do sleep 0.05; done"]
+        let out = Pipe()
+        p.standardOutput = out
+        try p.run()
+        XCTAssertEqual(String(decoding: out.fileHandleForReading.availableData, as: UTF8.self), "ready\n")
         ProcessCleanup.terminate([p.processIdentifier], grace: 0.3)
         p.waitUntilExit()
         XCTAssertEqual(p.terminationStatus, SIGKILL)

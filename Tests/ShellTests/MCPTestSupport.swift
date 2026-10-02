@@ -55,8 +55,7 @@ struct FakeMCPClaude {
           print -r -- "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"$id\",\"response\":$body}}"
         done
         """#
-        try script.write(to: dir.appendingPathComponent("claude"), atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binary)
+        try writeExecutable(script, to: dir.appendingPathComponent("claude"))
     }
 
     func set(_ file: String, _ contents: String) throws {
@@ -122,10 +121,7 @@ enum FakeMCPServer {
           fi
         done
         """#
-        let url = dir.appendingPathComponent(name)
-        try script.write(to: url, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
-        return url.path
+        return try writeExecutable(script, to: dir.appendingPathComponent(name))
     }
 }
 

@@ -146,8 +146,7 @@ struct FakeGH {
         print -r -- "fake gh: no rule for: $*" >&2
         exit 1
         """#
-        try script.write(to: dir.appendingPathComponent("gh"), atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path)
+        try writeExecutable(script, to: dir.appendingPathComponent("gh"))
     }
 
     /// Adds a rule; earlier rules win.

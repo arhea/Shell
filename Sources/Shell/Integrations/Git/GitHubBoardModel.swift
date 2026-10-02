@@ -319,7 +319,7 @@ final class GitHubBoardModel {
         message = ("#\(pr.number): \(action.done)", false)
         if case .merge = action { selection = nil } else if case .close = action { selection = nil }
         // GitHub takes a moment to recompute review state and checks.
-        try? await Task.sleep(for: .seconds(1))
+        try? await Task.sleep(for: AppEnvironment.wait(.seconds(1)))
         refresh()
         return true
     }

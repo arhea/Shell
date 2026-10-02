@@ -430,15 +430,14 @@ final class ClaudeGateTests: XCTestCase {
     func testLoginGateSignsInWithAPastedCode() throws {
         let dir = try makeTemporaryDirectory()
         let script = dir.appendingPathComponent("claude")
-        try """
+        try writeExecutable("""
         #!/bin/sh
         if [ "$1" = "auth" ] && [ "$2" = "status" ]; then echo '{"loggedIn": true}'; exit 0; fi
         echo "Opening https://claude.ai/oauth/authorize?code=test in your browser"
         echo "Paste code here if prompted >"
         read code
         exit 0
-        """.write(to: script, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+        """, to: script)
 
         let login = login(binary: script.path)
         var signedIn = false
@@ -460,8 +459,7 @@ final class ClaudeGateTests: XCTestCase {
     func testLoginGateCancelsSigningIn() throws {
         let dir = try makeTemporaryDirectory()
         let script = dir.appendingPathComponent("claude")
-        try "#!/bin/sh\nread code\nexit 0\n".write(to: script, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+        try writeExecutable("#!/bin/sh\nread code\nexit 0\n", to: script)
         let login = login(binary: script.path)
         login.begin(.console)
         let w = claudeWindow(LoginGate(login: login, palette: F.palette, onClose: {}), width: 600)
