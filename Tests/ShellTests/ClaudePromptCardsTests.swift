@@ -136,16 +136,47 @@ final class ClaudeQuestionCardTests: XCTestCase {
         XCTAssertEqual(answers, [["Which database?": "Postgres, Redis"], ["Which database?": "Postgres"]])
     }
 
-    func testSubmitWaitsForEveryQuestion() {
+    func testSeveralQuestionsShowOneAtATime() {
         var answers: [[String: String]] = []
         let w = claudeWindow(QuestionCard(request: request(count: 2), palette: p, fontSize: 13) { answers.append($0) } onDeny: {}, width: 700)
-        // Q1 options 0-2, Q2 options 3-5, then Submit (once enabled) and Skip.
-        w.press(0)
-        XCTAssertEqual(w.controls().count, 7, "Submit stays disabled until both are answered")
-        XCTAssertTrue(answers.isEmpty, "Submit is disabled until both are answered")
-        w.press(4)
+        // Page 1: two steps, Q1's three options, then Skip (Next is disabled until it's answered).
+        XCTAssertEqual(w.controls().count, 6, "only the first question's options show")
+        w.press(4) // Redis answers Q1 and moves on
+        // Page 2: two steps, Q2's options, Back and Skip (Submit waits for Q2).
+        XCTAssertEqual(w.controls().count, 7, "Submit stays disabled until every question is answered")
+        XCTAssertTrue(answers.isEmpty)
+        w.press(3) // Spanner, on the last page, stays put
         w.press(6)
-        XCTAssertEqual(answers, [["Question 1?": "Postgres", "Question 2?": "Spanner"]])
+        XCTAssertEqual(answers, [["Question 1?": "Redis", "Question 2?": "Spanner"]])
+    }
+
+    func testBackKeepsEarlierAnswers() {
+        var answers: [[String: String]] = []
+        let w = claudeWindow(QuestionCard(request: request(count: 2), palette: p, fontSize: 13) { answers.append($0) } onDeny: {}, width: 700)
+        w.press(4) // Q1: Redis, which moves on
+        w.press(2) // Q2: Postgres
+        w.press(5) // Back to Q1, still answered: steps, options, Next, Skip
+        XCTAssertEqual(w.controls().count, 7)
+        w.press(3) // Q1: Spanner instead, which moves on again
+        w.press(6)
+        XCTAssertEqual(answers, [["Question 1?": "Spanner", "Question 2?": "Postgres"]])
+    }
+
+    func testStepsJumpBetweenQuestions() {
+        var answers: [[String: String]] = []
+        let w = claudeWindow(QuestionCard(request: request(multi: true, count: 3), palette: p, fontSize: 13) { answers.append($0) } onDeny: {},
+                             width: 700)
+        // Multi-select doesn't move on by itself: three steps, three options, then Next once one is chosen.
+        w.press(3)
+        XCTAssertEqual(w.controls().count, 8, "steps, options, Next and Skip")
+        w.press(2) // jump to Q3
+        w.press(4) // Q3: Spanner
+        w.press(1) // jump to Q2
+        w.press(5) // Q2: Redis
+        w.press(7) // Next (after Back), to Q3
+        XCTAssertEqual(w.controls().count, 9, "steps, options, Back, Submit and Skip")
+        w.press(7)
+        XCTAssertEqual(answers, [["Question 1?": "Postgres", "Question 2?": "Redis", "Question 3?": "Spanner"]])
     }
 
     func testTypedOtherAnswerReplacesTheChoice() throws {
