@@ -3,7 +3,7 @@ import AppKit
 /// An optional feature backed by Apple's on-device language model. Each one
 /// is off until the user turns it on in Settings › Apple Intelligence.
 enum IntelligenceFeature: String, CaseIterable, Identifiable {
-    case branchNames, paletteIntents, commandFixes, sessionSummaries, tabNames
+    case branchNames, paletteIntents, commandFixes, sessionSummaries, tabNames, commitMessages
 
     var id: String { rawValue }
 
@@ -14,6 +14,7 @@ enum IntelligenceFeature: String, CaseIterable, Identifiable {
         case .commandFixes: \.intelligenceCommandFixes
         case .sessionSummaries: \.intelligenceSessionSummaries
         case .tabNames: \.intelligenceTabNames
+        case .commitMessages: \.intelligenceCommitMessages
         }
     }
 
@@ -24,6 +25,7 @@ enum IntelligenceFeature: String, CaseIterable, Identifiable {
         case .commandFixes: "Suggest a fix when a command fails"
         case .sessionSummaries: "Summarize Claude sessions on the dashboard"
         case .tabNames: "Suggest tab and tab group names"
+        case .commitMessages: "Draft commit messages"
         }
     }
 
@@ -39,6 +41,8 @@ enum IntelligenceFeature: String, CaseIterable, Identifiable {
             "Each session tile gets a one-line summary of what Claude is doing right now."
         case .tabNames:
             "Rename Tab and New Tab Group fill in a name based on the tab's folder, branch and recent commands."
+        case .commitMessages:
+            "In Review Changes, Write for me drafts a commit message from the staged changes. You edit it before committing."
         }
     }
 }
@@ -111,10 +115,19 @@ enum Intelligence {
 
     /// A corrected command for one that just failed, or nil.
     static func commandFix(command: String, exitCode: Int, output: String, directory: String, branch: String?) async -> String? {
+        await commandFixWithReason(command: command, exitCode: exitCode, output: output, directory: directory, branch: branch)?.command
+    }
+
+    /// A corrected command plus a one-sentence reason for the failure (the
+    /// fix bar's "TaktKit is built by the bootstrap step."), or nil.
+    static func commandFixWithReason(command: String, exitCode: Int, output: String, directory: String,
+                                     branch: String?) async -> (command: String, reason: String?)? {
         guard isEnabled(.commandFixes), IntelligencePrompts.shouldSuggestFix(exitCode: exitCode, output: output) else { return nil }
         let prompt = IntelligencePrompts.commandFix(command: command, exitCode: exitCode, output: output, directory: directory, branch: branch)
-        guard let fix = await OnDeviceModel.commandFix(prompt: prompt) else { return nil }
-        return IntelligencePrompts.validatedFix(fix, original: command, output: output)
+        guard let fix = await OnDeviceModel.commandFix(prompt: prompt),
+              let valid = IntelligencePrompts.validatedFix(fix.command, original: command, output: output) else { return nil }
+        let reason = IntelligencePrompts.cleanLine(fix.reason, maxLength: 100)
+        return (valid, reason)
     }
 
     /// A short line saying what a Claude session is doing, from the tail of its transcript.

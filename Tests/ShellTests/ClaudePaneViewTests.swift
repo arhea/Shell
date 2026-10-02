@@ -47,6 +47,21 @@ private func busySession() -> ClaudeCodeSession {
 
 @MainActor
 final class ClaudePaneViewTests: XCTestCase {
+    private var savedTabBarStyle: TabBarStyle?
+
+    /// These tests count and press the pane's own header controls, which only
+    /// show with horizontal tabs (vertical tabs move them to the window toolbar).
+    override func setUp() async throws {
+        try await super.setUp()
+        savedTabBarStyle = SettingsStore.shared.settings.tabBarStyle
+        SettingsStore.shared.settings.tabBarStyle = .horizontal
+    }
+
+    override func tearDown() async throws {
+        if let savedTabBarStyle { SettingsStore.shared.settings.tabBarStyle = savedTabBarStyle }
+        try await super.tearDown()
+    }
+
     func testEmptyStateShowsTheWelcomeAndComposer() {
         let claude = F.session()
         XCTAssertFalse(claude.hasStarted)
@@ -140,7 +155,7 @@ final class ClaudePaneViewTests: XCTestCase {
         // The remove button's key-view stand-in sits at the very top (it's an
         // offset overlay), ahead of the header's buttons.
         let controls = w.controls()
-        XCTAssertEqual(controls.count, 6, "remove, three header buttons, attach, mode")
+        XCTAssertEqual(controls.count, 5, "remove, the header's MCP button, +, @ Context, / Skills")
         w.press(0)
         XCTAssertTrue(claude.draftAttachments.isEmpty)
     }
@@ -191,8 +206,8 @@ final class ClaudePaneViewTests: XCTestCase {
         F.permission(claude, id: "q1", tool: "AskUserQuestion", input: F.questionInput([("Which?", "", [("A", "", nil), ("B", "", nil)], false)]),
                      toolUseID: "t-ask")
         let w = claudeWindow(pane(claude), width: 900, height: 1200)
-        // Below the header: A, B, Skip (Submit is disabled), attach, and the status line's mode button.
-        XCTAssertEqual(w.controls().filter { $0.frame.minY > 80 }.count, 5)
+        // Below the header: A, B, Skip (Submit is disabled), then the composer's +, @ Context and / Skills.
+        XCTAssertEqual(w.controls().filter { $0.frame.minY > 80 }.count, 6)
         try pressBelowHeader(w, 1) // B
         try pressBelowHeader(w, 2) // Submit, now enabled, before Skip
         XCTAssertTrue(claude.pending.isEmpty)
@@ -201,7 +216,7 @@ final class ClaudePaneViewTests: XCTestCase {
         F.permission(claude, id: "q2", tool: "AskUserQuestion", input: F.questionInput([("Again?", "", [("A", "", nil)], false)]))
         w.layout(settle: 0.05)
         let now = w.controls().filter { $0.frame.minY > 80 }
-        try pressBelowHeader(w, now.count - 3) // Skip, before attach and the mode button
+        try pressBelowHeader(w, now.count - 4) // Skip, before the composer's three buttons
         XCTAssertTrue(claude.pending.isEmpty)
     }
 }
@@ -236,57 +251,53 @@ final class ClaudeHeaderTests: XCTestCase {
         render(header(ended))
     }
 
-    func testCloseButtonCloses() throws {
-        var closed = 0
+    func testVerticalTabsLeaveTheHeaderToTheWindowToolbar() {
         let claude = F.session()
-        let w = claudeWindow(ClaudeHeader(claude: claude, palette: F.palette, onClose: { closed += 1 }, onContinueInTerminal: {},
-                                          onToggleExplorer: {}), width: 900)
-        // The close button is the rightmost control (never press a menu: it would open and block).
-        let controls = w.controls()
-        let index = try XCTUnwrap(controls.indices.max { controls[$0].frame.maxX < controls[$1].frame.maxX })
-        w.press(index)
-        XCTAssertEqual(closed, 1)
+        withSettings({ $0.tabBarStyle = .horizontal }) {
+            XCTAssertGreaterThan(render(header(claude), size: CGSize(width: 900, height: 60)).fittingSize.height, 30)
+        }
+        withSettings({ $0.tabBarStyle = .vertical }) {
+            XCTAssertEqual(render(header(claude), size: CGSize(width: 900, height: 60)).fittingSize.height, 0)
+        }
     }
 
-    func testMenusForModelEffortAndMode() {
+    func testToolbarControlsForModelEffortModeAndMCP() {
         withSettings({ _ in }) {
             let claude = F.session(arguments: ClaudeArguments(model: "claude-sonnet-5", effort: "", permissionMode: "default",
                                                               passthrough: ["--allow-dangerously-skip-permissions"]))
             XCTAssertEqual(claude.modelTitle, "Sonnet 5")
             XCTAssertTrue(claude.availableModes.contains(.bypassPermissions))
-            render(ModelMenu(claude: claude, palette: F.palette))
-            render(EffortMenu(claude: claude, palette: F.palette))
+            func controls() -> ClaudeToolbarControls<EmptyView> {
+                ClaudeToolbarControls(claude: claude, inspectorOn: false, onToggleInspector: {}, onClose: {}, onContinueInTerminal: {}) { EmptyView() }
+            }
+            XCTAssertGreaterThan(render(controls(), size: CGSize(width: 700, height: 30)).fittingSize.width, 100)
             claude.setEffort("xhigh")
             XCTAssertEqual(claude.effort, "xhigh")
-            render(EffortMenu(claude: claude, palette: F.palette))
-            render(ModeMenu(claude: claude, palette: F.palette))
+            XCTAssertEqual(ClaudeToolbarControls<EmptyView>.effortTitle("xhigh"), "Extra high")
+            XCTAssertEqual(ClaudeToolbarControls<EmptyView>.effortTitle("high"), "High")
             claude.setModel("default")
             XCTAssertEqual(claude.modelTitle, "Default")
-            render(ModelMenu(claude: claude, palette: F.palette))
+            render(controls(), size: CGSize(width: 700, height: 30))
+            F.systemInit(claude, mcp: [("github", "connected"), ("linear", "needs-auth")])
+            XCTAssertEqual(claude.mcpNeedsAuth.map(\.name), ["linear"])
+            render(controls(), size: CGSize(width: 700, height: 30))
         }
     }
 
-    func testPillMenuAndHeaderButtonStyleRender() {
-        let host = render(PillMenu(icon: "cpu", title: "Model", color: .orange, palette: F.palette, help: "Pick") {
-            Button("One") {}
-        })
-        XCTAssertGreaterThan(host.fittingSize.width, 20)
-        render(Button("x") {}.buttonStyle(HeaderButtonStyle(palette: F.palette, active: true)))
-    }
-
-    func testMCPButtonBadgesServersNeedingSignIn() {
+    func testInspectorToggleCallsBack() throws {
+        var toggled = 0
         let claude = F.session()
-        render(MCPHeaderButton(claude: claude, palette: F.palette))
-        F.systemInit(claude, mcp: [("github", "connected"), ("linear", "needs-auth"), ("slack", "needs-auth")])
-        XCTAssertEqual(claude.mcpNeedsAuth.map(\.name), ["linear", "slack"])
-        render(MCPHeaderButton(claude: claude, palette: F.palette))
+        let w = claudeWindow(ClaudeToolbarControls(claude: claude, inspectorOn: true, onToggleInspector: { toggled += 1 },
+                                                   onClose: {}, onContinueInTerminal: {}) { EmptyView() }, width: 700)
+        // The inspector toggle is the rightmost control (never press a menu: it would open and block).
+        let controls = w.controls()
+        let index = try XCTUnwrap(controls.indices.max { controls[$0].frame.maxX < controls[$1].frame.maxX })
+        w.press(index)
+        XCTAssertEqual(toggled, 1)
     }
 
-    func testContextBarOutsideARepository() {
-        let claude = F.session(directory: NSHomeDirectory() + "/project")
-        XCTAssertNil(claude.repository)
-        let host = render(ClaudeContextBar(claude: claude, palette: F.palette), size: CGSize(width: 800, height: 40))
-        XCTAssertGreaterThan(host.fittingSize.width, 20)
+    func testHeaderButtonStyleRenders() {
+        render(Button("x") {}.buttonStyle(HeaderButtonStyle(palette: F.palette, active: true)))
     }
 }
 
@@ -460,9 +471,15 @@ final class ClaudeGateTests: XCTestCase {
         XCTAssertEqual(login.phase, .failed("Sign-in was cancelled."))
     }
 
-    func testWorkingIndicatorRenders() {
-        let w = claudeWindow(WorkingIndicator(text: "Compacting conversation…", palette: F.palette), width: 400)
-        XCTAssertGreaterThan(w.size.height, 10)
+    func testActivityLineShowsWorkOrWaiting() {
+        let claude = F.session()
+        XCTAssertLessThan(render(ClaudeActivityLine(claude: claude, palette: F.palette)).fittingSize.height, 5, "nothing between turns")
+        claude.handle(["type": "system", "subtype": "status", "status": "compacting"])
+        F.tool(claude, id: "t", name: "Read", input: ["file_path": "/tmp/a.swift"])
+        let w = claudeWindow(ClaudeActivityLine(claude: claude, palette: F.palette), width: 600)
+        _ = w
+        F.permission(claude, id: "r", tool: "Bash", input: ["command": "ls"])
+        XCTAssertGreaterThan(render(ClaudeActivityLine(claude: claude, palette: F.palette), size: CGSize(width: 600, height: 30)).fittingSize.height, 10)
     }
 }
 
@@ -532,14 +549,17 @@ final class ClaudeItemViewTests: XCTestCase {
 
     func testToolCallExpandsToShowItsResult() {
         let long = (1...3000).map { "line \($0) of output" }.joined(separator: "\n")
-        for item in [
-            F.item(.tool, tool: "Bash", input: ["command": "cat big.log"], result: long + "<system-reminder>hidden</system-reminder>"),
-            F.item(.tool, tool: "Bash", input: ["command": "false"], result: "e1\ne2\ne3\ne4\ne5\ne6", isError: true),
-            F.item(.tool, tool: "Write", input: ["file_path": "/tmp/c.swift", "content": "let a = 1\nlet b = 2"]),
+        let write = (1...30).map { "let v\($0) = \($0)" }.joined(separator: "\n")
+        // Bash: "Show all 3000 lines"; Write: "Show all 30 lines" (after Copy and Review);
+        // any other tool: its step row opens to the result.
+        for (item, control) in [
+            (F.item(.tool, tool: "Bash", input: ["command": "cat big.log"], result: long + "<system-reminder>hidden</system-reminder>"), 0),
+            (F.item(.tool, tool: "Write", input: ["file_path": "/tmp/c.swift", "content": write]), 2),
+            (F.item(.tool, tool: "Grep", input: ["pattern": "x"], result: "a.swift\nb.swift"), 0),
         ] {
             let w = claudeWindow(ToolCallView(item: item, palette: p, fontSize: 13), width: 700)
             let collapsed = w.host.fittingSize.height
-            w.press(0)
+            w.press(control)
             XCTAssertGreaterThan(w.host.fittingSize.height, collapsed, item.toolName)
         }
     }

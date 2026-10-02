@@ -505,8 +505,19 @@ private struct Fence {
         self.char = c
         length = run
         self.indent = indent
-        // "ts title=x" or "{.python}" → the first word.
-        language = String(info.split(separator: " ").first ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "{}."))
+        // "ts title=x" or "{.python}" → the first word. A file name ("bash
+        // repro.sh", `title="a.ts"`, "bash:repro.sh") rides along as "lang:name".
+        let words = info.split(separator: " ")
+        let first = String(words.first ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "{}."))
+        var title: String?
+        for word in words.dropFirst() {
+            if let m = word.wholeMatch(of: /(?:title|filename|file)="?([^"]+)"?/) {
+                title = String(m.output.1)
+                break
+            }
+            if title == nil, word.contains("."), !word.contains("="), !word.hasPrefix("{") { title = String(word) }
+        }
+        language = first.contains(":") ? first : title.map { first + ":" + $0 } ?? first
     }
 
     func isClosed(by line: String) -> Bool {

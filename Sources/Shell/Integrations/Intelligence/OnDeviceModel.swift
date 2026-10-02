@@ -59,7 +59,7 @@ enum OnDeviceModel {
         return id
     }
 
-    static func commandFix(prompt: String) async -> String? {
+    static func commandFix(prompt: String) async -> (command: String, reason: String)? {
         let result = await run(CommandFixIdea.self, prompt: prompt, options: GenerationOptions(temperature: 0)) {
             """
             You help fix failed shell commands on macOS (zsh, BSD userland, Homebrew). Read the command and its \
@@ -70,7 +70,7 @@ enum OnDeviceModel {
             """
         }
         guard let result, result.fixable else { return nil }
-        return result.command
+        return (result.command, result.reason)
     }
 
     enum LineKind { case status, name }
@@ -145,6 +145,8 @@ struct CommandFixIdea {
     var fixable: Bool
     @Guide(description: "The corrected command on one line, or an empty string if not fixable")
     var command: String
+    @Guide(description: "Why the command failed, one short sentence of twelve words at most, without repeating the command")
+    var reason: String
 }
 
 @Generable

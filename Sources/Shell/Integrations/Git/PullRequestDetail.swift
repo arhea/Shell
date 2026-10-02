@@ -40,8 +40,12 @@ struct PullRequestDetail: Equatable {
     var checks: [Check]
     var reviewers: [Reviewer]
     var events: [Event]
+    /// The same checks as CI jobs (with durations), for the shared check rows.
+    var jobs: [CheckJob] = []
+    var changedFiles: Int?
+    var createdAt: Date?
 
-    static let viewFields = "body,comments,reviews,latestReviews,reviewRequests,statusCheckRollup,mergeable,mergeStateStatus"
+    static let viewFields = "body,comments,reviews,latestReviews,reviewRequests,statusCheckRollup,mergeable,mergeStateStatus,changedFiles,createdAt"
 
     /// Parses `gh pr view --json <viewFields>` plus the `pulls/<n>/comments` array.
     static func parse(view: Data, reviewComments: Data?) -> PullRequestDetail? {
@@ -89,7 +93,10 @@ struct PullRequestDetail: Equatable {
             mergeStateStatus: o["mergeStateStatus"] as? String ?? "UNKNOWN",
             checks: (o["statusCheckRollup"] as? [[String: Any]] ?? []).map(parseCheck),
             reviewers: reviewers,
-            events: events)
+            events: events,
+            jobs: (o["statusCheckRollup"] as? [[String: Any]] ?? []).compactMap(BranchChecksModel.parseCheck),
+            changedFiles: o["changedFiles"] as? Int,
+            createdAt: date(o["createdAt"]))
     }
 
     static func parseCheck(_ c: [String: Any]) -> Check {

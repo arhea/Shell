@@ -11,7 +11,7 @@ The source of truth is `ShortcutAction.defaultShortcut` in [`Sources/Shell/Setti
 | Settings… | ⌘, |
 | Command Palette… | ⇧⌘P |
 | Reload Configuration | ⇧⌘, |
-| Agent Activity | ⌥⌘N |
+| Agent Activity | ⌥⌘A |
 | Homebrew Packages…, Node.js Versions…, Zsh & Oh My Zsh…, MCP Servers…, Check for Updates… | unbound (menu or palette) |
 
 ## Windows and tabs
@@ -20,6 +20,7 @@ The source of truth is `ShortcutAction.defaultShortcut` in [`Sources/Shell/Setti
 | --- | --- |
 | New Window | ⌘N |
 | New Tab | ⌘T |
+| Claude in New Worktree… | ⌥⌘N |
 | Close Tab | ⌥⌘W |
 | Close Window | ⇧⌘W |
 | Show Next / Previous Tab | ⇧⌘] / ⇧⌘[ |
@@ -29,6 +30,7 @@ The source of truth is `ShortcutAction.defaultShortcut` in [`Sources/Shell/Setti
 | Rename Tab… | ⇧⌘I |
 | New Tab Group… | ⌃⌘G |
 | Toggle Vertical Tabs | ⌃⌘T |
+| Show or Hide Tab Sidebar | ⌃⌘S |
 | Move Tab to New Window | unbound |
 
 ## Split panes
@@ -68,6 +70,7 @@ The source of truth is `ShortcutAction.defaultShortcut` in [`Sources/Shell/Setti
 | Toggle Files & Worktrees Sidebar | ⌃⌘B |
 | Claude Dashboard | ⌃⌘A |
 | Open GitHub (pull request board) | ⌃⌘H |
+| Review Changes (native Claude view) | ⇧⌘R |
 | Toggle Full Screen | ⌘↩ |
 
 ## Other keys

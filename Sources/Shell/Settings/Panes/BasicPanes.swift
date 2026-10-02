@@ -200,7 +200,8 @@ struct InputSettingsPane: View {
                     }
                     Text("You type only in the editor; the terminal shows output. Each command you run is recorded above its output with this header.")
                         .font(.caption).foregroundStyle(.secondary)
-                    Toggle("Show context chips (directory, git branch, last exit status)", isOn: setting(\.showContextBar))
+                    Toggle("Show context chips (directory, git branch, runtime, pull request, checks, last exit status)", isOn: setting(\.showContextBar))
+                    Toggle("Show command block status and actions (duration, exit code, Copy output, Rerun, Fix with Claude)", isOn: setting(\.showCommandBlocks))
                     Stepper(value: setting(\.editorFontSize), in: 0...40, step: 1) {
                         LabeledContent("Editor font size", value: s.editorFontSize == 0 ? "Same as terminal" : "\(Int(s.editorFontSize)) pt")
                     }

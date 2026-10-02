@@ -93,7 +93,8 @@ final class IntelligenceTests: XCTestCase {
     @MainActor
     func testIntelligenceSettingsDontSync() {
         for key in ["intelligenceBranchNames", "intelligencePaletteIntents", "intelligenceCommandFixes",
-                    "intelligenceSessionSummaries", "intelligenceTabNames", "intelligenceAnnouncementShown"] {
+                    "intelligenceSessionSummaries", "intelligenceTabNames", "intelligenceCommitMessages",
+                    "intelligenceAnnouncementShown"] {
             XCTAssertFalse(SettingsSync.portableKeys.contains(key), key)
         }
     }

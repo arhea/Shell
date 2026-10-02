@@ -98,7 +98,7 @@ Right-click a tab to rename it, duplicate it, add it to a group or move it to a 
 
 ### Find anything
 
-Press ⇧⌘P for the **command palette**. Every menu command and Settings pane is there, with its shortcut. When you don't know where something lives, start here.
+Press ⇧⌘P for the **command palette** (or click **Go to anything…** at the top of the vertical sidebar). It finds tabs, worktrees, recent folders, every menu command and Settings pane (with its shortcut), themes and history. Start with `>` to search commands only, or `@` for folders and worktrees. When you don't know where something lives, start here.
 
 ### Copy what you need
 
@@ -126,7 +126,7 @@ The [Claude Code and Codex](claude-code.md) guide covers the native view, the MC
 
 ## Set up GitHub
 
-The sidebar's GitHub, pull request and Actions views use the [GitHub CLI](https://cli.github.com). Install it and sign in once:
+The inspector's Checks tab and the pull requests board use the [GitHub CLI](https://cli.github.com). Install it and sign in once:
 
 ```bash
 brew install gh
@@ -136,7 +136,7 @@ brew install gh
 gh auth login
 ```
 
-Then open a tab in a GitHub repository and press ⌃⌘B. The sidebar shows the file tree with git status, every worktree with its PR state, and the repository's open pull requests and recent Actions runs. Click a pull request to check it out into its own worktree.
+Then open a tab in a GitHub repository and press ⌃⌘B. The inspector shows every worktree with its PR state, the checks on your branch's pull request (and the repository's recent Actions runs), and the file tree with git status. Press ⌃⌘H for the board of open pull requests, where you can check one out into its own worktree.
 
 Worktrees go in `~/code/worktrees/<repo>/<branch>` by default. Change it in Settings › Worktrees, or set `$WORKTREES_HOME`.
 

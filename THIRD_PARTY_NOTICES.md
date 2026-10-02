@@ -27,6 +27,7 @@ Shell has no Swift package dependencies. Everything third-party comes in through
 | [iTerm2-Color-Schemes](https://github.com/mbadolato/iTerm2-Color-Schemes) (about 600 themes, via Ghostty) | `Shell.app/Contents/Resources/ghostty/themes` | MIT |
 | [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) patched with [Nerd Fonts](https://github.com/ryanoasis/nerd-fonts) symbols | `Shell.app/Contents/Resources/fonts` | SIL Open Font License 1.1 (`JetBrainsMono-OFL.txt` is bundled) / MIT (Nerd Fonts patcher) |
 | Ghostty terminfo (`xterm-ghostty`) | `Shell.app/Contents/Resources/terminfo` | MIT |
+| [Octicons](https://github.com/primer/octicons) `mark-github` (path data, drawn as `GitHubMark`) | `Sources/Shell/UI/DesignSystem/DesignSystem.swift` | MIT |
 
 ## Build tools (not distributed)
 

@@ -6,6 +6,8 @@ Shell is built in Swift on [libghostty](https://ghostty.org). It combines the pa
 
 ![macOS 26+](https://img.shields.io/badge/macOS-26%2B-black) ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-black) ![Swift](https://img.shields.io/badge/Swift-AppKit%20%2B%20SwiftUI-orange) ![License: MIT](https://img.shields.io/badge/license-MIT-blue) [![Tests](https://github.com/arhea/Shell/actions/workflows/test.yml/badge.svg)](https://github.com/arhea/Shell/actions/workflows/test.yml)
 
+![Shell in dark mode: the floating tab sidebar, command blocks with status and a failed block's Copy output and Rerun actions, the fix bar, zsh completions, the prompt's context chips and the Files inspector](docs/images/shell-dark.png)
+
 ## Highlights
 
 - **Fast.** Rendering, VT parsing and the PTY come from libghostty: GPU-accelerated Metal, and the same terminal core as Ghostty. The chrome is native AppKit plus SwiftUI.

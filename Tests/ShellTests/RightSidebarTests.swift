@@ -179,17 +179,25 @@ final class RightSidebarTests: GitAreaTestCase {
             XCTAssertGreaterThan(host.fittingSize.height, 0, "\(tab)")
         }
 
-        // The tab bar: Files, Worktrees, GitHub, then the close button.
+        // With vertical tabs the window toolbar has the inspector toggle, so the
+        // tab bar is just the tabs.
         SettingsStore.shared.settings.sidebarTab = .files
+        SettingsStore.shared.settings.tabBarStyle = .vertical
+        let vertical = claudeWindow(sidebar(f, repo: repo, worktrees: worktrees, prs: prs, actions: actions), width: 380, height: 700)
+        XCTAssertEqual(vertical.controls().filter { $0.frame.minY < 40 }.count, 3)
+
+        // With horizontal tabs, a terminal pane's tab bar: Worktrees, Checks, Files, then the close button.
+        SettingsStore.shared.settings.tabBarStyle = .horizontal
         let w = claudeWindow(sidebar(f, repo: repo, worktrees: worktrees, prs: prs, actions: actions) { closes += 1 }, width: 380, height: 700)
-        let bar = w.controls().filter { $0.frame.minY < 34 }.sorted { $0.frame.minX < $1.frame.minX }
-        XCTAssertEqual(bar.count, 4)
-        w.press(w.controls().firstIndex(of: bar[1])!)
+        func bar() -> [NSView] { w.controls().filter { $0.frame.minY < 40 }.sorted { $0.frame.minX < $1.frame.minX } }
+        XCTAssertEqual(bar().count, 4)
+        w.press(w.controls().firstIndex(of: bar()[0])!)
         XCTAssertEqual(SettingsStore.shared.settings.sidebarTab, .worktrees)
-        w.press(w.controls().firstIndex(of: w.controls().filter { $0.frame.minY < 34 }.sorted { $0.frame.minX < $1.frame.minX }[2])!)
+        w.press(w.controls().firstIndex(of: bar()[1])!)
         XCTAssertEqual(SettingsStore.shared.settings.sidebarTab, .github)
-        let close = w.controls().filter { $0.frame.minY < 34 }.max { $0.frame.minX < $1.frame.minX }!
-        w.press(w.controls().firstIndex(of: close)!)
+        w.press(w.controls().firstIndex(of: bar()[2])!)
+        XCTAssertEqual(SettingsStore.shared.settings.sidebarTab, .files)
+        w.press(w.controls().firstIndex(of: bar().last!)!)
         XCTAssertEqual(closes, 1)
         w.hover(x: 0.5, y: 300) // the resize handle
         w.hover(x: 200, y: 300)
@@ -281,15 +289,15 @@ final class WorktreesViewTests: GitAreaTestCase {
         let model = try await f.worktrees(test: self)
         model.lastError = "Something failed"
         let w = claudeWindow(WorktreesView(model: model, context: f.context(), currentPath: f.repo.root.path), width: 380, height: 1600)
-        // Header: refresh (top right), Clean Up and the Stale link; then the
-        // merged cleanup bar (full width); then the error's dismiss button at
-        // the right. Only refresh and dismiss are pressed: the others open a
-        // confirmation or the Settings window, and rows' PR links open GitHub.
+        // Header: refresh (top right); the filter chips; the error's dismiss
+        // button at the right; then the merged cleanup bar (full width). Only
+        // refresh and dismiss are pressed: the others open a confirmation or
+        // the Settings window, and rows' PR links open GitHub.
         let mergedBar = try XCTUnwrap(gitControlFrames(w).first { $0.width > 300 })
-        gitPress(w) { $0.minY > mergedBar.maxY && $0.minY < mergedBar.maxY + 60 && $0.minX > 300 }
+        gitPress(w) { $0.minY > 50 && $0.maxY <= mergedBar.minY && $0.minX > 300 }
         try await eventually("dismissed") { model.lastError == nil }
 
-        gitPress(w) { $0.minY < 30 && $0.minX > 300 }
+        gitPress(w) { $0.minY < 40 && $0.minX > 300 }
         XCTAssertTrue(model.isLoading)
         try await eventually(timeout: 15) { !model.isLoading }
     }

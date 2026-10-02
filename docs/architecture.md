@@ -23,7 +23,7 @@ Sources/Shell
 ├── Ghostty/        libghostty runtime + callbacks, TerminalSurfaceView (keys/IME/mouse), config generation
 ├── Model/          TerminalSession, PaneTree (splits), TerminalTab / TabGroup / Workspace, session restore
 ├── UI/             Window controller, tabs + sidebar, split container, panes, input editor, palette,
-│                   hotkey window, Claude view, MCP manager, right sidebar (files, worktrees, GitHub)
+│                   hotkey window, Claude view, MCP manager, right inspector (session, worktrees, checks, files)
 ├── Settings/       AppSettings (JSON), themes, shortcuts, Settings window panes
 ├── Integrations/   Control socket, zsh integration glue, history, notifications, Claude/Codex,
 │                   Git/GitHub, MCP, Homebrew, Node.js, Zsh, Go, scheduled maintenance
@@ -57,6 +57,7 @@ Tests/ShellTests     XCTest unit tests
 | `SystemIntegration` | `App/SystemIntegration.swift` | `openTab`, Finder services, Dock menu, recent folders |
 | `Intelligence` | `Integrations/Intelligence/Intelligence.swift` | Optional Apple Intelligence features: availability, per-feature gating, prompts and output checks |
 | `OnDeviceModel` | `Integrations/Intelligence/OnDeviceModel.swift` | FoundationModels calls, one fresh session per request, with a timeout |
+| `ReviewChangesModel` | `UI/Review/ReviewChangesModel.swift` | Review changes: loads `WorkingTreeDiff` (unstaged, staged and untracked diffs parsed by `UnifiedDiffParser`), flattens it into `ReviewRows` for one lazy list, and stages, reverts and commits through `GitStaging` (single-hunk patches for `git apply`) |
 
 ## Data flow for a command
 
@@ -76,6 +77,7 @@ See [Shell integration](shell-integration.md) for the protocol details.
 - `ControlServer` accepts and reads on its own dispatch queue, then hops to the main actor to apply messages.
 - Git, `gh`, `brew` and other external commands run as `Process` off the main thread. Their results are published back on the main actor.
 - The native Claude view decodes Claude Code's stream-json output on the pipe's background queue and delivers it to the main actor in batches (about 30 per second). The transcript's markdown is parsed incrementally and cached.
+- Command block decorations (`CommandBlockOverlayView`) anchor each block's header line to a screen row once, then on scroll, resize or new output (libghostty's scrollbar callback, throttled) re-check only the viewport's text. The whole scrollback is read only to re-anchor after a resize, a clear or scrollback trimming, at most once a second and never while a command runs. Scrolling moves the drawn decorations immediately without reading text.
 - Timers and polling pause when nothing is visible: link detection runs only for visible panes, dashboard tiles read terminals only while the dashboard is open, and the Claude logo only animates in visible windows.
 
 ## Quitting

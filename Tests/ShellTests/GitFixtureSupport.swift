@@ -312,7 +312,7 @@ enum GitFixturePR {
     static func node(_ number: Int, head: String, base: String = "main", author: String = "octocat", draft: Bool = false,
                      decision: String? = nil, checks: [[String: Any]] = [], reviews: [[String: Any]] = [],
                      requested: [[String: Any]] = [], threads: [Bool] = [], updated: String = "2026-09-30T10:00:00Z",
-                     typename: String = "User") -> [String: Any] {
+                     typename: String = "User", assignees: [String] = []) -> [String: Any] {
         var o: [String: Any] = [
             "number": number, "title": "Board PR \(number)", "url": "https://github.com/acme/widgets/pull/\(number)",
             "isDraft": draft, "headRefName": head, "baseRefName": base, "isCrossRepository": false,
@@ -322,6 +322,7 @@ enum GitFixturePR {
             "reviewRequests": ["nodes": requested],
             "latestReviews": ["nodes": reviews],
             "reviewThreads": ["nodes": threads.map { ["isResolved": $0] }],
+            "assignees": ["nodes": assignees.map { ["login": $0] }],
             "commits": ["nodes": [["commit": ["statusCheckRollup": ["contexts": ["nodes": checks]]]]]],
         ]
         if let decision { o["reviewDecision"] = decision }

@@ -10,6 +10,11 @@ final class WindowChromeState {
     var showActivity = false
     /// The window is on screen and not fully covered (drives animations).
     var isVisible = true
+    /// The floating tab sidebar is hidden (vertical tabs only, ⌃⌘S).
+    var sidebarCollapsed = false
+    /// The focused pane's repository (a native Claude session's, or the one a
+    /// terminal pane's directory is in), for the unified toolbar.
+    var repository: GitRepository?
 }
 
 /// A terminal window that handles ⌃Tab tab cycling before the terminal sees it.
@@ -27,6 +32,68 @@ final class TerminalWindow: NSWindow {
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+
+    // MARK: Traffic lights
+
+    /// Where the close button's center sits, in points from the window's
+    /// top-left corner; nil leaves the buttons where AppKit puts them. The
+    /// floating sidebar uses this to show the buttons inside its top row.
+    var trafficLightCenter: NSPoint? {
+        didSet { if trafficLightCenter != oldValue { layoutTrafficLights() } }
+    }
+    private var defaultTitlebarHeight: CGFloat?
+    private var defaultButtonOrigins: [NSPoint] = []
+    nonisolated(unsafe) private var buttonObserver: NSObjectProtocol?
+
+    private var trafficLights: [NSButton] {
+        [.closeButton, .miniaturizeButton, .zoomButton].compactMap { standardWindowButton($0) }
+    }
+
+    /// Moves the traffic lights to `trafficLightCenter`. AppKit resets them on
+    /// resize, key changes and full-screen transitions, so this runs again
+    /// whenever the close button's frame changes. (Electron and Tauri move
+    /// them the same way: grow the titlebar container, then offset each button.)
+    func layoutTrafficLights() {
+        let buttons = trafficLights
+        guard buttons.count == 3, let titlebar = buttons[0].superview, let container = titlebar.superview,
+              !styleMask.contains(.fullScreen) else { return }
+        if defaultTitlebarHeight == nil {
+            defaultTitlebarHeight = container.frame.height
+            defaultButtonOrigins = buttons.map(\.frame.origin)
+            buttons[0].postsFrameChangedNotifications = true
+            buttonObserver = NotificationCenter.default.addObserver(
+                forName: NSView.frameDidChangeNotification, object: buttons[0], queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, self.trafficLightCenter != nil else { return }
+                    self.layoutTrafficLights()
+                }
+            }
+        }
+        let baseHeight = defaultTitlebarHeight ?? 28
+        let height = trafficLightCenter.map { max($0.y * 2, baseHeight) } ?? baseHeight
+        var rect = container.frame
+        rect.size.height = height
+        rect.origin.y = frame.height - height
+        if container.frame != rect { container.frame = rect }
+        if titlebar.frame != container.bounds { titlebar.frame = container.bounds }
+        let spacing = defaultButtonOrigins.count == 3 ? defaultButtonOrigins[1].x - defaultButtonOrigins[0].x : 20
+        for (i, button) in buttons.enumerated() {
+            let origin: NSPoint
+            if let center = trafficLightCenter {
+                origin = NSPoint(x: (center.x - button.frame.width / 2 + CGFloat(i) * spacing).rounded(),
+                                 y: (height - center.y - button.frame.height / 2).rounded())
+            } else if defaultButtonOrigins.indices.contains(i) {
+                origin = defaultButtonOrigins[i]
+            } else {
+                continue
+            }
+            if button.frame.origin != origin { button.setFrameOrigin(origin) }
+        }
+    }
+
+    deinit {
+        if let buttonObserver { NotificationCenter.default.removeObserver(buttonObserver) }
+    }
 }
 
 /// Root content view: arranges the tab bar or sidebar and the terminal area.
@@ -44,6 +111,8 @@ final class WindowContentView: NSView {
     let terminalArea = NSView()
     var sidebarWidth: CGFloat = 240
     var vertical = false
+    /// The floating sidebar is hidden (vertical mode).
+    var sidebarCollapsed = false
 
     override var isFlipped: Bool { true }
 
@@ -62,9 +131,15 @@ final class WindowContentView: NSView {
         let b = bounds
         let barHeight: CGFloat = 38
         if vertical {
-            sidebar?.frame = NSRect(x: 0, y: 0, width: sidebarWidth, height: b.height)
-            titleBar?.frame = NSRect(x: sidebarWidth, y: 0, width: b.width - sidebarWidth, height: barHeight)
-            terminalArea.frame = NSRect(x: sidebarWidth, y: barHeight, width: b.width - sidebarWidth, height: b.height - barHeight)
+            // The sidebar floats inside the window, inset from its edges; the
+            // toolbar and content fill the rest.
+            let inset = DS.sidebarInset
+            let toolbar = DS.toolbarHeight
+            let left = sidebarCollapsed ? 0 : inset + sidebarWidth
+            sidebar?.isHidden = sidebarCollapsed
+            sidebar?.frame = NSRect(x: inset, y: inset, width: sidebarWidth, height: max(b.height - inset * 2, 0))
+            titleBar?.frame = NSRect(x: left, y: 0, width: b.width - left, height: toolbar)
+            terminalArea.frame = NSRect(x: left, y: toolbar, width: b.width - left, height: b.height - toolbar)
         } else {
             let showBar = tabBar != nil && tabBar?.isHidden == false
             tabBar?.frame = NSRect(x: 0, y: 0, width: b.width, height: barHeight)
@@ -85,6 +160,7 @@ final class WindowContentView: NSView {
             explorer.frame = NSRect(x: area.maxX, y: area.minY, width: w, height: area.height)
         }
         for sub in terminalArea.subviews { sub.frame = terminalArea.bounds }
+        (window as? TerminalWindow)?.layoutTrafficLights()
     }
 }
 
@@ -150,7 +226,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
             MainActor.assumeIsolated { self?.chrome.isFullScreen = true }
         })
         observers.append(NotificationCenter.default.addObserver(forName: NSWindow.didExitFullScreenNotification, object: window, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.chrome.isFullScreen = false }
+            MainActor.assumeIsolated {
+                self?.chrome.isFullScreen = false
+                DispatchQueue.main.async { (self?.window as? TerminalWindow)?.layoutTrafficLights() }
+            }
         })
         observers.append(NotificationCenter.default.addObserver(forName: .nativeClaudeDidChange, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.updateExplorer() }
@@ -173,9 +252,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
 
         contentView.vertical = s.tabBarStyle == .vertical
         contentView.sidebarWidth = CGFloat(s.sidebarWidth)
+        contentView.sidebarCollapsed = chrome.sidebarCollapsed
         if contentView.vertical {
             let sidebar = NSHostingView(rootView: VerticalTabSidebar(controller: self, workspace: workspace, chrome: chrome))
-            let title = NSHostingView(rootView: TitleBarView(controller: self, workspace: workspace))
+            sidebar.sizingOptions = []
+            let title = NSHostingView(rootView: UnifiedToolbar(controller: self, workspace: workspace, chrome: chrome))
+            title.sizingOptions = []
             contentView.addSubview(sidebar)
             contentView.addSubview(title)
             sidebarHost = sidebar
@@ -191,6 +273,35 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
             contentView.sidebar = nil
             contentView.titleBar = nil
         }
+        updateTrafficLights()
+        contentView.needsLayout = true
+    }
+
+    /// Puts the traffic lights in the floating sidebar's top row, or at the
+    /// toolbar's leading edge while the sidebar is hidden. Horizontal tabs
+    /// keep AppKit's position.
+    func updateTrafficLights() {
+        guard let window = window as? TerminalWindow else { return }
+        if !contentView.vertical {
+            window.trafficLightCenter = nil
+        } else if chrome.sidebarCollapsed {
+            window.trafficLightCenter = NSPoint(x: 26, y: DS.toolbarHeight / 2)
+        } else {
+            window.trafficLightCenter = NSPoint(x: DS.sidebarInset + 20, y: DS.sidebarInset + 22)
+        }
+    }
+
+    /// Shows or hides the floating tab sidebar (⌃⌘S). Turns vertical tabs on
+    /// when the window uses horizontal tabs.
+    func toggleTabSidebar() {
+        guard contentView.vertical else {
+            chrome.sidebarCollapsed = false
+            SettingsStore.shared.settings.tabBarStyle = .vertical
+            return
+        }
+        chrome.sidebarCollapsed.toggle()
+        contentView.sidebarCollapsed = chrome.sidebarCollapsed
+        updateTrafficLights()
         contentView.needsLayout = true
     }
 
@@ -217,7 +328,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
     /// on (⌃⌘B).
     func updateExplorer() {
         pruneTerminalRepos()
-        guard !workspace.showsNativePage, let session = focusedSession else { return hideExplorer() }
+        guard !workspace.showsNativePage, let session = focusedSession else {
+            if chrome.repository != nil { chrome.repository = nil }
+            return hideExplorer()
+        }
         let claude = session.nativeClaude
         let repo: GitRepository?
         let visible: Bool
@@ -232,6 +346,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
             visible = session.sidebarChoice ?? automatic
             if session.showSidebar != (visible && repo != nil) { session.showSidebar = visible && repo != nil }
         }
+        if chrome.repository !== repo { chrome.repository = repo }
         // Re-run when the repository, the toggle or the directory changes.
         let key = claude.map { "claude-\(ObjectIdentifier($0).hashValue)" } ?? "term-\(session.id)"
         if explorerObservedKey != key {
@@ -306,7 +421,20 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
                     } else if let session {
                         session.sidebarChoice = false
                     }
-                })
+                },
+                session: claude.map { claude in { [weak claude] in
+                    claude.map { InspectorSessionInputs(session: $0) } ?? InspectorSessionInputs()
+                } },
+                openTabs: { [weak self] in self?.openTabStates() ?? [:] },
+                fixingChecks: { [weak claude] in claude?.checksBeingFixed ?? [] },
+                onFixCheck: claude.map { claude in { [weak claude] job in
+                    guard let claude, let repo = claude.repository else { return }
+                    Task { @MainActor in
+                        let log = await BranchChecksModel.shared(for: repo).failedLog(for: job)
+                        claude.fixCheckFailure(job, log: log)
+                    }
+                } },
+                onNewWorktree: { [weak self] in self?.startClaudeInNewWorktree() })
             let host = NSHostingView(rootView: AnyView(view))
             host.sizingOptions = []
             contentView.addSubview(host)
@@ -317,6 +445,23 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
         }
         contentView.explorerWidth = CGFloat(SettingsStore.shared.settings.claudeExplorerWidth)
         contentView.needsLayout = true
+    }
+
+    /// Every open pane's directory (all windows) → its agent state, for the
+    /// inspector's "Open in tabs" worktree group.
+    private func openTabStates() -> [String: WorktreeTabState] {
+        var result: [String: WorktreeTabState] = [:]
+        for controller in AppDelegate.shared.controllers {
+            for session in controller.workspace.tabs.flatMap({ $0.sessions.values }) {
+                guard let dir = session.nativeClaude?.directory ?? session.workingDirectory else { continue }
+                let key = URL(fileURLWithPath: dir).standardizedFileURL.path
+                let state = WorktreeTabState(session.agent)
+                // Prefer the most urgent state when two panes share a folder.
+                if let existing = result[key], existing.agent.priority <= state.agent.priority { continue }
+                result[key] = state
+            }
+        }
+        return result
     }
 
     private func hideExplorer() {
@@ -776,9 +921,76 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
         return result.sorted { $0.remote.slug < $1.remote.slug }
     }
 
-    private var focusedRepository: GitRepository? {
+    var focusedRepository: GitRepository? {
         guard let session = focusedSession else { return nil }
-        return session.nativeClaude?.repository ?? terminalRepos[session.id]?.repo
+        return repository(for: session)
+    }
+
+    /// The repository a pane is in, once discovered (native Claude sessions
+    /// know theirs; terminal panes are discovered in the background).
+    func repository(for session: TerminalSession) -> GitRepository? {
+        session.nativeClaude?.repository ?? terminalRepos[session.id]?.repo
+    }
+
+    /// Worktrees of the focused pane's repository, shared with the right
+    /// sidebar's Worktrees tab (the palette lists them).
+    func worktreesForFocusedRepository() -> WorktreesModel? {
+        guard let repo = focusedRepository else { return nil }
+        let key = repo.mainWorktree?.path ?? repo.root.path
+        if let m = worktreeModels[key] { return m }
+        let m = WorktreesModel(repoRoot: key, environment: MCPManager.defaultEnvironment())
+        worktreeModels[key] = m
+        return m
+    }
+
+    /// Index of the first tab in this window with a pane in `directory` (or below it).
+    func tabIndex(showing directory: String) -> Int? {
+        let target = URL(fileURLWithPath: directory).standardizedFileURL.path
+        return workspace.tabs.firstIndex { tab in
+            tab.orderedSessions.contains { session in
+                guard let cwd = session.nativeClaude?.directory ?? session.workingDirectory else { return false }
+                let path = URL(fileURLWithPath: cwd).standardizedFileURL.path
+                return path == target || path.hasPrefix(target + "/")
+            }
+        }
+    }
+
+    /// Opens a new tab in `directory` and starts the default agent there.
+    func startClaude(in directory: String) {
+        let s = SettingsStore.shared.settings
+        let tab = newTab(directory: directory)
+        tab.focusedSession?.pendingCommand = s.defaultAgent.command(name: AgentLauncher.randomName(), permissionMode: s.claudePermissionMode)
+    }
+
+    /// "Claude in New Worktree…" (⌥⌘N): picks or names a branch, makes a
+    /// worktree for it and starts the default agent there in a new tab.
+    func startClaudeInNewWorktree() {
+        guard let session = focusedSession else { return }
+        let agent = SettingsStore.shared.settings.defaultAgent
+        let directory = session.nativeClaude?.directory ?? session.workingDirectory ?? NSHomeDirectory()
+        let report: (String, Bool) -> Void = { [weak self] message, ok in
+            guard let self else { return }
+            if let pane = self.paneView(for: session), session.nativeClaude == nil {
+                pane.editor.barState.flash(message, success: ok)
+            } else if !ok {
+                Log.app.error("Claude in new worktree: \(message, privacy: .public)")
+                NSSound.beep()
+            }
+        }
+        BranchPicker.show(directory: directory, agent: agent, in: self) { choice in
+            switch choice {
+            case .create(let name): AgentLauncher.start(.newBranch(name), from: session, report: report)
+            case .existing(let b): AgentLauncher.start(.existingBranch(name: b.name, remote: b.remote), from: session, report: report)
+            }
+        }
+    }
+
+    /// Asks the focused pane's inspector to show its CI checks (the toolbar's
+    /// failing-checks capsule). Opens the inspector first.
+    func showChecks(for session: TerminalSession) {
+        let on = session.nativeClaude?.showExplorer ?? session.showSidebar
+        if !on { toggleSidebar() }
+        BranchChecksRequest.post(repository: repository(for: session), sessionID: session.id)
     }
 
     // MARK: Panes
@@ -1173,6 +1385,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
         case .tab8: selectTab(at: 7)
         case .lastTab: selectTab(at: workspace.tabs.count - 1)
         case .toggleTabBarStyle: toggleTabBarStyle()
+        case .toggleTabSidebar: toggleTabSidebar()
+        case .claudeInNewWorktree: startClaudeInNewWorktree()
+        case .reviewChanges: focusedSession?.nativeClaude?.requestReviewChanges()
         case .copyLastCommand: focusedPane?.editor.copy(.lastCommand)
         case .copyLastOutput: focusedPane?.editor.copy(.lastOutput)
         case .clearBuffer:
@@ -1244,6 +1459,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
         case .toggleTabBarStyle:
             item.state = SettingsStore.shared.settings.tabBarStyle == .vertical ? .on : .off
             return true
+        case .toggleTabSidebar:
+            item.state = contentView.vertical && !chrome.sidebarCollapsed ? .on : .off
+            return true
+        case .claudeInNewWorktree:
+            return focusedSession != nil
+        case .reviewChanges:
+            return focusedSession?.nativeClaude?.repository != nil
         case .claudeDashboard:
             item.state = workspace.showsDashboard ? .on : .off
             return true
@@ -1255,45 +1477,6 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
         default:
             return true
         }
-    }
-}
-
-/// Title strip shown above the terminal in vertical-tabs mode.
-struct TitleBarView: View {
-    let controller: TerminalWindowController
-    @Bindable var workspace: Workspace
-
-    var body: some View {
-        let palette = ChromePalette.current
-        ZStack {
-            WindowDragArea()
-            HStack(spacing: 6) {
-                if workspace.showsDashboard {
-                    ClaudeLogo(size: 13)
-                    Text("Claude Sessions").font(.system(size: 12, weight: .semibold)).foregroundStyle(palette.foreground)
-                } else if workspace.showsGitHub {
-                    Image(systemName: "arrow.triangle.pull").font(.system(size: 11, weight: .semibold)).foregroundStyle(palette.accent)
-                    Text("GitHub").font(.system(size: 12, weight: .semibold)).foregroundStyle(palette.foreground)
-                    if let board = workspace.githubBoard {
-                        Text(board.remote.slug).font(.system(size: 11)).foregroundStyle(palette.secondary).lineLimit(1)
-                    }
-                } else if let tab = workspace.selectedTab {
-                    TabStatusIcon(tab: tab, palette: palette)
-                    Text(tab.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(palette.foreground)
-                    Text(tab.subtitle).font(.system(size: 11)).foregroundStyle(palette.secondary).lineLimit(1).truncationMode(.head)
-                }
-            }
-            .allowsHitTesting(false)
-            HStack {
-                Spacer()
-                SidebarToggleButton(controller: controller, workspace: workspace, palette: palette)
-            }
-            .padding(.trailing, 10)
-        }
-        .frame(height: 38)
-        .background(palette.background)
-        .overlay(alignment: .bottom) { palette.border.frame(height: 1) }
-        .ignoresSafeArea()
     }
 }
 

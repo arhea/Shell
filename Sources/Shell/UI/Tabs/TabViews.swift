@@ -57,36 +57,134 @@ struct WindowDragArea: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
-/// Spinner / agent / bell / failure indicator for a tab.
-struct TabStatusIcon: View {
+// MARK: - Tab presentation
+
+/// How a tab presents itself in the sidebar, tab bar and palette: its tile,
+/// status and the words for its agent state.
+@MainActor
+enum TabPresentation {
+    static func tile(for tab: TerminalTab) -> TileKind {
+        if let s = tab.focusedSession {
+            if s.nativeClaude != nil || s.isClaude { return .claude }
+            if s.agent?.kind == .codex { return .codex }
+        }
+        switch tab.agent?.kind {
+        case .claude: return .claude
+        case .codex: return .codex
+        default: return .terminal
+        }
+    }
+
+    /// "Claude needs input", "Codex working", "Claude done"; nil without an agent.
+    static func agentSummary(_ tab: TerminalTab) -> String? {
+        switch tab.agent {
+        case .working(let k): "\(k.displayName) working"
+        case .needsInput(let k, _): "\(k.displayName) needs input"
+        case .finished(let k, _): "\(k.displayName) done"
+        case nil: nil
+        }
+    }
+
+    /// What the trailing status shows, for VoiceOver.
+    static func accessibilityStatus(_ tab: TerminalTab) -> String? {
+        if let agent = tab.agent {
+            switch agent {
+            case .working(let k): return "\(k.displayName) working"
+            case .needsInput(let k, _): return "\(k.displayName) needs input"
+            case .finished(let k, _): return "\(k.displayName) done"
+            }
+        }
+        if tab.isBusy { return "Running" }
+        if tab.hasBell { return "Bell" }
+        if tab.lastExitFailed { return "Last command failed" }
+        if tab.hasUnseenOutput { return "New output" }
+        return nil
+    }
+}
+
+/// The trailing slot of a tab row or chip, in priority order: the close
+/// button on hover; the agent's status (spinner, "Input" pill, check); a
+/// running command's spinner; bell, failure or new-output marks; else the
+/// tab's ⌘N shortcut.
+struct TabTrailingStatus: View {
     let tab: TerminalTab
-    let palette: ChromePalette
+    let index: Int
+    let hovering: Bool
+    var compact = false
+    let onClose: () -> Void
 
     var body: some View {
         Group {
-            if let agent = tab.agent {
-                switch agent {
-                case .working:
-                    ProgressView().controlSize(.mini).tint(palette.purple)
-                case .needsInput:
-                    Image(systemName: "exclamationmark.bubble.fill").foregroundStyle(palette.yellow)
-                case .finished:
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(palette.green)
+            if hovering {
+                Button(action: onClose) {
+                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+                        .frame(width: 18, height: 18)
+                        .background(Circle().fill(Color.primary.opacity(0.08)))
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Close Tab")
+                .accessibilityLabel("Close Tab")
+            } else if tab.agent != nil {
+                StatusIndicator(status: StatusKind(tab.agent))
             } else if tab.isBusy {
-                ProgressView().controlSize(.mini)
+                SpinnerRing(color: .secondary)
             } else if tab.hasBell {
-                Image(systemName: "bell.fill").foregroundStyle(palette.yellow)
+                Image(systemName: "bell.fill").font(.system(size: 10)).foregroundStyle(DS.Status.needsYou)
             } else if tab.lastExitFailed {
-                Circle().fill(palette.red).frame(width: 6, height: 6)
+                Circle().fill(DS.Status.failed).frame(width: 6, height: 6).help("Last command failed")
             } else if tab.hasUnseenOutput {
-                Circle().fill(palette.accent).frame(width: 6, height: 6)
-            } else {
-                Image(systemName: "terminal").foregroundStyle(palette.secondary)
+                Circle().fill(DS.Status.info).frame(width: 6, height: 6).help("New output")
+            } else if index < 9 {
+                KeyHint("⌘\(index + 1)")
             }
         }
-        .font(.system(size: 10, weight: .semibold))
-        .frame(width: 14, height: 14)
+        .frame(minWidth: compact ? 18 : 22, alignment: .trailing)
+    }
+}
+
+/// "~/code/Shell · ⎇ main", "Shell · ⎇ bug/38-sigpipe… · #39".
+struct TabSubtitle: View {
+    let controller: TerminalWindowController
+    let tab: TerminalTab
+
+    var body: some View {
+        let parts = Self.parts(controller: controller, tab: tab)
+        Group {
+            if let branch = parts.branch {
+                Text("\(parts.folder) · \(Image(systemName: "arrow.triangle.branch")) \(branch)\(parts.trailing)")
+            } else {
+                Text(parts.folder + parts.trailing)
+            }
+        }
+        .lineLimit(1)
+        .truncationMode(.tail)
+    }
+
+    static func parts(controller: TerminalWindowController, tab: TerminalTab) -> (folder: String, branch: String?, trailing: String) {
+        guard let s = tab.focusedSession else { return (tab.subtitle, nil, "") }
+        var trailing = ""
+        let folder: String
+        let branch: String?
+        if let claude = s.nativeClaude, let repo = claude.repository {
+            folder = repo.github?.name ?? repo.mainWorktree?.lastPathComponent ?? repo.name
+            branch = repo.branchLabel
+            if let pr = repo.pullRequest { trailing += " · #\(pr.number)" }
+        } else {
+            if let claude = s.nativeClaude {
+                folder = ClaudeToolFormat.shortPath(claude.directory)
+            } else if tab.agent != nil {
+                // Agent tabs lead with the project, like native Claude tabs:
+                // "Shell · ⎇ bug/38-sigpipe… · #39".
+                folder = s.directoryName
+            } else {
+                folder = s.abbreviatedDirectory
+            }
+            branch = s.gitBranch
+            if let pr = controller.repository(for: s)?.pullRequest { trailing += " · #\(pr.number)" }
+        }
+        if tab.sessions.count > 1 { trailing += " · \(tab.sessions.count) panes" }
+        return (folder, branch, trailing)
     }
 }
 
@@ -163,7 +261,8 @@ struct ChromeButtons: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            ChromeIconButton(symbol: "bell.badge", help: "Agent Activity (⌥⌘N)", palette: palette) {
+            ChromeIconButton(symbol: "bell.badge",
+                             help: "Agent Activity (\(ShortcutAction.toggleNotifications.shortcut?.displayString ?? "⌥⌘A"))", palette: palette) {
                 controller.toggleActivityPopover()
             }
             .popover(isPresented: Binding(get: { controller.chrome.showActivity }, set: { controller.chrome.showActivity = $0 })) {
@@ -212,34 +311,19 @@ struct HorizontalTabChip: View {
         let selected = workspace.selectedTabID == tab.id && !workspace.showsNativePage
         let index = workspace.tabs.firstIndex { $0.id == tab.id } ?? 0
         HStack(spacing: 6) {
-            TabStatusIcon(tab: tab, palette: palette)
+            KindTile(kind: TabPresentation.tile(for: tab), size: 18)
             Text(tab.title)
-                .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(selected ? palette.foreground : palette.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 2)
-            ZStack {
-                if hovering || selected {
-                    Button { controller.closeTab(tab) } label: {
-                        Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
-                            .frame(width: 16, height: 16)
-                            .background(Circle().fill(hovering ? palette.hover : .clear))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(palette.secondary)
-                } else if index < 9 {
-                    Text("⌘\(index + 1)").font(.system(size: 10)).foregroundStyle(palette.secondary.opacity(0.7))
-                }
-            }
-            .frame(width: 22)
+            TabTrailingStatus(tab: tab, index: index, hovering: hovering || selected, compact: true) { controller.closeTab(tab) }
         }
-        .padding(.leading, 9)
-        .padding(.trailing, 4)
+        .padding(.leading, 5)
+        .padding(.trailing, 6)
         .frame(minWidth: 110, idealWidth: 170, maxWidth: 220, minHeight: 28, maxHeight: 28)
-        .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(selected ? palette.selected : hovering ? palette.hover : .clear))
+        .rowBackground(selected: selected, hovering: hovering)
         .overlay(alignment: .bottom) {
             if let group {
                 Capsule().fill(group.color.color).frame(height: 2).padding(.horizontal, 6)
@@ -252,8 +336,15 @@ struct HorizontalTabChip: View {
         .contextMenu { TabContextMenu(controller: controller, workspace: workspace, tab: tab) }
         .onDrag { NSItemProvider(object: tab.id.uuidString as NSString) }
         .onDrop(of: [UTType.text], delegate: TabDropDelegate(controller: controller, workspace: workspace, target: tab))
-        .help(tab.subtitle)
+        .help(agentHelp ?? tab.subtitle)
         .tabAccessibility(tab: tab, index: index, selected: selected, group: group) { controller.select(tab) }
+    }
+
+    private var agentHelp: String? {
+        switch tab.agent {
+        case .needsInput(_, let m), .finished(_, let m): m
+        default: nil
+        }
     }
 }
 
@@ -383,91 +474,203 @@ struct GroupDropDelegate: DropDelegate {
     func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
 }
 
+
 // MARK: - Vertical sidebar
 
+/// The floating glass sidebar: traffic lights and the hide button on top,
+/// "Go to anything…", the pinned Claude Sessions and Pull Requests rows, the
+/// tabs (with their groups), and New Tab / Claude in New Worktree at the bottom.
 struct VerticalTabSidebar: View {
     let controller: TerminalWindowController
     @Bindable var workspace: Workspace
     @Bindable var chrome: WindowChromeState
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @State private var headerHovering = false
+
+    /// The panel's default width: 260pt including the window inset, as designed.
+    static let defaultWidth: Double = 252
 
     var body: some View {
         let palette = ChromePalette.current
         VStack(spacing: 0) {
-            HStack(spacing: 2) {
-                WindowDragArea().frame(width: chrome.isFullScreen ? 8 : 74)
-                WindowDragArea()
-                ChromeButtons(controller: controller, palette: palette, vertical: true)
-            }
-            .frame(height: 38)
-            .padding(.trailing, 8)
+            topRow
+            GoToAnythingField { CommandPalette.show(for: controller) }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 10)
 
             let summary = DashboardVisibility(workspace: workspace).summary
-            if let summary {
-                DashboardSidebarRow(controller: controller, workspace: workspace, summary: summary, palette: palette)
-                    .padding(.horizontal, 8)
+            VStack(spacing: 2) {
+                if let summary {
+                    DashboardSidebarRow(controller: controller, workspace: workspace, summary: summary, palette: palette)
+                }
+                if workspace.githubTabOpen {
+                    GitHubSidebarRow(controller: controller, workspace: workspace, palette: palette)
+                }
             }
-            if workspace.githubTabOpen {
-                GitHubSidebarRow(controller: controller, workspace: workspace, palette: palette)
-                    .padding(.horizontal, 8)
-            }
+            .padding(.horizontal, 6)
             if summary != nil || workspace.githubTabOpen {
-                palette.border.frame(height: 1).padding(.horizontal, 14).padding(.vertical, 6)
+                Color.primary.opacity(0.08).frame(height: 0.5).padding(.horizontal, 14).padding(.vertical, 8)
             }
+
+            // The design shows only the count; New Tab Group appears on hover
+            // and in the header's context menu (also ⌃⌘G and the palette).
+            SectionHeader("Tabs", count: workspace.tabs.count,
+                          trailing: AnyView(newGroupButton.opacity(headerHovering ? 1 : 0)))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
+                .onHover { headerHovering = $0 }
+                .contextMenu {
+                    Button("New Tab Group…") { if let tab = workspace.selectedTab { controller.newGroup(with: tab) } }
+                        .disabled(workspace.selectedTab == nil)
+                }
 
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     ForEach(workspace.items) { item in
                         switch item {
                         case .tab(let tab):
-                            SidebarTabRow(controller: controller, workspace: workspace, tab: tab, group: nil, palette: palette)
+                            SidebarTabRow(controller: controller, workspace: workspace, tab: tab, group: nil)
                         case .group(let group, let tabs):
-                            SidebarGroupHeader(controller: controller, workspace: workspace, group: group, count: tabs.count, palette: palette)
+                            SidebarGroupHeader(controller: controller, workspace: workspace, group: group, count: tabs.count)
                             if !group.isCollapsed {
                                 ForEach(tabs) { tab in
-                                    SidebarTabRow(controller: controller, workspace: workspace, tab: tab, group: group, palette: palette)
+                                    SidebarTabRow(controller: controller, workspace: workspace, tab: tab, group: group)
                                 }
                             }
                         }
                     }
                 }
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 6)
                 .padding(.bottom, 8)
             }
 
-            Divider().overlay(palette.border)
-            HStack(spacing: 4) {
-                Button { controller.newTab() } label: {
-                    Label("New Tab", systemImage: "plus").font(.system(size: 12))
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(palette.secondary)
-                Spacer()
-                Button {
-                    if let tab = workspace.selectedTab { controller.newGroup(with: tab) }
-                } label: {
-                    Image(systemName: "folder.badge.plus").font(.system(size: 12))
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(palette.secondary)
-                .help("New Tab Group")
+            VStack(spacing: 6) {
+                SidebarFooterRow(title: "New Tab", shortcut: ShortcutAction.newTab.shortcut?.displayString) {
+                    Image(systemName: "plus").font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
+                } action: { controller.newTab() }
+                SidebarFooterRow(title: "Claude in New Worktree…", shortcut: ShortcutAction.claudeInNewWorktree.shortcut?.displayString) {
+                    ClaudeMark(size: 12)
+                } action: { controller.startClaudeInNewWorktree() }
             }
-            .padding(.horizontal, 14)
-            .frame(height: 34)
+            .padding(.horizontal, 10)
+            .padding(.top, 8)
+            .padding(.bottom, 10)
+            .overlay(alignment: .top) { Color.primary.opacity(0.08).frame(height: 0.5) }
         }
-        .background(palette.bar)
-        .overlay(alignment: .trailing) { palette.border.frame(width: 1) }
-        .overlay(alignment: .trailing) {
-            Color.clear
-                .frame(width: 7)
-                .contentShape(Rectangle())
-                .onHover { inside in if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() } }
-                .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                    .onChanged { v in controller.resizeTabSidebar(by: v.translation.width) }
-                    .onEnded { _ in controller.finishTabSidebarResize() })
-                .onTapGesture(count: 2) { SettingsStore.shared.settings.sidebarWidth = 240 }
-                .help("Drag to resize · double-click to reset")
+        .background { background(palette) }
+        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.panel, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: DS.Radius.panel, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5)
         }
+        .overlay(alignment: .trailing) { resizeHandle }
         .ignoresSafeArea()
+    }
+
+    /// The traffic lights sit here (moved by the window); the hide button on the right.
+    private var topRow: some View {
+        ZStack {
+            WindowDragArea()
+            HStack {
+                Spacer()
+                ToolbarIconButton(symbol: "sidebar.left",
+                                  help: "Hide Sidebar (\(ShortcutAction.toggleTabSidebar.shortcut?.displayString ?? "⌃⌘S"))") {
+                    controller.toggleTabSidebar()
+                }
+            }
+            .padding(.trailing, 8)
+        }
+        .frame(height: 44)
+    }
+
+    private var newGroupButton: some View {
+        Button {
+            if let tab = workspace.selectedTab { controller.newGroup(with: tab) }
+        } label: {
+            Image(systemName: "folder.badge.plus").font(.system(size: 11))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .help("New Tab Group (\(ShortcutAction.newTabGroup.shortcut?.displayString ?? "⌃⌘G"))")
+        .accessibilityLabel("New Tab Group")
+    }
+
+    /// Window glass tinted with the terminal theme, so custom themes stay
+    /// coherent; an opaque fill with Reduce Transparency.
+    @ViewBuilder private func background(_ palette: ChromePalette) -> some View {
+        if reduceTransparency {
+            palette.bar
+        } else {
+            ZStack {
+                GlassPanel()
+                palette.bar.opacity(0.55)
+            }
+        }
+    }
+
+    private var resizeHandle: some View {
+        Color.clear
+            .frame(width: 7)
+            .contentShape(Rectangle())
+            .onHover { inside in if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() } }
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { v in controller.resizeTabSidebar(by: v.translation.width) }
+                .onEnded { _ in controller.finishTabSidebarResize() })
+            .onTapGesture(count: 2) { SettingsStore.shared.settings.sidebarWidth = Self.defaultWidth }
+            .help("Drag to resize · double-click to reset")
+    }
+}
+
+/// "Go to anything… ⇧⌘P": opens the command palette.
+struct GoToAnythingField: View {
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 7) {
+                Image(systemName: "magnifyingglass").font(.system(size: 11, weight: .medium))
+                Text("Go to anything…").frame(maxWidth: .infinity, alignment: .leading).lineLimit(1)
+                KeyHint(ShortcutAction.commandPalette.shortcut?.displayString ?? "⇧⌘P")
+            }
+            .font(.system(size: DS.Size.body))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .frame(height: 28)
+            .background(RoundedRectangle(cornerRadius: DS.Radius.row).fill(Color.primary.opacity(hovering ? 0.1 : 0.07)))
+            .contentShape(RoundedRectangle(cornerRadius: DS.Radius.row))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityLabel("Go to anything")
+        .accessibilityHint("Opens the command palette")
+    }
+}
+
+/// "+ New Tab ⌘T" and "✻ Claude in New Worktree… ⌥⌘N".
+struct SidebarFooterRow<Icon: View>: View {
+    let title: String
+    let shortcut: String?
+    @ViewBuilder var icon: Icon
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                icon.frame(width: 16)
+                Text(title).frame(maxWidth: .infinity, alignment: .leading).lineLimit(1)
+                if let shortcut { KeyHint(shortcut) }
+            }
+            .font(.system(size: DS.Size.body))
+            .padding(.horizontal, 8)
+            .frame(height: 30)
+            .rowBackground(selected: false, hovering: hovering)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
     }
 }
 
@@ -476,23 +679,21 @@ struct SidebarGroupHeader: View {
     let workspace: Workspace
     let group: TabGroup
     let count: Int
-    let palette: ChromePalette
 
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "chevron.right")
                 .font(.system(size: 9, weight: .bold))
                 .rotationEffect(.degrees(group.isCollapsed ? 0 : 90))
-                .foregroundStyle(palette.secondary)
+                .foregroundStyle(.secondary)
             Circle().fill(group.color.color).frame(width: 8, height: 8)
             Text(group.name.isEmpty ? "Untitled group" : group.name)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(palette.foreground)
+                .font(.system(size: DS.Size.small, weight: .semibold))
                 .lineLimit(1)
             Spacer()
-            Text("\(count)").font(.system(size: 10, weight: .medium)).foregroundStyle(palette.secondary)
+            Text("\(count)").font(.system(size: DS.Size.small, weight: .medium)).foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 6)
+        .padding(.horizontal, 10)
         .padding(.top, 8)
         .padding(.bottom, 3)
         .contentShape(Rectangle())
@@ -507,46 +708,37 @@ struct SidebarGroupHeader: View {
     }
 }
 
+/// A tab: 24pt tile, title over "folder · ⎇ branch", and the trailing status.
 struct SidebarTabRow: View {
     let controller: TerminalWindowController
     let workspace: Workspace
     let tab: TerminalTab
     let group: TabGroup?
-    let palette: ChromePalette
     @State private var hovering = false
 
     var body: some View {
         let selected = workspace.selectedTabID == tab.id && !workspace.showsNativePage
         let index = workspace.tabs.firstIndex { $0.id == tab.id } ?? 0
-        HStack(alignment: .top, spacing: 8) {
-            TabStatusIcon(tab: tab, palette: palette).padding(.top, 1)
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: 10) {
+            KindTile(kind: TabPresentation.tile(for: tab))
+            VStack(alignment: .leading, spacing: 1) {
                 Text(tab.title)
-                    .font(.system(size: 12, weight: selected ? .semibold : .medium))
-                    .foregroundStyle(selected ? palette.foreground : palette.foreground.opacity(0.85))
+                    .font(.system(size: DS.Size.title, weight: .medium))
                     .lineLimit(1)
-                subtitle
+                TabSubtitle(controller: controller, tab: tab)
+                    .font(.system(size: DS.Size.subtitle))
+                    .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
-            if hovering {
-                Button { controller.closeTab(tab) } label: {
-                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).frame(width: 16, height: 16)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(palette.secondary)
-            } else if index < 9 {
-                Text("⌘\(index + 1)").font(.system(size: 10)).foregroundStyle(palette.secondary.opacity(0.7))
-            }
+            TabTrailingStatus(tab: tab, index: index, hovering: hovering) { controller.closeTab(tab) }
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .padding(.leading, group != nil ? 10 : 0)
-        .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(selected ? palette.selected : hovering ? palette.hover : .clear))
+        .padding(.vertical, 7)
+        .padding(.leading, group != nil ? 8 : 0)
+        .rowBackground(selected: selected, hovering: hovering)
         .overlay(alignment: .leading) {
             if let group {
-                Capsule().fill(group.color.color).frame(width: 2).padding(.vertical, 6).padding(.leading, 3)
+                Capsule().fill(group.color.color).frame(width: 2).padding(.vertical, 8).padding(.leading, 3)
             }
         }
         .contentShape(Rectangle())
@@ -556,42 +748,15 @@ struct SidebarTabRow: View {
         .contextMenu { TabContextMenu(controller: controller, workspace: workspace, tab: tab) }
         .onDrag { NSItemProvider(object: tab.id.uuidString as NSString) }
         .onDrop(of: [UTType.text], delegate: TabDropDelegate(controller: controller, workspace: workspace, target: tab))
+        .help(agentHelp ?? "")
         .tabAccessibility(tab: tab, index: index, selected: selected, group: group) { controller.select(tab) }
     }
 
-    @ViewBuilder private var subtitle: some View {
-        if let agent = tab.agent {
-            Text(agentText(agent)).font(.system(size: 11)).foregroundStyle(agentColor(agent)).lineLimit(2)
-        } else {
-            HStack(spacing: 4) {
-                Text(tab.subtitle).lineLimit(1).truncationMode(.head)
-                if let branch = tab.focusedSession?.gitBranch {
-                    Image(systemName: "arrow.triangle.branch").font(.system(size: 9))
-                    Text(branch).lineLimit(1)
-                }
-                if tab.sessions.count > 1 {
-                    Image(systemName: "rectangle.split.2x1").font(.system(size: 9))
-                    Text("\(tab.sessions.count)")
-                }
-            }
-            .font(.system(size: 11))
-            .foregroundStyle(palette.secondary)
-        }
-    }
-
-    private func agentText(_ a: AgentStatus) -> String {
-        switch a {
-        case .working(let k): "\(k.displayName) is working…"
-        case .needsInput(_, let m): m
-        case .finished(_, let m): m
-        }
-    }
-
-    private func agentColor(_ a: AgentStatus) -> Color {
-        switch a {
-        case .working: palette.purple
-        case .needsInput: palette.yellow
-        case .finished: palette.green
+    /// The agent's message ("Claude needs your permission to use Bash").
+    private var agentHelp: String? {
+        switch tab.agent {
+        case .needsInput(_, let m), .finished(_, let m): m
+        default: nil
         }
     }
 }
@@ -658,30 +823,12 @@ struct ActivityPopover: View {
     }
 }
 
-extension TabStatusIcon {
-    /// What the icon shows, for VoiceOver.
-    static func accessibilityStatus(_ tab: TerminalTab) -> String? {
-        if let agent = tab.agent {
-            switch agent {
-            case .working(let k): return "\(k.displayName) working"
-            case .needsInput(let k, _): return "\(k.displayName) needs input"
-            case .finished(let k, _): return "\(k.displayName) done"
-            }
-        }
-        if tab.isBusy { return "Running" }
-        if tab.hasBell { return "Bell" }
-        if tab.lastExitFailed { return "Last command failed" }
-        if tab.hasUnseenOutput { return "New output" }
-        return nil
-    }
-}
-
 extension View {
     /// Tabs are drawn as custom views with tap gestures; expose them to
     /// VoiceOver and Full Keyboard Access as selectable buttons.
     func tabAccessibility(tab: TerminalTab, index: Int, selected: Bool, group: TabGroup?, select: @escaping () -> Void) -> some View {
         var parts = [tab.title]
-        if let status = TabStatusIcon.accessibilityStatus(tab) { parts.append(status) }
+        if let status = TabPresentation.accessibilityStatus(tab) { parts.append(status) }
         if let group { parts.append("in group \(group.name.isEmpty ? "untitled" : group.name)") }
         return self
             .accessibilityElement(children: .ignore)

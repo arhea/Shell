@@ -11,13 +11,13 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
     case zoomPane, equalizePanes, broadcastInput
     case nextTab, previousTab, moveTabLeft, moveTabRight, renameTab, newTabGroup, moveTabToNewWindow
     case tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, lastTab
-    case toggleTabBarStyle
+    case toggleTabBarStyle, toggleTabSidebar, claudeInNewWorktree
     // Terminal
     case copy, copyLastCommand, copyLastOutput, paste, selectAll, clearBuffer, find, findNext, findPrevious
     case jumpToPreviousPrompt, jumpToNextPrompt, scrollToTop, scrollToBottom, scrollPageUp, scrollPageDown
     case increaseFontSize, decreaseFontSize, resetFontSize
     case toggleInputEditor, toggleInputPosition, focusInput, toggleFullScreen
-    case toggleNotifications, toggleSidebar, claudeDashboard, github
+    case toggleNotifications, toggleSidebar, claudeDashboard, github, reviewChanges
 
     var id: String { rawValue }
 
@@ -30,13 +30,13 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         case .settings, .checkForUpdates, .commandPalette, .homebrew, .nodeSetup, .zshSetup, .mcpServers, .reloadConfig, .toggleNotifications: .app
         case .newWindow, .newTab, .closeTab, .closeWindow, .nextTab, .previousTab, .moveTabLeft, .moveTabRight,
              .renameTab, .newTabGroup, .moveTabToNewWindow, .tab1, .tab2, .tab3, .tab4, .tab5, .tab6, .tab7, .tab8, .lastTab,
-             .toggleTabBarStyle: .windows
+             .toggleTabBarStyle, .toggleTabSidebar, .claudeInNewWorktree: .windows
         case .closePane, .splitRight, .splitDown, .selectPaneLeft, .selectPaneRight, .selectPaneUp, .selectPaneDown,
              .nextPane, .previousPane, .zoomPane, .equalizePanes, .broadcastInput: .panes
         case .copy, .copyLastCommand, .copyLastOutput, .paste, .selectAll, .clearBuffer, .find, .findNext, .findPrevious, .jumpToPreviousPrompt,
              .jumpToNextPrompt, .scrollToTop, .scrollToBottom, .scrollPageUp, .scrollPageDown: .terminal
         case .increaseFontSize, .decreaseFontSize, .resetFontSize, .toggleInputEditor, .toggleInputPosition,
-             .focusInput, .toggleFullScreen, .toggleSidebar, .claudeDashboard, .github: .view
+             .focusInput, .toggleFullScreen, .toggleSidebar, .claudeDashboard, .github, .reviewChanges: .view
         }
     }
 
@@ -87,6 +87,9 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         case .tab8: "Select Tab 8"
         case .lastTab: "Select Last Tab"
         case .toggleTabBarStyle: "Toggle Vertical Tabs"
+        case .toggleTabSidebar: "Show or Hide Tab Sidebar"
+        case .claudeInNewWorktree: "Claude in New Worktree…"
+        case .reviewChanges: "Review Changes"
         case .copy: "Copy"
         case .copyLastCommand: "Copy Last Command"
         case .copyLastOutput: "Copy Last Output"
@@ -119,7 +122,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         case .commandPalette: .cmdShift("p")
         case .checkForUpdates, .homebrew, .nodeSetup, .zshSetup, .mcpServers, .moveTabToNewWindow, .equalizePanes: nil
         case .reloadConfig: .cmdShift(",")
-        case .toggleNotifications: .cmdOpt("n")
+        case .toggleNotifications: .cmdOpt("a")
         case .toggleSidebar: .cmdCtrl("b")
         case .claudeDashboard: .cmdCtrl("a")
         case .github: .cmdCtrl("h")
@@ -154,6 +157,9 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         case .tab8: .cmd("8")
         case .lastTab: .cmd("9")
         case .toggleTabBarStyle: .cmdCtrl("t")
+        case .toggleTabSidebar: .cmdCtrl("s")
+        case .claudeInNewWorktree: .cmdOpt("n")
+        case .reviewChanges: .cmdShift("r")
         case .copy: .cmd("c")
         case .copyLastCommand: .cmdShift("c")
         case .copyLastOutput: .init(key: "c", modifiers: [.command, .shift, .option])

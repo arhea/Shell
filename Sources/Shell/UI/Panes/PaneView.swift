@@ -11,6 +11,7 @@ final class PaneView: NSView, TerminalSessionUI {
     private var findHost: NSHostingView<FindBar>?
     private let dimView = PassthroughView()
     private let linkOverlay = LinkOverlayView(frame: .zero)
+    private let blockOverlay = CommandBlockOverlayView(frame: .zero)
     private var linkTimer: Timer?
     private var occlusionObserver: NSObjectProtocol?
     private var activationObservers: [NSObjectProtocol] = []
@@ -41,6 +42,7 @@ final class PaneView: NSView, TerminalSessionUI {
 
         addSubview(session.surfaceView)
         addSubview(linkOverlay)
+        addSubview(blockOverlay)
         addSubview(editor)
         dimView.wantsLayer = true
         addSubview(dimView)
@@ -78,6 +80,12 @@ final class PaneView: NSView, TerminalSessionUI {
             return true
         }
         session.surfaceView.onScroll = { [weak self] in self?.scheduleLinkRefresh() }
+        blockOverlay.session = session
+        blockOverlay.onCopyOutput = { [weak self] block in self?.copyOutput(of: block) }
+        blockOverlay.onRerun = { [weak self] block in self?.rerun(block) }
+        session.surfaceView.onScrollbarChange = { [weak self] total, offset, length in
+            self?.blockOverlay.scrollbarChanged(total: total, offset: offset, length: length)
+        }
         editor.onHeightChange = { [weak self] in
             guard let self else { return }
             // Fires on every keystroke; only re-lay out when the height moves.
@@ -182,6 +190,10 @@ final class PaneView: NSView, TerminalSessionUI {
             linkOverlay.frame = terminalFrame
             scheduleLinkRefresh()
         }
+        if blockOverlay.frame != terminalFrame {
+            blockOverlay.frame = terminalFrame
+            blockOverlay.invalidate()
+        }
         dimView.frame = b
         claudeHost?.frame = b
         layoutPopup()
@@ -245,6 +257,10 @@ final class PaneView: NSView, TerminalSessionUI {
         applyTheme()
     }
 
+    func sessionBlocksDidChange(_ session: TerminalSession) {
+        blockOverlay.blocksChanged()
+    }
+
     func sessionNativeClaudeDidChange(_ session: TerminalSession) {
         let wasFocused = containsFirstResponder
         updateClaudeView()
@@ -288,6 +304,7 @@ final class PaneView: NSView, TerminalSessionUI {
             }
             session.surfaceView.isHidden = true
             linkOverlay.isHidden = true
+            blockOverlay.isHidden = true
             editor.isHidden = true
             editor.hideCompletions()
         } else if let host = claudeHost {
@@ -295,6 +312,8 @@ final class PaneView: NSView, TerminalSessionUI {
             claudeHost = nil
             session.surfaceView.isHidden = false
             linkOverlay.isHidden = false
+            blockOverlay.isHidden = false
+            blockOverlay.invalidate()
             editor.isHidden = !editorVisible
         }
         needsLayout = true
@@ -308,8 +327,40 @@ final class PaneView: NSView, TerminalSessionUI {
         refreshLinks()
         setEditorVisible(wantsEditor)
         applyTheme()
+        blockOverlay.needsDisplay = true
+        blockOverlay.invalidate()
         needsLayout = true
     }
+
+    // MARK: Command blocks
+
+    /// Copy output on a block: its text from the scrollback.
+    private func copyOutput(of block: TerminalSession.CommandBlock) {
+        guard let text = session.output(of: block), !text.isEmpty else {
+            editor.barState.flash("Output no longer on screen", success: false)
+            return
+        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        let n = text.components(separatedBy: "\n").count
+        editor.barState.flash("Copied \(n) line\(n == 1 ? "" : "s") of output", success: true)
+    }
+
+    /// Rerun on a block: through the native prompt when it's showing, else typed at the shell.
+    private func rerun(_ block: TerminalSession.CommandBlock) {
+        switch session.state {
+        case .idle where editorVisible:
+            editor.text = block.command
+            editor.submit()
+        case .idle, .unmanaged:
+            session.surfaceView.sendText(block.command)
+            session.surfaceView.writeRaw("\r")
+        case .running, .starting:
+            NSSound.beep()
+        }
+    }
+
+    var debugBlockSegments: [CommandBlockLayout.Segment] { blockOverlay.debugSegments }
 
     // MARK: Completion popup
 
@@ -420,6 +471,7 @@ final class PaneView: NSView, TerminalSessionUI {
     /// but only while this pane can actually be seen, the app is frontmost and
     /// link highlighting is on.
     private func updateLinkTimer() {
+        blockOverlay.invalidate()
         let visible = window != nil && !isHiddenOrHasHiddenAncestor && window?.occlusionState.contains(.visible) == true
             && NSApp.isActive && SettingsStore.shared.settings.highlightLinks
         guard visible != (linkTimer != nil) else { return }
@@ -465,6 +517,8 @@ final class PaneView: NSView, TerminalSessionUI {
         let text = session.surfaceView.readText()
         let cwd = session.workingDirectory
         guard text != lastLinkText || cwd != lastLinkDirectory else { return }
+        // Output without a scrollbar change (full scrollback) still moves blocks.
+        if text != lastLinkText { blockOverlay.invalidate() }
         lastLinkText = text
         lastLinkDirectory = cwd
         guard let g = LinkDetector.geometry(for: session.surfaceView) else {

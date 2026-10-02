@@ -21,7 +21,91 @@ enum PullRequestBoard {
         }
     }
 
-    enum Filter: String, CaseIterable { case mine, all }
+    /// Which PRs the board shows. "For you" (the default) is PRs assigned to
+    /// the viewer or waiting on their review; "Mine" is PRs they opened. Both
+    /// keep the rest of each matching PR's stack, for context.
+    enum Filter: String, CaseIterable, Identifiable {
+        case forYou, mine, all
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .forYou: "For you"
+            case .mine: "Mine"
+            case .all: "All"
+            }
+        }
+    }
+
+    /// Why a PR is the viewer's business; also the sub-header's narrowing chips.
+    struct Reasons: OptionSet, Hashable {
+        let rawValue: Int
+        static let reviewRequested = Reasons(rawValue: 1)
+        static let assigned = Reasons(rawValue: 2)
+        static let any: Reasons = [.reviewRequested, .assigned]
+    }
+
+    static func reasons(_ pr: OpenPullRequest, login: String?) -> Reasons {
+        guard let login else { return [] }
+        var r: Reasons = []
+        if pr.reviewRequestedLogins.contains(login) { r.insert(.reviewRequested) }
+        if pr.assignees.contains(login) { r.insert(.assigned) }
+        return r
+    }
+
+    /// Counts for the toolbar's segments and the sub-header's chips. Segment
+    /// counts are PRs that match directly (not the stack layers kept for context).
+    struct Counts: Equatable {
+        var forYou = 0, mine = 0, all = 0, reviewRequested = 0, assigned = 0
+
+        func count(_ filter: Filter) -> Int {
+            switch filter {
+            case .forYou: forYou
+            case .mine: mine
+            case .all: all
+            }
+        }
+    }
+
+    static func counts(_ prs: [OpenPullRequest], login: String?) -> Counts {
+        var c = Counts(all: prs.count)
+        for pr in prs {
+            let r = reasons(pr, login: login)
+            if !r.isEmpty { c.forYou += 1 }
+            if r.contains(.reviewRequested) { c.reviewRequested += 1 }
+            if r.contains(.assigned) { c.assigned += 1 }
+            if login != nil && pr.author == login { c.mine += 1 }
+        }
+        return c
+    }
+
+    /// The search field: every word must appear in the title, branch, author,
+    /// a label, or the number ("#45" or "45").
+    static func matches(_ pr: OpenPullRequest, query: String) -> Bool {
+        let words = query.lowercased().split(whereSeparator: \.isWhitespace)
+        guard !words.isEmpty else { return true }
+        let fields = [pr.title, pr.head, pr.author, pr.authorName ?? "", "#\(pr.number)"] + pr.labels.map(\.name)
+        let haystack = fields.joined(separator: "\n").lowercased()
+        return words.allSatisfy { haystack.contains($0) }
+    }
+
+    /// The sub-header's explanation of what the board is showing.
+    static func explanation(filter: Filter, narrowing: Reasons, query: String, slug: String) -> String {
+        var text: String
+        let reasons = narrowing.isEmpty ? (filter == .forYou ? Reasons.any : []) : narrowing
+        switch (filter, reasons) {
+        case (.mine, []): text = "Opened by you, plus the rest of their stacks"
+        case (.all, []): text = "Every open pull request in \(slug)"
+        case (_, .reviewRequested): text = "Waiting on your review, plus the rest of their stacks"
+        case (_, .assigned): text = "Assigned to you, plus the rest of their stacks"
+        default: text = "Assigned to you or waiting on your review, plus the rest of their stacks"
+        }
+        if filter == .mine, !narrowing.isEmpty { text = "Opened by you and " + text.prefix(1).lowercased() + text.dropFirst() }
+        let q = query.trimmingCharacters(in: .whitespaces)
+        if !q.isEmpty { text += " · matching “\(q)”" }
+        return text
+    }
 
     // MARK: Classification
 
@@ -78,6 +162,105 @@ enum PullRequestBoard {
             let order = Column.allCases
             return layers.map { PullRequestBoard.column(for: $0.pr) }.min { order.firstIndex(of: $0)! < order.firstIndex(of: $1)! } ?? .waitingForReview
         }
+
+        /// The last layer: the top of the stack.
+        var top: OpenPullRequest { layers[layers.count - 1].pr }
+
+        /// The stack's name: the "Prefix:" every layer's title shares
+        /// ("Tab groups: iCloud sync", "Tab groups: Settings UI" → "Tab
+        /// groups"), else the top PR's title.
+        var name: String { PullRequestBoard.sharedTitlePrefix(pullRequests.map(\.title)) ?? top.title }
+
+        /// A layer's title without the shared prefix ("iCloud sync").
+        func shortTitle(_ pr: OpenPullRequest) -> String {
+            guard let prefix = PullRequestBoard.sharedTitlePrefix(pullRequests.map(\.title)) else { return pr.title }
+            let rest = pr.title.dropFirst(prefix.count).drop { $0 == ":" || $0 == " " }
+            return rest.isEmpty ? pr.title : String(rest)
+        }
+
+        var additions: Int { pullRequests.reduce(0) { $0 + $1.additions } }
+        var deletions: Int { pullRequests.reduce(0) { $0 + $1.deletions } }
+
+        /// Layers waiting on the viewer's review.
+        func toReview(login: String?) -> Int {
+            pullRequests.filter { PullRequestBoard.reasons($0, login: login).contains(.reviewRequested) }.count
+        }
+
+        /// Failing and running layers (by check rollup), for the collapsed card's footer.
+        var failingLayers: Int { pullRequests.filter { $0.checks == .failing }.count }
+        var pendingLayers: Int { pullRequests.filter { $0.checks == .pending }.count }
+    }
+
+    /// The "Prefix" before a colon that every title shares, when there are at
+    /// least two titles and they all have one.
+    static func sharedTitlePrefix(_ titles: [String]) -> String? {
+        guard titles.count > 1 else { return nil }
+        let prefixes = titles.map { t -> String? in
+            guard let colon = t.firstIndex(of: ":") else { return nil }
+            let p = t[..<colon].trimmingCharacters(in: .whitespaces)
+            return p.isEmpty ? nil : p
+        }
+        guard let first = prefixes[0], prefixes.allSatisfy({ $0?.lowercased() == first.lowercased() }) else { return nil }
+        return first
+    }
+
+    // MARK: Card text
+
+    /// Two-letter initials for an avatar: from the display name's first and
+    /// last words, else the login's parts ("jane-lin" → "JL") or first letters.
+    static func initials(login: String, name: String? = nil) -> String {
+        func two(_ words: [Substring]) -> String? {
+            let w = words.filter { !$0.isEmpty }
+            if w.count >= 2, let a = w.first?.first, let b = w.last?.first { return String([a, b]).uppercased() }
+            if let only = w.first { return String(only.prefix(2)).uppercased() }
+            return nil
+        }
+        if let name, let s = two(name.split(whereSeparator: \.isWhitespace)) { return s }
+        return two(login.split { $0 == "-" || $0 == "_" || $0 == "." }) ?? "?"
+    }
+
+    /// "318", "1.4k", "12k".
+    static func compact(_ n: Int) -> String {
+        if n < 1000 { return "\(n)" }
+        let k = Double(n) / 1000
+        return k < 10 ? String(format: "%.1fk", k).replacingOccurrences(of: ".0k", with: "k") : "\(Int(k.rounded()))k"
+    }
+
+    /// "now", "12m", "2h", "1d".
+    static func shortAge(_ date: Date, now: Date = Date()) -> String {
+        let s = max(0, Int(now.timeIntervalSince(date)))
+        if s < 60 { return "now" }
+        if s < 3600 { return "\(s / 60)m" }
+        if s < 86400 { return "\(s / 3600)h" }
+        return "\(s / 86400)d"
+    }
+
+    /// Reviewers whose latest review requests changes.
+    static func changesRequestedBy(_ pr: OpenPullRequest) -> [String] {
+        pr.reviews.filter { $0.state == "CHANGES_REQUESTED" }.map(\.login)
+    }
+
+    /// Where "Check out into a new worktree" puts the PR (the layout
+    /// `PullRequestsModel.makeWorktree` uses, before any `-pr<n>` suffix).
+    static func worktreePath(root: String, repoName: String, head: String) -> String {
+        "\(root)/\(repoName)/\(head.replacingOccurrences(of: "/", with: "-"))"
+    }
+
+    /// The prompt "Review with Claude" starts Claude with, in the PR's worktree.
+    static func reviewPrompt(_ pr: OpenPullRequest) -> String {
+        "Review pull request #\(pr.number) (\(pr.title)), checked out here from \(pr.head) into \(pr.base). "
+            + "Read the description with `gh pr view \(pr.number)` and the changes with `gh pr diff \(pr.number)`. "
+            + "Look for bugs, missing tests and anything that doesn't match the description, and summarize what you find "
+            + "with file and line references. Don't push or post comments without asking."
+    }
+
+    /// The prompt "Fix with Claude" starts Claude with on a PR with requested changes.
+    static func fixFeedbackPrompt(_ pr: OpenPullRequest, slug: String) -> String {
+        let who = changesRequestedBy(pr)
+        return "Address the changes requested" + (who.isEmpty ? "" : " by " + who.map { "@" + $0 }.joined(separator: ", "))
+            + " on pull request #\(pr.number) (\(pr.title)). Read the reviews with `gh pr view \(pr.number) --comments` and the inline "
+            + "comments with `gh api repos/\(slug)/pulls/\(pr.number)/comments`, make the fixes, and run the relevant tests. "
+            + "Don't push without asking."
     }
 
     /// Groups PRs whose base branch is another open PR's head branch.
@@ -121,12 +304,34 @@ enum PullRequestBoard {
         return result
     }
 
-    /// The board: each column's cards, most recently updated first.
-    static func columns(_ prs: [OpenPullRequest], filter: Filter, login: String?) -> [Column: [Stack]] {
+    /// What the board draws: each column's cards and the counts around them.
+    /// Computed once per change (in the model), never in a view body.
+    struct Layout: Equatable {
+        var columns: [Column: [Stack]] = [:]
+        var counts = Counts()
+
+        /// Cards (a stack is one card) in a column.
+        func cardCount(_ column: Column) -> Int { columns[column]?.count ?? 0 }
+    }
+
+    static func layout(_ prs: [OpenPullRequest], filter: Filter, narrowing: Reasons = [], query: String = "",
+                       login: String?) -> Layout {
+        Layout(columns: columns(prs, filter: filter, narrowing: narrowing, query: query, login: login),
+               counts: counts(prs, login: login))
+    }
+
+    /// The board: each column's cards, most recently updated first. A stack
+    /// shows when any of its layers passes the filter, the narrowing chips and
+    /// the search, so the layers around it keep their context.
+    static func columns(_ prs: [OpenPullRequest], filter: Filter, narrowing: Reasons = [], query: String = "",
+                        login: String?) -> [Column: [Stack]] {
         var result: [Column: [Stack]] = [:]
+        let wanted: Reasons = narrowing.isEmpty && filter == .forYou ? .any : narrowing
         for stack in stacks(prs) {
-            // A stack shows under Mine when any layer is yours, so the layers around it keep their context.
-            if filter == .mine, !stack.pullRequests.contains(where: { login != nil && $0.author == login }) { continue }
+            let layers = stack.pullRequests
+            if filter == .mine, !layers.contains(where: { login != nil && $0.author == login }) { continue }
+            if !wanted.isEmpty, !layers.contains(where: { !reasons($0, login: login).isDisjoint(with: wanted) }) { continue }
+            if !query.isEmpty, !layers.contains(where: { matches($0, query: query) }) { continue }
             result[stack.column, default: []].append(stack)
         }
         for key in result.keys {
@@ -152,7 +357,8 @@ enum PullRequestBoard {
               nodes {
                 number title url isDraft headRefName baseRefName isCrossRepository
                 reviewDecision updatedAt additions deletions
-                author { login __typename }
+                author { login __typename ... on User { name } }
+                assignees(first: 10) { nodes { login } }
                 labels(first: 10) { nodes { name color } }
                 reviewRequests(first: 20) { nodes { requestedReviewer { __typename ... on User { login } ... on Team { slug } ... on Bot { login } } } }
                 latestReviews(first: 20) { nodes { author { login } state } }
@@ -212,6 +418,7 @@ enum PullRequestBoard {
         let rollup = commit?["statusCheckRollup"] as? [String: Any]
         let contexts = (rollup?["contexts"] as? [String: Any])?["nodes"] as? [[String: Any]] ?? []
         let (checks, summary) = OpenPullRequest.rollup(contexts)
+        let counts = checkCounts(contexts)
         let requested = nodes("reviewRequests").compactMap { r -> String? in
             let who = r["requestedReviewer"] as? [String: Any]
             return who?["login"] as? String ?? (who?["slug"] as? String).map { "team:" + $0 }
@@ -234,7 +441,20 @@ enum PullRequestBoard {
             reviewRequestedLogins: requested,
             reviews: reviews,
             unresolvedThreads: nodes("reviewThreads").filter { $0["isResolved"] as? Bool == false }.count,
-            failedRunIDs: failedRunIDs(contexts))
+            failedRunIDs: failedRunIDs(contexts),
+            assignees: nodes("assignees").compactMap { $0["login"] as? String },
+            authorName: (author["name"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+            checksTotal: counts.total, checksPassing: counts.passing, checksFailing: counts.failing)
+    }
+
+    /// Check contexts by outcome, with the same rules as `OpenPullRequest.rollup`.
+    static func checkCounts(_ contexts: [[String: Any]]) -> (total: Int, passing: Int, failing: Int) {
+        var passing = 0, failing = 0
+        for c in contexts {
+            let (state, _) = OpenPullRequest.rollup([c])
+            if state == .passing { passing += 1 } else if state == .failing { failing += 1 }
+        }
+        return (contexts.count, passing, failing)
     }
 
     /// Actions run IDs (`…/actions/runs/<id>/…`) of failing check runs.

@@ -45,23 +45,39 @@ struct GitHubTabView: View {
 struct GitHubBoardView: View {
     let model: GitHubBoardModel
     let controller: TerminalWindowController
+    /// The title, filter, search and refresh row. With vertical tabs these
+    /// live in the window's unified toolbar instead.
+    var showsHeader = SettingsStore.shared.settings.tabBarStyle != .vertical
 
     /// The narrowest a column gets before the board scrolls sideways.
-    static let columnWidth: CGFloat = 240
+    static let columnWidth: CGFloat = 218
+    static let defaultDetailWidth: CGFloat = 440
     @State private var boardWidth: CGFloat = 0
-    @State private var detailWidth: CGFloat = 520
+    @State private var detailWidth: CGFloat = GitHubBoardView.defaultDetailWidth
     @State private var dragBase: CGFloat?
+
+    private var actions: PRActions { PRActions(model: model, controller: controller) }
 
     var body: some View {
         let p = ClaudePalette.current
         VStack(spacing: 0) {
-            header(p)
-            p.border.frame(height: 1)
+            if showsHeader {
+                HStack(spacing: 12) {
+                    GitHubToolbarTitle(model: model, controller: controller)
+                    Spacer(minLength: 8)
+                    GitHubToolbarControls(model: model)
+                }
+                .padding(.horizontal, 14)
+                .frame(height: 48)
+                Divider()
+            }
+            subHeader
+            Divider()
             notices(p)
             HStack(spacing: 0) {
                 board(p)
                 if let selection = model.selection, let pr = model.pullRequest(selection.number) {
-                    resizeHandle(p)
+                    resizeHandle
                     PullRequestDetailView(model: model, controller: controller, pr: pr, stack: model.selectedStack)
                         .frame(width: detailWidth)
                         .id(pr.number)
@@ -77,86 +93,63 @@ struct GitHubBoardView: View {
             // The selected PR merged or closed elsewhere.
             if let n = model.selection?.number, !model.isLoading, !prs.contains(where: { $0.number == n }) { model.selection = nil }
         }
+        .onChange(of: model.selection) { _, selection in
+            // Selecting a stack layer opens its stack, as in the design.
+            if selection?.stackID != nil, let stack = model.selectedStack { model.setExpanded(stack, true) }
+        }
     }
 
-    // MARK: Header
+    // MARK: Sub-header
 
-    private func header(_ p: ClaudePalette) -> some View {
-        HStack(spacing: 10) {
-            Link(destination: model.remote.url.appendingPathComponent("pulls")) {
-                HStack(spacing: 5) {
-                    Image(systemName: "shippingbox").foregroundStyle(p.cyan)
-                    Text(model.remote.slug).font(.system(size: 13, weight: .semibold))
-                    Image(systemName: "arrow.up.right").font(.system(size: 8, weight: .bold)).foregroundStyle(p.dim)
-                }
-            }
-            .foregroundStyle(p.foreground)
-            .help("Open pull requests on GitHub")
-            let repos = controller.githubRepositories.filter { $0.root != model.repoRoot }
-            if !repos.isEmpty {
-                Menu {
-                    ForEach(repos, id: \.root) { repo in
-                        Button(repo.remote.slug) { controller.showGitHub(repoRoot: repo.root, remote: repo.remote) }
-                    }
-                } label: {
-                    Image(systemName: "chevron.up.chevron.down")
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .help("Show another repository open in this window")
-            }
-            Text("\(model.pullRequests.count) open").font(.system(size: 11)).foregroundStyle(p.dim)
-            Spacer()
-            Picker("", selection: Binding(get: { model.filter }, set: { model.filter = $0 })) {
-                Text("Mine").tag(PullRequestBoard.Filter.mine)
-                Text("All").tag(PullRequestBoard.Filter.all)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .controlSize(.small)
-            .fixedSize()
-            .help("Show your pull requests (and the stacks they're in), or everyone's")
-            if model.isLoading { ProgressView().controlSize(.mini) }
-            if let updated = model.lastUpdated {
-                TimelineView(.periodic(from: .now, by: 15)) { _ in
-                    Text(ActionsView.ago(updated)).font(.system(size: 10)).foregroundStyle(p.dim)
-                }
-                .help("Refreshes every 2 minutes while this tab is showing")
-            }
-            Button { model.refresh() } label: { Image(systemName: "arrow.clockwise") }
-                .buttonStyle(HeaderButtonStyle(palette: p, active: false))
-                .help("Refresh")
-                .keyboardShortcut("r", modifiers: .command)
+    private var subHeader: some View {
+        let counts = model.layout.counts
+        return HStack(spacing: 8) {
+            Text(PullRequestBoard.explanation(filter: model.filter, narrowing: model.narrowing, query: model.searchText,
+                                              slug: model.remote.slug))
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 8)
+            NarrowingChip(title: "Review requested", count: counts.reviewRequested,
+                          active: model.narrowing.contains(.reviewRequested)) { model.toggleNarrowing(.reviewRequested) }
+                .help("Only pull requests waiting on your review (and their stacks)")
+            NarrowingChip(title: "Assigned", count: counts.assigned,
+                          active: model.narrowing.contains(.assigned)) { model.toggleNarrowing(.assigned) }
+                .help("Only pull requests assigned to you (and their stacks)")
+            CheckboxChip(title: "Collapse stacks", isOn: model.collapseStacks) { model.collapseStacks.toggle() }
+                .help("Show each stack as one compact card until you expand it")
         }
-        .padding(.horizontal, 14)
-        .frame(height: 40)
+        .padding(.horizontal, 20)
+        .frame(height: 42)
     }
 
     @ViewBuilder
     private func notices(_ p: ClaudePalette) -> some View {
         if let err = model.error {
-            BoardNotice(text: err, icon: "exclamationmark.triangle.fill", color: p.yellow, palette: p, dismiss: nil)
+            BoardNotice(text: err, icon: "exclamationmark.triangle.fill", color: DS.Status.needsYou, palette: p, dismiss: nil)
         }
         if let msg = model.message {
             BoardNotice(text: msg.text, icon: msg.isError ? "xmark.octagon.fill" : "checkmark.circle.fill",
-                        color: msg.isError ? p.red : p.green, palette: p, dismiss: { model.message = nil })
+                        color: msg.isError ? DS.Status.failed : DS.Status.done, palette: p, dismiss: { model.message = nil })
         }
     }
 
     // MARK: Columns
 
     private func board(_ p: ClaudePalette) -> some View {
-        let columns = model.columns
+        let columns = model.layout.columns
         let count = CGFloat(PullRequestBoard.Column.allCases.count)
         // Columns share the width, scrolling sideways once they'd get narrower than the minimum.
-        let width = max(Self.columnWidth, (boardWidth - 24 - 10 * (count - 1)) / count)
+        let width = max(Self.columnWidth, (boardWidth - 32 - 12 * (count - 1)) / count)
         return ScrollView(.horizontal) {
-            HStack(alignment: .top, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
                 ForEach(PullRequestBoard.Column.allCases) { column in
                     columnView(column, stacks: columns[column] ?? [], width: width, p)
                 }
             }
-            .padding(12)
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
             .frame(maxHeight: .infinity, alignment: .top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -165,58 +158,141 @@ struct GitHubBoardView: View {
 
     private func columnView(_ column: PullRequestBoard.Column, stacks: [PullRequestBoard.Stack], width: CGFloat, _ p: ClaudePalette) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                Circle().fill(Self.color(column, p)).frame(width: 8, height: 8)
-                Text(column.title).font(.system(size: 12, weight: .semibold))
-                Text("\(stacks.reduce(0) { $0 + $1.layers.count })").font(.system(size: 11)).foregroundStyle(p.dim).monospacedDigit()
-                Spacer()
+            HStack(spacing: 7) {
+                Circle().fill(Self.color(column)).frame(width: 8, height: 8)
+                Text(column.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                Text("\(stacks.count)").font(.system(size: 12)).foregroundStyle(.tertiary).monospacedDigit()
+                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 4)
+            .padding(.top, 2)
+            .padding(.bottom, 12)
+            .accessibilityElement(children: .combine)
             ScrollView(.vertical) {
                 LazyVStack(spacing: 8) {
                     ForEach(stacks) { stack in
                         if stack.layers.count > 1 {
-                            StackCard(stack: stack, model: model, palette: p)
+                            StackCard(stack: stack, model: model, palette: p, actions: actions)
                         } else {
-                            PullRequestCard(pr: stack.bottom, model: model, palette: p)
+                            PullRequestCard(pr: stack.bottom, model: model, palette: p, actions: actions,
+                                            tabMatch: tabMatch(for: stack.bottom))
                         }
                     }
                     if stacks.isEmpty {
                         Text(model.lastUpdated == nil && model.error == nil ? "Loading…" : "None")
-                            .font(.system(size: 11)).foregroundStyle(p.dim).padding(.vertical, 12)
+                            .font(.system(size: DS.Size.small)).foregroundStyle(.tertiary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 4).padding(.vertical, 6)
                     }
                 }
-                .padding(.horizontal, 8)
-                .padding(.bottom, 8)
+                .padding(.bottom, 12)
             }
+            .scrollIndicators(.never)
         }
         .frame(width: width)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(RoundedRectangle(cornerRadius: 10).fill(p.surface))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(p.border.opacity(0.7), lineWidth: 0.5))
     }
 
-    private func resizeHandle(_ p: ClaudePalette) -> some View {
-        p.border.frame(width: 1)
+    /// A tab in this window on the PR's branch: "Open in Tab 3 with Claude".
+    private func tabMatch(for pr: OpenPullRequest) -> BoardTabMatch? {
+        for (i, tab) in controller.workspace.tabs.enumerated() {
+            let sessions = tab.orderedSessions
+            guard let session = sessions.first(where: {
+                ($0.nativeClaude?.repository?.status.branch ?? $0.gitBranch) == pr.head
+            }) else { continue }
+            let claude = session.nativeClaude != nil || session.agent != nil
+            return BoardTabMatch(index: i + 1, withClaude: claude) { [controller] in controller.reveal(session) }
+        }
+        return nil
+    }
+
+    private var resizeHandle: some View {
+        Divider()
             .overlay(Color.clear.frame(width: 8).contentShape(Rectangle()).onHover { inside in
                 if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
             }
             .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global).onChanged { g in
                 if dragBase == nil { dragBase = detailWidth }
-                detailWidth = min(max((dragBase ?? 520) - g.translation.width, 360), 900)
+                detailWidth = min(max((dragBase ?? Self.defaultDetailWidth) - g.translation.width, 360), 900)
             }.onEnded { _ in dragBase = nil }))
     }
 
-    static func color(_ column: PullRequestBoard.Column, _ p: ClaudePalette) -> Color {
+    /// Column (and state dot) colors: gray draft, blue waiting, purple
+    /// feedback, red changes requested, green ready.
+    static func color(_ column: PullRequestBoard.Column) -> Color {
         switch column {
-        case .draft: p.dim
-        case .waitingForReview: p.yellow
-        case .hasFeedback: p.blue
-        case .changesRequested: p.red
-        case .ready: p.green
+        case .draft: Color.secondary
+        case .waitingForReview: DS.Status.info
+        case .hasFeedback: DS.Status.review
+        case .changesRequested: DS.Status.failed
+        case .ready: DS.Status.done
         }
     }
+
+    static func color(_ column: PullRequestBoard.Column, _ p: ClaudePalette) -> Color { color(column) }
+}
+
+/// "Review requested 3": a narrowing toggle, blue while on.
+struct NarrowingChip: View {
+    let title: String
+    let count: Int
+    let active: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Text(title)
+                Text("\(count)").monospacedDigit()
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(active ? DS.Status.info : Color.primary.opacity(0.85))
+            .padding(.horizontal, 9)
+            .frame(height: 22)
+            .background(active ? DS.Status.info.opacity(0.16) : Color.primary.opacity(0.07), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(active ? .isSelected : [])
+    }
+}
+
+/// "☑ Collapse stacks": a checkbox drawn as a chip, like the narrowing chips.
+struct CheckboxChip: View {
+    let title: String
+    let isOn: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(isOn ? DS.Status.selection : Color.clear)
+                    .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(isOn ? Color.clear : Color.primary.opacity(0.35), lineWidth: 1))
+                    .overlay {
+                        if isOn { Image(systemName: "checkmark").font(.system(size: 7, weight: .heavy)).foregroundStyle(.white) }
+                    }
+                    .frame(width: 11, height: 11)
+                Text(title)
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(Color.primary.opacity(0.85))
+            .padding(.horizontal, 9)
+            .frame(height: 22)
+            .background(Color.primary.opacity(0.07), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
+        .accessibilityValue(isOn ? "On" : "Off")
+    }
+}
+
+/// A tab already on a PR's branch, for the card's "Open in Tab 3" link.
+struct BoardTabMatch {
+    var index: Int
+    var withClaude: Bool
+    var open: () -> Void
 }
 
 struct BoardNotice: View {
@@ -229,136 +305,608 @@ struct BoardNotice: View {
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
             Image(systemName: icon).foregroundStyle(color)
-            Text(text).font(.system(size: 11.5)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            Text(text).font(.system(size: DS.Size.subtitle)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
             Spacer()
-            if let dismiss { Button(action: dismiss) { Image(systemName: "xmark") }.buttonStyle(.plain).foregroundStyle(palette.dim) }
+            if let dismiss { Button(action: dismiss) { Image(systemName: "xmark") }.buttonStyle(.plain).foregroundStyle(.secondary) }
         }
         .padding(8)
-        .background(RoundedRectangle(cornerRadius: 7).fill(color.opacity(0.1)))
-        .padding(.horizontal, 12)
+        .background(RoundedRectangle(cornerRadius: DS.Radius.row).fill(color.opacity(0.1)))
+        .padding(.horizontal, 14)
         .padding(.top, 8)
+    }
+}
+
+// MARK: - Actions
+
+/// What a card's hover row, its Worktree menu and the detail pane do with a
+/// PR: check it out into a worktree (or reuse one), open a terminal or Claude
+/// there, and the GitHub links.
+@MainActor
+struct PRActions {
+    let model: GitHubBoardModel
+    let controller: TerminalWindowController
+
+    /// A terminal in the PR's worktree (checking it out first if needed).
+    func openInTerminal(_ pr: OpenPullRequest) {
+        Task {
+            guard let path = await model.ensureWorktree(for: pr) else { return }
+            controller.switchToDirectory(path)
+        }
+    }
+
+    /// A new tab in the PR's worktree running the default agent, with `prompt` when given.
+    func startClaude(_ pr: OpenPullRequest, name: String? = nil, prompt: String? = nil) {
+        Task {
+            guard let path = await model.ensureWorktree(for: pr) else { return }
+            let tab = controller.newTab(directory: path)
+            tab.focusedSession?.pendingCommand = Self.command(name: name ?? pr.head, prompt: prompt)
+        }
+    }
+
+    func review(_ pr: OpenPullRequest) {
+        startClaude(pr, name: "Review #\(pr.number)", prompt: PullRequestBoard.reviewPrompt(pr))
+    }
+
+    func fixFeedback(_ pr: OpenPullRequest) {
+        startClaude(pr, name: "Fix #\(pr.number)", prompt: PullRequestBoard.fixFeedbackPrompt(pr, slug: model.remote.slug))
+    }
+
+    func openOnGitHub(_ pr: OpenPullRequest) { NSWorkspace.shared.open(pr.url) }
+
+    func copyBranch(_ pr: OpenPullRequest) { PRContextMenu.copy(pr.head) }
+
+    /// `claude -n <name> [--permission-mode …] ['<prompt>']`.
+    static func command(name: String, prompt: String?) -> String {
+        let s = SettingsStore.shared.settings
+        var cmd = s.defaultAgent.command(name: name, permissionMode: s.claudePermissionMode)
+        if let prompt, !prompt.isEmpty { cmd += " " + ShellQuote.quote(prompt) }
+        return cmd
+    }
+}
+
+/// The Worktree menu: where the checkout goes, then Terminal, Claude and
+/// GitHub. Shared by the card's hover row and the detail pane.
+struct PRWorktreeMenuItems: View {
+    let pr: OpenPullRequest
+    let actions: PRActions
+
+    var body: some View {
+        let existing = actions.model.worktree(for: pr) != nil
+        Section(existing ? "Checked out in a worktree" : "Check out into a new worktree") {
+            Text(ShellQuote.path(actions.model.plannedWorktreePath(for: pr)))
+        }
+        Button { actions.openInTerminal(pr) } label: { Label("Open in Terminal", systemImage: "apple.terminal") }
+        Button { actions.startClaude(pr) } label: { Label("Start Claude There", systemImage: "sparkle") }
+        Button { actions.review(pr) } label: { Label("Start Claude Review…", systemImage: "sparkle.magnifyingglass") }
+        Divider()
+        Button { actions.openOnGitHub(pr) } label: { Label("Open on github.com", systemImage: "arrow.up.right") }
+        Button { actions.copyBranch(pr) } label: { Label("Copy Branch Name", systemImage: "doc.on.doc") }
     }
 }
 
 // MARK: - Cards
 
+/// Initials in a small circle, for authors and reviewers.
+struct AvatarCircle: View {
+    let login: String
+    var name: String?
+    var size: CGFloat = 18
+
+    var body: some View {
+        Text(PullRequestBoard.initials(login: login, name: name))
+            .font(.system(size: size * 0.48, weight: .semibold))
+            .foregroundStyle(.primary)
+            .frame(width: size, height: size)
+            .background(Circle().fill(Self.tint(login)))
+            .help(name.map { "\($0) (\(login))" } ?? login)
+            .accessibilityLabel(login)
+    }
+
+    /// A muted per-person tint (the design's slate, moss and clay circles),
+    /// stable for a login.
+    static func tint(_ login: String) -> Color {
+        let hash = login.unicodeScalars.reduce(UInt32(7)) { ($0 &* 31) &+ $1.value }
+        let hue = CGFloat(hash % 360) / 360
+        return Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor(hue: hue, saturation: 0.28, brightness: 0.36, alpha: 1)
+                : NSColor(hue: hue, saturation: 0.18, brightness: 0.88, alpha: 1)
+        })
+    }
+}
+
+/// "✓ 6/6", "✕ 1 failing", a spinner with "4/6", or "No checks".
+struct CardChecksLabel: View {
+    let pr: OpenPullRequest
+
+    var body: some View {
+        HStack(spacing: 3) {
+            switch pr.checks {
+            case .passing:
+                Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
+                if pr.checksTotal > 0 { Text("\(pr.checksPassing)/\(pr.checksTotal)") }
+            case .failing:
+                Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+                Text("\(max(pr.checksFailing, 1)) failing")
+            case .pending:
+                SpinnerRing(size: 9)
+                Text(pr.checksTotal > 0 ? "\(pr.checksPassing)/\(pr.checksTotal)" : "running")
+            case .none:
+                Text("No checks")
+            }
+        }
+        .foregroundStyle(Self.color(pr.checks))
+        .monospacedDigit()
+        .help(pr.checksSummary)
+    }
+
+    static func color(_ checks: OpenPullRequest.Checks) -> Color {
+        switch checks {
+        case .passing: DS.Status.done
+        case .failing: DS.Status.failed
+        case .pending: DS.Status.working
+        case .none: .secondary
+        }
+    }
+}
+
+/// Why the PR is on your board: "Review requested" (blue) or "Assigned" (gray).
+struct ReasonPill: View {
+    let reasons: PullRequestBoard.Reasons
+
+    var body: some View {
+        if reasons.contains(.reviewRequested) {
+            Pill("Review requested", color: DS.Status.info)
+        } else if reasons.contains(.assigned) {
+            Pill("Assigned", color: .primary)
+        }
+    }
+}
+
+/// The card surface: opaque (so a stack's layered edge doesn't show
+/// through), raised on hover, outlined in the accent when selected.
+private struct CardChrome: ViewModifier {
+    let palette: ClaudePalette
+    let hovered: Bool
+    let selected: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: DS.Radius.card).fill(hovered || selected ? palette.raised : palette.surface)
+                .shadow(color: .black.opacity(hovered && palette.isDark ? 0.3 : 0), radius: 9, y: 6))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.card)
+                .strokeBorder(selected ? DS.Status.selection : Color.primary.opacity(hovered ? 0.14 : 0.09), lineWidth: selected ? 1.5 : 0.5))
+    }
+}
+
 struct PullRequestCard: View {
     let pr: OpenPullRequest
     let model: GitHubBoardModel
     let palette: ClaudePalette
+    var actions: PRActions?
+    var tabMatch: BoardTabMatch?
     @State private var hovered = false
 
     var body: some View {
-        let p = palette
         let selected = model.selection?.number == pr.number && model.selection?.stackID == nil
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("#\(pr.number)").font(.system(size: 11.5, weight: .bold)).foregroundStyle(pr.isDraft ? p.dim : p.green)
-                Text(pr.title).font(.system(size: 12, weight: .medium)).lineLimit(3).fixedSize(horizontal: false, vertical: true)
-            }
+        let column = PullRequestBoard.column(for: pr)
+        VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
-                Text(pr.author + (pr.authorIsBot ? " (bot)" : "")).foregroundStyle(model.isMine(pr) ? p.claude : p.foreground.opacity(0.8))
-                if let updated = pr.updatedAt { Text(PRBadges.relative(updated)) }
-                Spacer(minLength: 2)
-                Text("+\(pr.additions)").foregroundStyle(p.green).monospacedDigit()
-                Text("−\(pr.deletions)").foregroundStyle(p.red).monospacedDigit()
+                Text("#\(pr.number)").font(.system(size: DS.Size.subtitle, design: .monospaced)).foregroundStyle(.secondary)
+                ReasonPill(reasons: model.reasons(pr))
+                Spacer(minLength: 4)
+                AvatarCircle(login: pr.author, name: pr.authorName)
             }
-            .font(.system(size: 10.5))
-            .foregroundStyle(p.dim)
+            Text(pr.title)
+                .font(.system(size: DS.Size.title, weight: .semibold))
+                .lineSpacing(2)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 4) {
-                Image(systemName: "arrow.triangle.branch").font(.system(size: 9)).foregroundStyle(p.magenta)
                 Text(pr.head).lineLimit(1).truncationMode(.middle)
                 if model.worktree(for: pr) != nil {
-                    Image(systemName: "square.stack.3d.up.fill").font(.system(size: 9)).foregroundStyle(p.green)
+                    Image(systemName: "square.stack.3d.up.fill").font(.system(size: 9)).foregroundStyle(DS.Status.done)
                         .help("Checked out in a worktree")
                 }
             }
-            .font(.system(size: 10.5))
-            .foregroundStyle(p.foreground.opacity(0.85))
-            PRBadges(pr: pr, palette: p)
-            if let busy = model.busy[pr.number] {
+            .font(.system(size: DS.Size.small, design: .monospaced))
+            .foregroundStyle(.tertiary)
+            footer(column)
+            if column == .changesRequested { changesRequested }
+            if let tabMatch {
+                Button(action: tabMatch.open) {
+                    HStack(spacing: 5) {
+                        Circle().fill(tabMatch.withClaude ? DS.claude : DS.Status.done).frame(width: 6, height: 6)
+                        Text("Open in Tab \(tabMatch.index)" + (tabMatch.withClaude ? " with Claude" : ""))
+                    }
+                    .font(.system(size: DS.Size.subtitle))
+                    .foregroundStyle(.secondary)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Show the tab on \(pr.head)")
+            }
+            if let busy = model.busy[pr.number] ?? (model.creatingWorktree.contains(pr.number) ? "Creating worktree…" : nil) {
                 HStack(spacing: 5) {
-                    ProgressView().controlSize(.mini)
-                    Text(busy).font(.system(size: 10.5)).foregroundStyle(p.dim)
+                    SpinnerRing(size: 9)
+                    Text(busy).font(.system(size: DS.Size.small)).foregroundStyle(.secondary)
                 }
             }
+            if let actions, hovered || selected {
+                CardActionRow(pr: pr, actions: actions)
+            }
         }
-        .padding(9)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(selected ? p.raised : hovered ? p.raised.opacity(0.7) : p.background.opacity(0.6)))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(selected ? p.accent : p.border, lineWidth: selected ? 1.5 : 0.5))
+        .modifier(CardChrome(palette: palette, hovered: hovered, selected: selected))
         .contentShape(Rectangle())
         .onHover { hovered = $0 }
         .onTapGesture { model.selection = selected ? nil : .init(number: pr.number) }
         .contextMenu { PRContextMenu(pr: pr, model: model) }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("#\(pr.number) \(pr.title), \(column.title)")
         .accessibilityAddTraits(.isButton)
-        .accessibilityHint("Shows the pull request's details")
+        .accessibilityAction { model.selection = .init(number: pr.number) }
+    }
+
+    private func footer(_ column: PullRequestBoard.Column) -> some View {
+        let approved = pr.reviewDecision == "APPROVED"
+        return HStack(spacing: 10) {
+            CardChecksLabel(pr: pr)
+            // The diff size gives way to review state, which matters more.
+            if !approved && pr.unresolvedThreads == 0 {
+                Text("+\(PullRequestBoard.compact(pr.additions)) −\(PullRequestBoard.compact(pr.deletions))")
+                    .font(.system(size: DS.Size.small, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .help("\(pr.additions) additions, \(pr.deletions) deletions")
+            }
+            if approved {
+                Text("Approved").foregroundStyle(DS.Status.done)
+            }
+            if pr.unresolvedThreads > 0 {
+                Text(column == .hasFeedback ? "\(pr.unresolvedThreads) open thread\(pr.unresolvedThreads == 1 ? "" : "s")"
+                     : "\(pr.unresolvedThreads) thread\(pr.unresolvedThreads == 1 ? "" : "s")")
+                    .foregroundStyle(column == .hasFeedback ? DS.Status.review : .secondary)
+            }
+            Spacer(minLength: 2)
+            if let updated = pr.updatedAt {
+                Text(PullRequestBoard.shortAge(updated)).foregroundStyle(.secondary).help("Updated \(PRBadges.relative(updated))")
+            }
+        }
+        .font(.system(size: DS.Size.subtitle))
+        .lineLimit(1)
+    }
+
+    private var changesRequested: some View {
+        let who = PullRequestBoard.changesRequestedBy(pr)
+        return HStack(spacing: 6) {
+            Text((who.first.map { PullRequestBoard.initials(login: $0) + " " } ?? "") + "requested changes")
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(Self.changesText)
+                .help(who.isEmpty ? "Changes requested" : "Requested by " + who.joined(separator: ", "))
+            Spacer(minLength: 4)
+            if let actions {
+                Button { actions.fixFeedback(pr) } label: {
+                    HStack(spacing: 4) { ClaudeMark(size: 9); Text("Fix with Claude") }.foregroundStyle(DS.claude).fixedSize()
+                }
+                .buttonStyle(.plain)
+                .help("Check out #\(pr.number) and start Claude on the review feedback")
+            }
+        }
+        .font(.system(size: DS.Size.subtitle))
+        .padding(.horizontal, 8).padding(.vertical, 6)
+        .background(DS.Status.failed.opacity(0.1), in: RoundedRectangle(cornerRadius: DS.Radius.control))
+    }
+
+    /// The soft red of the "requested changes" note: pink on dark, system red on light.
+    static let changesText = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(srgbRed: 1, green: 0xB3 / 255, blue: 0xAD / 255, alpha: 1) : .systemRed
+    })
+}
+
+/// "✻ Review", "Worktree ▾", "↗": a card's actions, shown on hover.
+struct CardActionRow: View {
+    let pr: OpenPullRequest
+    let actions: PRActions
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Button { actions.review(pr) } label: {
+                HStack(spacing: 5) { ClaudeMark(size: 10); Text("Review") }
+                    .modifier(CardActionLabel())
+            }
+            .buttonStyle(.plain)
+            .help("Check out #\(pr.number) in a worktree and start a Claude review")
+            // The label is drawn here; a see-through menu over it takes the click.
+            HStack(spacing: 5) {
+                Text("Worktree")
+                Image(systemName: "arrowtriangle.down.fill").font(.system(size: 6)).foregroundStyle(.secondary)
+            }
+            .modifier(CardActionLabel())
+            .accessibilityHidden(true)
+            .overlay {
+                Menu { PRWorktreeMenuItems(pr: pr, actions: actions) } label: { Text("Worktree") }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .opacity(0.011)
+            }
+            .help("Check out the branch into a worktree, then open a terminal or Claude there")
+            Button { actions.openOnGitHub(pr) } label: {
+                Image(systemName: "arrow.up.right").font(.system(size: 10, weight: .semibold))
+                    .frame(width: 28, height: 24)
+                    .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.Radius.control))
+                    .contentShape(RoundedRectangle(cornerRadius: DS.Radius.control))
+            }
+            .buttonStyle(.plain)
+            .help("Open #\(pr.number) on github.com")
+            .accessibilityLabel("Open on GitHub")
+        }
+        .padding(.top, 7)
+        .overlay(alignment: .top) { Color.primary.opacity(0.07).frame(height: 0.5) }
     }
 }
 
-/// Several stacked PRs as one card: each layer, bottom first, with its state.
+/// One of the card's equal-width action buttons: 24pt, 11.5pt type.
+private struct CardActionLabel: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .font(.system(size: DS.Size.subtitle))
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, minHeight: 24, maxHeight: 24)
+            .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.Radius.control))
+            .contentShape(RoundedRectangle(cornerRadius: DS.Radius.control))
+    }
+}
+
+/// Several stacked PRs as one card. Collapsed: one line per layer. Expanded:
+/// a connected list of layers ending in the base branch.
 struct StackCard: View {
     let stack: PullRequestBoard.Stack
     let model: GitHubBoardModel
     let palette: ClaudePalette
+    var actions: PRActions?
     @State private var hovered = false
 
     var body: some View {
-        let p = palette
-        let selected = model.selection?.stackID != nil && stack.pullRequests.contains { $0.number == model.selection?.stackID }
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: "square.stack.3d.up").foregroundStyle(p.accent)
-                Text("Stack of \(stack.layers.count)").font(.system(size: 12, weight: .semibold))
-                Spacer()
-                Text(stack.bottom.base).font(.system(size: 10)).foregroundStyle(p.dim).lineLimit(1).truncationMode(.middle)
-                    .help("The stack merges into \(stack.bottom.base)")
-            }
-            ForEach(Array(stack.layers.enumerated().reversed()), id: \.element.pr.number) { _, layer in
-                StackLayerRow(layer: layer, model: model, palette: p, stackID: stack.id, selected: selected && model.selection?.number == layer.pr.number)
+        let selectedLayer = model.selection?.stackID != nil ? model.selection?.number : nil
+        let selected = selectedLayer.map { n in stack.pullRequests.contains { $0.number == n } } ?? false
+        let expanded = model.isExpanded(stack)
+        VStack(alignment: .leading, spacing: expanded ? 8 : 7) {
+            if expanded {
+                expandedBody(selectedLayer: selected ? selectedLayer : nil)
+            } else {
+                collapsedBody
             }
         }
-        .padding(9)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(selected ? p.raised : hovered ? p.raised.opacity(0.7) : p.background.opacity(0.6)))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(selected ? p.accent : p.accent.opacity(0.35), lineWidth: selected ? 1.5 : 0.75))
+        .modifier(CardChrome(palette: palette, hovered: hovered, selected: selected && !expanded))
+        .background(alignment: .bottom) {
+            if !expanded {
+                // The layered edge: two cards peeking out below.
+                ZStack(alignment: .bottom) {
+                    edge(inset: 3, drop: 8, opacity: 0.06)
+                    edge(inset: 1, drop: 4, opacity: 0.08)
+                }
+            }
+        }
+        .padding(.bottom, expanded ? 0 : 8)
         .contentShape(Rectangle())
         .onHover { hovered = $0 }
-        .onTapGesture { model.selection = .init(number: stack.bottom.number, stackID: stack.id) }
+        .onTapGesture {
+            model.selection = .init(number: stack.top.number, stackID: stack.id)
+        }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Stack of \(stack.layers.count) pull requests")
+        .accessibilityLabel("Stack of \(stack.layers.count) pull requests: \(stack.name)")
+    }
+
+    private func edge(inset: CGFloat, drop: CGFloat, opacity: Double) -> some View {
+        RoundedRectangle(cornerRadius: DS.Radius.card)
+            .fill(palette.background.mix(with: palette.surface, by: 0.5))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.card).strokeBorder(Color.primary.opacity(opacity), lineWidth: 0.5))
+            .frame(height: 30)
+            .padding(.horizontal, inset)
+            .offset(y: drop)
+    }
+
+    private var stackPill: some View { Pill("Stack of \(stack.layers.count)", color: .primary) }
+
+    private var collapsedBody: some View {
+        let toReview = stack.toReview(login: model.login)
+        return Group {
+            HStack(spacing: 6) {
+                stackPill
+                if toReview > 0 { Pill("\(toReview) to review", color: DS.Status.info) }
+                Spacer(minLength: 4)
+                AvatarCircle(login: stack.top.author, name: stack.top.authorName)
+            }
+            Text(stack.name)
+                .font(.system(size: DS.Size.title, weight: .semibold))
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(stack.layers.reversed(), id: \.pr.number) { layer in
+                    Button { select(layer.pr) } label: {
+                        let draft = layer.pr.isDraft
+                        HStack(spacing: 6) {
+                            Circle().fill(GitHubBoardView.color(PullRequestBoard.column(for: layer.pr))).frame(width: 6, height: 6)
+                            Text("#\(layer.pr.number)").font(.system(size: DS.Size.subtitle, design: .monospaced))
+                            Text(stack.shortTitle(layer.pr)).lineLimit(1).truncationMode(.tail)
+                            Spacer(minLength: 0)
+                        }
+                        .font(.system(size: DS.Size.subtitle))
+                        // Drafts recede; the layers waiting on someone read brighter.
+                        .foregroundStyle(draft ? Color.secondary : Color.primary.opacity(0.85))
+                        // Indent only a branching stack; a straight one reads as a list.
+                        .padding(.leading, stack.isBranching ? CGFloat(layer.depth) * 8 : 0)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("#\(layer.pr.number) \(layer.pr.title) — \(PullRequestBoard.column(for: layer.pr).title)")
+                }
+            }
+            HStack(spacing: 7) {
+                stackChecks.fixedSize()
+                Text("+\(PullRequestBoard.compact(stack.additions)) −\(PullRequestBoard.compact(stack.deletions))")
+                    .font(.system(size: DS.Size.small, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .help("\(stack.additions) additions, \(stack.deletions) deletions")
+                Spacer(minLength: 0)
+                Button { model.setExpanded(stack, true) } label: {
+                    HStack(spacing: 3) { Text("Expand"); Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)) }
+                }
+                .buttonStyle(.plain)
+                .fixedSize()
+                .foregroundStyle(DS.Status.info)
+            }
+            .font(.system(size: DS.Size.subtitle))
+            .lineLimit(1)
+        }
+    }
+
+    @ViewBuilder private var stackChecks: some View {
+        if stack.failingLayers > 0 {
+            HStack(spacing: 3) {
+                Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+                Text("\(stack.failingLayers) failing")
+            }
+            .foregroundStyle(DS.Status.failed)
+        } else if stack.pendingLayers > 0 {
+            HStack(spacing: 3) { SpinnerRing(size: 9); Text("\(stack.pendingLayers) running") }
+                .foregroundStyle(DS.Status.working)
+        } else if stack.pullRequests.allSatisfy({ $0.checks == .none }) {
+            Text("No checks").foregroundStyle(.secondary)
+        } else {
+            HStack(spacing: 3) {
+                Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
+                Text("passing")
+            }
+            .foregroundStyle(DS.Status.done)
+        }
+    }
+
+    private func expandedBody(selectedLayer: Int?) -> some View {
+        Group {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                stackPill
+                Text(stack.name).font(.system(size: DS.Size.title, weight: .semibold)).lineLimit(2)
+                Spacer(minLength: 4)
+                Button { model.setExpanded(stack, false) } label: {
+                    HStack(spacing: 3) { Text("Collapse"); Image(systemName: "chevron.up").font(.system(size: 8, weight: .bold)) }
+                }
+                .buttonStyle(.plain)
+                .fixedSize()
+                .font(.system(size: DS.Size.subtitle))
+                .foregroundStyle(DS.Status.info)
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                let layers = Array(stack.layers.reversed())
+                ForEach(layers, id: \.pr.number) { layer in
+                    StackLayerRow(layer: layer, model: model, palette: palette, stackID: stack.id,
+                                  selected: selectedLayer == layer.pr.number, title: stack.shortTitle(layer.pr),
+                                  indent: stack.isBranching, connects: layer.pr.number != layers.last?.pr.number)
+                }
+                Text("↳ " + stack.bottom.base)
+                    .font(.system(size: DS.Size.small, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .padding(.leading, 26)
+                    .padding(.top, 2)
+                .help("The stack merges into \(stack.bottom.base)")
+            }
+        }
+    }
+
+    private func select(_ pr: OpenPullRequest) {
+        model.selection = .init(number: pr.number, stackID: stack.id)
+        model.setExpanded(stack, true)
     }
 }
 
-/// One layer in a stack (card or detail pane): state dot, number, title.
+/// One layer in an expanded stack: a state dot on the connector line, the
+/// number and title, then its state and checks. The selected layer fills blue.
 struct StackLayerRow: View {
     let layer: PullRequestBoard.Stack.Layer
     let model: GitHubBoardModel
     let palette: ClaudePalette
     let stackID: Int
     let selected: Bool
+    var title: String?
+    /// Indent by depth (a branching stack).
+    var indent = true
+    /// Draw the connector down to the next layer.
+    var connects = true
 
     var body: some View {
-        let p = palette
         let column = PullRequestBoard.column(for: layer.pr)
-        Button { model.selection = .init(number: layer.pr.number, stackID: stackID) } label: {
-            HStack(spacing: 6) {
-                Circle().fill(GitHubBoardView.color(column, p)).frame(width: 7, height: 7)
-                    .help(column.title)
-                Text("#\(layer.pr.number)").font(.system(size: 11, weight: .bold)).foregroundStyle(layer.pr.isDraft ? p.dim : p.green)
-                Text(layer.pr.title).font(.system(size: 11)).lineLimit(1).truncationMode(.tail)
-                Spacer(minLength: 2)
-                PRBadges.checksIcon(layer.pr, p)
+        let pr = layer.pr
+        Button { model.selection = .init(number: pr.number, stackID: stackID) } label: {
+            HStack(alignment: .top, spacing: 8) {
+                VStack(spacing: 3) {
+                    Circle().fill(selected ? Color.white : GitHubBoardView.color(column)).frame(width: 8, height: 8).padding(.top, 5)
+                    if connects {
+                        Rectangle().fill(selected ? Color.white.opacity(0.4) : Color.primary.opacity(0.14))
+                            .frame(width: 1.5).frame(maxHeight: .infinity)
+                    }
+                }
+                .frame(width: 12)
+                VStack(alignment: .leading, spacing: 2) {
+                    let number = Text("#\(pr.number)").font(.system(size: DS.Size.subtitle, design: .monospaced))
+                        .foregroundStyle(selected ? Color.white.opacity(0.8) : Color.secondary)
+                    Text("\(number) \(title ?? pr.title)")
+                        .font(.system(size: DS.Size.body, weight: .medium))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    // "Waiting for review · checks running", or "Waiting · …" when narrow.
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 4) {
+                            Text(column.title)
+                            Text("·")
+                            LayerChecks(pr: pr, inverted: selected)
+                        }
+                        HStack(spacing: 4) {
+                            Text(PullRequestDetailView.shortState(column))
+                            Text("·")
+                            LayerChecks(pr: pr, inverted: selected)
+                        }
+                    }
+                    .font(.system(size: DS.Size.small))
+                    .foregroundStyle(selected ? Color.white.opacity(0.85) : Color.secondary)
+                    .lineLimit(1)
+                }
+                Spacer(minLength: 0)
             }
-            .padding(.leading, CGFloat(layer.depth) * 12)
-            .padding(.vertical, 3)
-            .padding(.horizontal, 5)
-            .background(RoundedRectangle(cornerRadius: 5).fill(selected ? p.accent.opacity(0.18) : .clear))
+            .foregroundStyle(selected ? Color.white : Color.primary)
+            .padding(.leading, 6 + (indent ? CGFloat(layer.depth) * 10 : 0))
+            .padding(.trailing, 6)
+            .padding(.vertical, 6)
+            .background(RoundedRectangle(cornerRadius: 7).fill(selected ? DS.Status.selection : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("#\(layer.pr.number) \(layer.pr.title), \(column.title)")
+        .accessibilityLabel("#\(pr.number) \(pr.title), \(column.title)")
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+/// A layer's checks in words: "checks running", "✓ 6/6", "1 failing", "no checks yet".
+struct LayerChecks: View {
+    let pr: OpenPullRequest
+    var inverted = false
+
+    var body: some View {
+        switch pr.checks {
+        case .none: Text("no checks yet")
+        case .pending:
+            HStack(spacing: 3) {
+                SpinnerRing(color: inverted ? .white : DS.Status.working, size: 8)
+                Text("checks running")
+            }
+        case .passing, .failing:
+            CardChecksLabel(pr: pr).foregroundStyle(inverted ? Color.white : CardChecksLabel.color(pr.checks))
+        }
     }
 }
 
@@ -527,41 +1075,51 @@ struct GitHubSidebarRow: View {
 
     var body: some View {
         let selected = workspace.showsGitHub
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "arrow.triangle.pull").font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(selected ? palette.accent : palette.secondary)
-                .frame(width: 14, height: 14)
-                .padding(.top, 1)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("GitHub")
-                    .font(.system(size: 12, weight: selected ? .semibold : .medium))
-                    .foregroundStyle(selected ? palette.foreground : palette.foreground.opacity(0.85))
-                Text(workspace.githubBoard.map { "\($0.remote.slug) · \($0.pullRequests.count) open" } ?? "Pull requests")
-                    .font(.system(size: 11))
-                    .foregroundStyle(palette.secondary)
+        let board = workspace.githubBoard
+        let counts = board.map { Self.counts($0.pullRequests, login: $0.login) }
+        HStack(spacing: 10) {
+            KindTile(kind: .github)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Pull Requests")
+                    .font(.system(size: DS.Size.title, weight: .medium))
+                    .lineLimit(1)
+                Text(board.map { "\($0.remote.slug) · \(counts?.forYou ?? 0) for you" } ?? "GitHub")
+                    .font(.system(size: DS.Size.subtitle))
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
             if hovering {
                 Button { controller.closeGitHub() } label: {
-                    Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).frame(width: 14, height: 14)
+                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+                        .frame(width: 18, height: 18)
+                        .background(Circle().fill(Color.primary.opacity(0.08)))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(palette.secondary)
+                .foregroundStyle(.secondary)
                 .help("Close the GitHub tab")
+            } else if let review = counts?.toReview, review > 0 {
+                Pill("\(review) to review", color: DS.Status.info)
             }
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(selected ? palette.selected : hovering ? palette.hover : .clear))
+        .padding(.vertical, 7)
+        .rowBackground(selected: selected, hovering: hovering)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture { controller.toggleGitHub() }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("GitHub pull requests")
+        .accessibilityLabel("Pull requests" + ((counts?.toReview ?? 0) > 0 ? ", \(counts?.toReview ?? 0) to review" : ""))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { controller.toggleGitHub() }
+    }
+
+    /// PRs waiting on the viewer's review, and those that are theirs or wait
+    /// on them ("for you"). Zero until the viewer's login is known.
+    static func counts(_ prs: [OpenPullRequest], login: String?) -> (toReview: Int, forYou: Int) {
+        // Same definition as the board's For you filter.
+        guard login != nil else { return (0, 0) }
+        let c = PullRequestBoard.counts(prs, login: login)
+        return (c.reviewRequested, c.forYou)
     }
 }

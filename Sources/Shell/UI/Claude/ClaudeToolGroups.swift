@@ -1,17 +1,26 @@
 import SwiftUI
 
-/// Rows of the native view's transcript: items, or a folded run of tool calls.
+/// Rows of the native view's transcript: items, folded work, visible tool
+/// runs, and end-of-turn summaries.
 @MainActor
 enum ClaudeTranscript {
     enum Row: Identifiable {
         case item(ClaudeItem)
-        /// Consecutive tool calls (and the thinking between them), folded.
+        /// Earlier work folded into one "Worked for…" row: consecutive tool
+        /// calls with the thinking (and, in finished turns, the in-between
+        /// text) around them.
         case tools([ClaudeItem])
+        /// Two or more consecutive tool calls shown as one card with a row per step.
+        case run([ClaudeItem])
+        /// The summary card after a finished turn that changed files or
+        /// committed. Holds the turn's items, its user message first.
+        case summary([ClaudeItem])
 
         var id: UUID {
             switch self {
             case .item(let i): i.id
-            case .tools(let items): items[0].id
+            case .tools(let items), .run(let items): items[0].id
+            case .summary(let items): items[0].summaryID
             }
         }
     }
@@ -26,98 +35,161 @@ enum ClaudeTranscript {
     }
 
     /// Folds runs of tool calls according to `mode`. The current turn is
-    /// everything after the last user message.
-    static func rows(_ items: [ClaudeItem], mode: ToolCallDisplay) -> [Row] {
-        guard mode != .showAll else { return items.map { .item($0) } }
-        let currentTurnStart = mode == .collapsePrevious ? (items.lastIndex { $0.kind == .user } ?? -1) + 1 : items.count
+    /// everything after the last user message; `turnRunning` keeps its
+    /// summary card back until it ends.
+    static func rows(_ items: [ClaudeItem], mode: ToolCallDisplay, turnRunning: Bool = false) -> [Row] {
+        let currentTurnStart = (items.lastIndex { $0.kind == .user } ?? -1) + 1
+        let foldBefore: Int
+        switch mode {
+        case .showAll: foldBefore = 0
+        case .collapsePrevious: foldBefore = currentTurnStart
+        case .collapseAll: foldBefore = items.count
+        }
+        return build(items, foldBefore: foldBefore, groupRuns: mode != .showAll, summaries: true,
+                     turnRunning: turnRunning, currentTurnStart: currentTurnStart)
+    }
+
+    /// The rows inside an expanded fold: runs grouped, nothing folded.
+    static func visibleRows(_ items: [ClaudeItem]) -> [Row] {
+        build(items, foldBefore: 0, groupRuns: true, summaries: false, turnRunning: false, currentTurnStart: 0)
+    }
+
+    /// How a visible tool call groups: light steps (reads, searches, quick
+    /// commands) into one run, consecutive edits into another; nil stands
+    /// alone (a single edit's diff, a build or test command's output).
+    enum RunKind { case light, edit }
+
+    static let editTools: Set<String> = ["Edit", "MultiEdit", "Write", "NotebookEdit"]
+
+    static func runKind(_ item: ClaudeItem) -> RunKind? {
+        guard item.kind == .tool, folds(item) else { return nil }
+        if editTools.contains(item.toolName) { return .edit }
+        if item.toolName == "Bash", isProminentCommand(item) { return nil }
+        return .light
+    }
+
+    /// Builds, tests and lints, and anything that failed, get their own output card.
+    static func isProminentCommand(_ item: ClaudeItem) -> Bool {
+        if item.isError { return true }
+        let command = (item.input["command"] as? String ?? "").lowercased()
+        return command.firstMatch(of: /\b(test|tests|build|lint|check|xcodebuild|pytest|cargo|make|tsc)\b/) != nil
+    }
+
+    /// Whether a finished turn gets a summary card: it changed a file or committed.
+    static func hasChanges(_ item: ClaudeItem) -> Bool {
+        guard item.kind == .tool, item.result != nil, !item.isError else { return false }
+        if item.diffStats != nil { return true }
+        return item.toolName == "Bash" && (item.input["command"] as? String ?? "").contains("git commit")
+    }
+
+    private static func build(_ items: [ClaudeItem], foldBefore: Int, groupRuns: Bool, summaries: Bool,
+                              turnRunning: Bool, currentTurnStart: Int) -> [Row] {
+        // In finished turns that fold, text between tool calls folds too:
+        // only the turn's last reply stays out.
+        var intermediate = Set<Int>()
+        var toolLater = false
+        for i in stride(from: items.count - 1, through: 0, by: -1) {
+            let item = items[i]
+            if item.kind == .user { toolLater = false; continue }
+            if folds(item), item.kind == .tool { toolLater = true }
+            if item.kind == .assistant, toolLater, i < min(foldBefore, currentTurnStart) { intermediate.insert(i) }
+        }
+
         var rows: [Row] = []
+        var fold: [ClaudeItem] = []
         var run: [ClaudeItem] = []
-        func flush() {
-            // A run without a tool call (just thinking) stays as it was.
-            if run.contains(where: { $0.kind == .tool }) {
-                rows.append(.tools(run))
-            } else {
+        var turn: [ClaudeItem] = []
+        var turnChanged = false
+
+        func flushFold() {
+            // A fold without a tool call (just thinking) stays as it was.
+            if fold.contains(where: { $0.kind == .tool }) { rows.append(.tools(fold)) } else { rows += fold.map { .item($0) } }
+            fold = []
+        }
+        func flushRun() {
+            guard let lastTool = run.lastIndex(where: { $0.kind == .tool }) else {
                 rows += run.map { .item($0) }
+                run = []
+                return
             }
+            let core = Array(run[...lastTool])
+            let tools = core.filter { $0.kind == .tool }
+            // A lone edit shows its diff card; a lone light step its one-row card.
+            if tools.count >= 2 { rows.append(.run(core)) } else { rows += core.map { .item($0) } }
+            rows += run[(lastTool + 1)...].map { .item($0) }
             run = []
         }
-        for (index, item) in items.enumerated() {
-            if index < currentTurnStart, folds(item) {
+        func endTurn() {
+            flushFold()
+            flushRun()
+            if summaries, turnChanged, !turn.isEmpty { rows.append(.summary(turn)) }
+            turn = []
+            turnChanged = false
+        }
+
+        for (i, item) in items.enumerated() {
+            if item.kind == .user {
+                endTurn()
+                turn = [item]
+                rows.append(.item(item))
+                continue
+            }
+            // A CI failure that lands after a turn finished follows that
+            // turn's summary instead of splitting it from its reply.
+            if item.kind == .checkFailure, !(turnRunning && i >= currentTurnStart) {
+                endTurn()
+                rows.append(.item(item))
+                continue
+            }
+            turn.append(item)
+            if hasChanges(item) { turnChanged = true }
+            if i < foldBefore, folds(item) || intermediate.contains(i) {
+                flushRun()
+                fold.append(item)
+                continue
+            }
+            flushFold()
+            if groupRuns, let kind = runKind(item) {
+                if let current = run.first(where: { $0.kind == .tool }).flatMap(runKind), current != kind { flushRun() }
+                run.append(item)
+            } else if groupRuns, item.kind == .thinking, !run.isEmpty {
                 run.append(item)
             } else {
-                flush()
+                flushRun()
                 rows.append(.item(item))
             }
         }
-        flush()
+        flushFold()
+        flushRun()
+        if !turnRunning { endTurn() }
         return rows
     }
 }
 
-/// A folded run of tool calls: "6 tool calls · Read 3 · Edit 2 · Bash 1".
-struct ToolGroupView: View {
-    let items: [ClaudeItem]
+/// Renders one transcript row.
+struct ClaudeRowView: View {
+    let row: ClaudeTranscript.Row
     let palette: ClaudePalette
     let mentions: InlineMarkdown.MentionStyle
     let fontSize: CGFloat
     var directory: String?
-    @State var expanded = false
+    var session: ClaudeCodeSession?
 
     var body: some View {
-        let p = palette
-        let tools = items.filter { $0.kind == .tool }
-        let failed = tools.filter(\.isError).count
-        VStack(alignment: .leading, spacing: 8) {
-            Button { withAnimation(.easeOut(duration: 0.15)) { expanded.toggle() } } label: {
-                HStack(spacing: 7) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .bold))
-                        .rotationEffect(.degrees(expanded ? 90 : 0))
-                        .foregroundStyle(p.dim)
-                        .frame(width: 12)
-                    Image(systemName: "wrench.and.screwdriver").foregroundStyle(p.dim).frame(width: 14)
-                    Text("\(tools.count) tool call\(tools.count == 1 ? "" : "s")")
-                        .font(.system(size: fontSize - 1, weight: .semibold))
-                        .foregroundStyle(p.foreground)
-                    Text(Self.breakdown(tools))
-                        .font(.system(size: fontSize - 1.5))
-                        .foregroundStyle(p.dim)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    if failed > 0 {
-                        Text("\(failed) failed").font(.system(size: fontSize - 1.5, weight: .medium)).foregroundStyle(p.red)
-                    }
-                    if tools.contains(where: \.isRunning) { ProgressView().controlSize(.mini) }
-                    Spacer(minLength: 0)
-                }
-                .contentShape(Rectangle())
+        switch row {
+        case .item(let item):
+            ClaudeItemView(item: item, palette: palette, mentions: mentions, fontSize: fontSize, directory: directory, session: session)
+                .equatable()
+        case .tools(let items):
+            ToolGroupView(items: items, palette: palette, mentions: mentions, fontSize: fontSize, directory: directory, session: session)
+        case .run(let items):
+            if EditRunView.applies(to: items) {
+                EditRunView(items: items, palette: palette, fontSize: fontSize, directory: directory, session: session)
+            } else {
+                ToolRunCard(items: items, palette: palette, fontSize: fontSize, directory: directory, session: session)
             }
-            .buttonStyle(.plain)
-            .help(expanded ? "Collapse tool calls" : "Show tool calls")
-            if expanded {
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(items) { item in
-                        ClaudeItemView(item: item, palette: p, mentions: mentions, fontSize: fontSize, directory: directory)
-                            .equatable()
-                    }
-                }
-                .padding(.leading, 19)
-            }
+        case .summary(let items):
+            TurnSummaryCard(items: items, palette: palette, fontSize: fontSize, directory: directory, session: session)
         }
-        .padding(.vertical, 2)
-    }
-
-    /// "Read 3 · Edit 2 · Bash", most used first.
-    static func breakdown(_ tools: [ClaudeItem]) -> String {
-        var counts: [String: Int] = [:]
-        var order: [String] = []
-        for t in tools {
-            let name = ClaudeToolFormat.displayName(t.toolName)
-            if counts[name] == nil { order.append(name) }
-            counts[name, default: 0] += 1
-        }
-        return order.sorted { counts[$0]! > counts[$1]! }
-            .map { counts[$0]! > 1 ? "\($0) \(counts[$0]!)" : $0 }
-            .joined(separator: " · ")
     }
 }

@@ -47,38 +47,56 @@ final class GitHubTabViewsTests: GitAreaTestCase {
         }
         m.filter = .all
         m.message = ("#4: Merged.", false)
-        render(GitHubBoardView(model: m, controller: controller), size: CGSize(width: 900, height: 700)) // narrower: scrolls sideways
+        render(GitHubBoardView(model: m, controller: controller, showsHeader: true), size: CGSize(width: 900, height: 700)) // narrower: scrolls sideways
         m.message = ("not mergeable", true)
-        render(GitHubBoardView(model: m, controller: controller), size: CGSize(width: 1400, height: 700))
+        m.collapseStacks = false
+        render(GitHubBoardView(model: m, controller: controller, showsHeader: false), size: CGSize(width: 1400, height: 700))
+        m.collapseStacks = true
         for column in PullRequestBoard.Column.allCases { _ = GitHubBoardView.color(column, .current) }
+        // The toolbar's title and controls.
+        render(GitHubToolbarTitle(model: m, controller: controller), size: CGSize(width: 300, height: 40))
+        render(GitHubToolbarTitle(model: nil, controller: controller), size: CGSize(width: 300, height: 40))
+        m.searchText = "feature"
+        render(GitHubToolbarControls(model: m), size: CGSize(width: 700, height: 40))
+        m.searchText = ""
     }
 
-    func testCardTapsSelectAndTheDetailPaneOpens() async throws {
+    func testHeaderFiltersChipsAndSelection() async throws {
         let f = try await board(gitTempDirectory())
         let m = f.model
         m.filter = .all
-        let w = claudeWindow(GitHubBoardView(model: m, controller: controller), width: 1500, height: 900)
+        let w = claudeWindow(GitHubBoardView(model: m, controller: controller, showsHeader: true), width: 1500, height: 900)
         // (SwiftUI tap gestures don't fire from synthesized clicks; select directly.)
         m.selection = .init(number: 4)
         try await eventually("detail") { m.details[4] != nil }
         w.layout(settle: 0.05)
         w.window.acceptsMouseMovedEvents = true
-        for x in stride(from: 50.0, to: 1500.0, by: 100.0) { w.hover(x: x, y: 120) }
+        for x in stride(from: 50.0, to: 1500.0, by: 100.0) { w.hover(x: x, y: 160) }
 
-        // The stack card's layer buttons select within the stack (top layer listed first).
-        let layers = gitControlFrames(w).filter { $0.width > 200 && $0.minY > 60 }
-        XCTAssertEqual(layers.count, 2)
-        gitPress(w) { $0.width > 200 && $0.minY > 60 && $0.maxX < 980 }
-        XCTAssertEqual(m.selection, .init(number: 2, stackID: 1))
+        // The header's For you / Mine / All.
+        gitPress(w, at: 1) { $0.minY < 40 }
+        XCTAssertEqual(m.filter, .mine)
+        gitPress(w, at: 0) { $0.minY < 40 }
+        XCTAssertEqual(m.filter, .forYou)
+        gitPress(w, at: 2) { $0.minY < 40 }
+        XCTAssertEqual(m.filter, .all)
+
+        // The sub-header's chips narrow, and toggle back.
+        gitPress(w, at: 0) { $0.minY > 48 && $0.minY < 86 }
+        XCTAssertEqual(m.narrowing, .reviewRequested)
+        XCTAssertEqual(m.columns.values.flatMap { $0 }.flatMap(\.pullRequests).map(\.number), [5])
+        gitPress(w, at: 0) { $0.minY > 48 && $0.minY < 86 }
+        XCTAssertEqual(m.narrowing, [])
+
+        // Selecting a stack layer opens the stack.
+        let stack = try XCTUnwrap(PullRequestBoard.stacks(m.pullRequests).first { $0.layers.count > 1 })
+        XCTAssertFalse(m.isExpanded(stack))
+        m.selection = .init(number: 2, stackID: 1)
         try await eventually("stack detail") { m.details[2] != nil }
         w.layout(settle: 0.05)
         XCTAssertEqual(m.selectedStack?.layers.count, 2)
+        XCTAssertTrue(m.isExpanded(stack))
 
-        // The filter picker: Mine, then All.
-        gitClickSegment(w, 0, segments: 2) { $0.minY < 40 }
-        XCTAssertEqual(m.filter, .mine)
-        gitClickSegment(w, 1, segments: 2) { $0.minY < 40 }
-        XCTAssertEqual(m.filter, .all)
         // The PR disappearing from the board closes its detail.
         m.selection = .init(number: 3)
         try f.gh.reset()
@@ -95,20 +113,39 @@ final class GitHubTabViewsTests: GitAreaTestCase {
         let f = try await board(gitTempDirectory())
         let m = f.model
         let p = ClaudePalette.current
+        let actions = PRActions(model: m, controller: controller)
         let prs = [
             GitFixturePR.open(1, draft: true, checks: .pending, labels: [("a", "ff0000"), ("b", "zz"), ("c", "00ff00"), ("d", "0000ff")]),
             GitFixturePR.open(2, bot: true, decision: "APPROVED", checks: .passing, unresolved: 2),
-            GitFixturePR.open(3, decision: "CHANGES_REQUESTED", checks: .failing),
-            GitFixturePR.open(4, decision: "REVIEW_REQUIRED", checks: .none, updated: nil),
+            GitFixturePR.open(3, decision: "CHANGES_REQUESTED", checks: .failing,
+                              reviews: [.init(login: "jane-lin", state: "CHANGES_REQUESTED")], unresolved: 1),
+            GitFixturePR.open(4, decision: "REVIEW_REQUIRED", checks: .none, requested: ["octocat"], updated: nil),
+            GitFixturePR.open(5, decision: "REVIEW_REQUIRED", checks: .none, reviews: [.init(login: "a", state: "COMMENTED")], unresolved: 3),
         ]
+        let match = BoardTabMatch(index: 3, withClaude: true) {}
         for pr in prs {
             render(PullRequestCard(pr: pr, model: m, palette: p), size: CGSize(width: 260, height: 200))
+            render(PullRequestCard(pr: pr, model: m, palette: p, actions: actions, tabMatch: match), size: CGSize(width: 260, height: 260))
             render(PRBadges(pr: pr, palette: p), size: CGSize(width: 120, height: 100))
             render(HStack { PRBadges.checksIcon(pr, p) }, size: CGSize(width: 20, height: 20))
+            render(LayerChecks(pr: pr, inverted: true), size: CGSize(width: 120, height: 20))
         }
-        // Busy and checked-out cards.
-        try f.gh.on("pr ready *", sleep: 0.5)
+        // A selected card shows its action row.
         let card = m.pullRequest(4)!
+        let plain = claudeWindow(PullRequestCard(pr: card, model: m, palette: p, actions: actions), width: 260)
+        let before = plain.controls().count
+        m.selection = .init(number: 4)
+        plain.layout(settle: 0.05)
+        XCTAssertGreaterThan(plain.controls().count, before, "Review and ↗ appear")
+        render(PRWorktreeMenuItems(pr: card, actions: actions), size: CGSize(width: 200, height: 200))
+        render(AvatarCircle(login: "jane-lin", name: "Jane Lin"), size: CGSize(width: 20, height: 20))
+        render(ReasonPill(reasons: .assigned), size: CGSize(width: 80, height: 20))
+        XCTAssertTrue(PRActions.command(name: "Review #4", prompt: "look").hasSuffix(" look"))
+        XCTAssertFalse(PRActions.command(name: "x", prompt: nil).contains("''"))
+        m.selection = nil
+
+        // Busy cards.
+        try f.gh.on("pr ready *", sleep: 0.5)
         let busy = Task { await m.perform(.markReady, on: card) }
         try await eventually { m.busy[4] != nil }
         render(PullRequestCard(pr: card, model: m, palette: p), size: CGSize(width: 260, height: 200))
@@ -117,15 +154,19 @@ final class GitHubTabViewsTests: GitAreaTestCase {
         render(FlowBadges { EmptyView() }, size: CGSize(width: 100, height: 20))
         render(PRContextMenu(pr: card, model: m), size: CGSize(width: 200, height: 100))
 
-        // A stack card, selected and not.
+        // A stack card: collapsed (a button per layer, then Expand), then expanded.
         let stack = try XCTUnwrap(PullRequestBoard.stacks(m.pullRequests).first { $0.layers.count > 1 })
         render(StackCard(stack: stack, model: m, palette: p), size: CGSize(width: 260, height: 200))
-        m.selection = .init(number: stack.bottom.number, stackID: stack.id)
-        let w = claudeWindow(StackCard(stack: stack, model: m, palette: p), width: 260)
-        XCTAssertEqual(w.controls().count, 2, "one button per layer")
+        let w = claudeWindow(StackCard(stack: stack, model: m, palette: p, actions: actions), width: 260)
+        XCTAssertEqual(w.controls().count, 3, "one button per layer, then Expand")
         w.press(0)
-        XCTAssertEqual(m.selection?.stackID, stack.id)
-        XCTAssertEqual(m.selection?.number, stack.layers.last?.pr.number, "the top layer is listed first")
+        XCTAssertEqual(m.selection, .init(number: stack.top.number, stackID: stack.id), "the top layer is listed first")
+        XCTAssertTrue(m.isExpanded(stack))
+        XCTAssertEqual(w.controls().count, 3, "Collapse, then a row per layer")
+        w.press(2)
+        XCTAssertEqual(m.selection?.number, stack.bottom.number)
+        w.press(0)
+        XCTAssertFalse(m.isExpanded(stack))
         w.window.acceptsMouseMovedEvents = true
         w.hover(x: 100, y: 10)
     }
@@ -154,36 +195,40 @@ final class GitHubTabViewsTests: GitAreaTestCase {
         let f = try await board(gitTempDirectory())
         let m = f.model
         let pr = m.pullRequest(1)!
-        // Loading, then loaded.
-        render(PullRequestDetailView(model: m, controller: controller, pr: pr, stack: nil), size: CGSize(width: 520, height: 900))
+        // Loading, then loaded, in every section.
+        for section in PullRequestDetailView.Section.allCases {
+            render(PullRequestDetailView(model: m, controller: controller, pr: pr, stack: nil, section: section), size: CGSize(width: 440, height: 900))
+        }
         m.selection = .init(number: 1)
         try await eventually { m.details[1] != nil }
         m.loadDiff(1)
         try await eventually { m.diffs[1] != nil }
         let stack = m.selectedStack ?? PullRequestBoard.stacks(m.pullRequests).first { $0.layers.count > 1 }
+        for section in PullRequestDetailView.Section.allCases {
+            render(PullRequestDetailView(model: m, controller: controller, pr: pr, stack: stack, section: section), size: CGSize(width: 440, height: 1000))
+        }
         let w = claudeWindow(PullRequestDetailView(model: m, controller: controller, pr: pr, stack: stack), width: 520, height: 1000)
         XCTAssertGreaterThan(w.controls().count, 5)
-        gitClickSegment(w, 1, segments: 3)
-        w.layout(settle: 0.05)
-        gitClickSegment(w, 2, segments: 3)
-        w.layout(settle: 0.05)
-        gitClickSegment(w, 0, segments: 3)
-        w.layout(settle: 0.05)
+        // The stack rows switch layers.
+        let rows = gitControlFrames(w).filter { $0.width > 300 && $0.minY > 300 }
+        XCTAssertGreaterThanOrEqual(rows.count, 2)
+        gitPress(w, at: rows.count - 2) { $0.width > 300 && $0.minY > 300 }
+        XCTAssertEqual(m.selection?.number, 2)
 
         // Someone else's PR (approve and request changes show), approved and green.
         let theirs = m.pullRequest(4)!
         m.selection = .init(number: 4)
         try await eventually { m.details[4] != nil }
-        render(PullRequestDetailView(model: m, controller: controller, pr: theirs, stack: nil), size: CGSize(width: 520, height: 900))
+        render(PullRequestDetailView(model: m, controller: controller, pr: theirs, stack: nil), size: CGSize(width: 440, height: 900))
         // A draft, with a single merge method.
         let single = try await board(gitTempDirectory(), merge: (false, true, false))
         render(PullRequestDetailView(model: single.model, controller: controller, pr: single.model.pullRequest(3)!, stack: nil),
-               size: CGSize(width: 520, height: 900))
+               size: CGSize(width: 440, height: 900))
         render(PullRequestDetailView(model: single.model, controller: controller, pr: single.model.pullRequest(4)!, stack: nil),
-               size: CGSize(width: 520, height: 900))
+               size: CGSize(width: 440, height: 900))
         let none = try await board(gitTempDirectory(), merge: (false, false, false))
         render(PullRequestDetailView(model: none.model, controller: controller, pr: none.model.pullRequest(4)!, stack: nil),
-               size: CGSize(width: 520, height: 900))
+               size: CGSize(width: 440, height: 900))
     }
 
     func testDetailChecksAndFilesTabsWithEmptyData() async throws {
@@ -197,15 +242,17 @@ final class GitHubTabViewsTests: GitAreaTestCase {
         let m = f.model
         m.refresh()
         try await eventually { m.lastUpdated != nil && !m.isLoading }
-        let w = claudeWindow(PullRequestDetailView(model: m, controller: controller, pr: m.pullRequest(4)!, stack: nil), width: 520, height: 800)
-        gitClickSegment(w, 1, segments: 3) // checks: loading
+        let checks = claudeWindow(PullRequestDetailView(model: m, controller: controller, pr: m.pullRequest(4)!, stack: nil, section: .checks),
+                                  width: 520, height: 800)
         m.selection = .init(number: 4)
         try await eventually { m.details[4] != nil }
-        w.layout(settle: 0.05)
-        gitClickSegment(w, 2, segments: 3) // files: loads an empty diff
+        checks.layout(settle: 0.05)
+        let files = claudeWindow(PullRequestDetailView(model: m, controller: controller, pr: m.pullRequest(4)!, stack: nil, section: .files),
+                                 width: 520, height: 800)
         try await eventually { m.diffs[4] != nil }
-        w.layout(settle: 0.05)
+        files.layout(settle: 0.05)
         XCTAssertEqual(m.diffs[4]?.isEmpty, true)
+        render(PullRequestDetailView(model: m, controller: controller, pr: m.pullRequest(4)!, stack: nil), size: CGSize(width: 440, height: 800))
     }
 
     func testDetailButtonsRunActions() async throws {
@@ -213,35 +260,41 @@ final class GitHubTabViewsTests: GitAreaTestCase {
         let m = f.model
         try f.gh.on("pr *")
         try f.gh.on("run rerun *")
-        // A draft with failing checks: Ready for Review and Re-run Failed come first.
+        // A draft with failing checks: the Overview's Ready for Review banner and Re-run failed.
         var pr = m.pullRequest(1)!
         pr.isDraft = true
         m.selection = .init(number: 1)
         try await eventually { m.details[1] != nil }
         let w = claudeWindow(PullRequestDetailView(model: m, controller: controller, pr: pr, stack: nil), width: 620, height: 900)
-        let bar = w.controls().filter { $0.frame.minY > 60 && $0.frame.minY < 110 }.sorted { $0.frame.minX < $1.frame.minX }
-        XCTAssertGreaterThanOrEqual(bar.count, 3)
-        w.press(w.controls().firstIndex(of: bar[0])!)
+        // Below the tab bar (y > 180), the first control is the draft banner's button.
+        gitPress(w) { $0.minY > 180 && $0.minY < 820 }
         try await eventually(timeout: 5, "ready") { f.gh.calls.contains("pr ready 1 --repo acme/widgets") }
         try await eventually(timeout: 5) { m.busy.isEmpty }
-        let bar2 = w.controls().filter { $0.frame.minY > 60 && $0.frame.minY < 110 }.sorted { $0.frame.minX < $1.frame.minX }
-        w.press(w.controls().firstIndex(of: bar2[1])!)
+        w.layout(settle: 0.05)
+        gitPress(w, at: 1) { $0.minY > 180 && $0.minY < 820 }
         try await eventually(timeout: 5, "rerun") { f.gh.calls.contains("run rerun 77 --failed --repo acme/widgets") }
         try await eventually(timeout: 5) { m.busy.isEmpty }
 
-        // Someone else's PR: the composer's Approve (enabled with an empty draft).
+        // Someone else's PR: Approve is last along the bottom.
         let theirs = m.pullRequest(4)!
         m.selection = .init(number: 4)
         try await eventually { m.details[4] != nil }
         let d = claudeWindow(PullRequestDetailView(model: m, controller: controller, pr: theirs, stack: nil), width: 620, height: 900)
-        let bottom = d.controls().filter { $0.frame.minY > 820 }.sorted { $0.frame.minX < $1.frame.minX }
+        let bottom = d.controls().filter { $0.frame.minY > 840 }.sorted { $0.frame.minX < $1.frame.minX }
         if let approve = bottom.last {
             d.press(d.controls().firstIndex(of: approve)!)
             try await eventually(timeout: 5, "approve") { f.gh.calls.contains("pr review 4 --approve --repo acme/widgets") }
         } else {
-            XCTFail("no composer buttons")
+            XCTFail("no bottom bar buttons")
         }
         try await eventually(timeout: 5) { m.busy.isEmpty }
+
+        // Comment…: the composer opens, and Cancel closes it.
+        let comment = d.controls().filter { $0.frame.minY > 840 }.min { $0.frame.minX < $1.frame.minX }!
+        d.press(d.controls().firstIndex(of: comment)!)
+        d.layout(settle: 0.05)
+        let cancel = d.controls().filter { $0.frame.minY > 840 }.min { $0.frame.minX < $1.frame.minX }!
+        d.press(d.controls().firstIndex(of: cancel)!)
 
         // Close details (top right of the header).
         let close = d.controls().filter { $0.frame.minY < 40 }.max { $0.frame.maxX < $1.frame.maxX }!

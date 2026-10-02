@@ -22,6 +22,9 @@ struct ClaudeAttachment: Identifiable, Equatable {
     var url: URL
     /// A small preview for images (files get theirs from Quick Look).
     var thumbnail: NSImage?
+    /// Context Shell attached itself shows as a compact chip: "LOG build-and-test · 212 lines".
+    var tag: String?
+    var note: String?
 
     var isImage: Bool { if case .image = kind { true } else { false } }
 

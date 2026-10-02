@@ -247,6 +247,8 @@ struct AppSettings: Codable, Equatable {
     var inputPosition: InputPosition = .bottom
     var promptStyle: PromptStyle = .compact
     var showContextBar = true
+    /// Status, failure tint and actions drawn over each command block.
+    var showCommandBlocks = true
     var completions = true
     var completionsWhileTyping = true
     var historySuggestions = true
@@ -255,8 +257,8 @@ struct AppSettings: Codable, Equatable {
     var editorFontSize = 0.0 // 0 = same as terminal
 
     // Tabs & windows
-    var tabBarStyle: TabBarStyle = .horizontal
-    var sidebarWidth = 240.0
+    var tabBarStyle: TabBarStyle = .vertical
+    var sidebarWidth = 252.0
     var newTabPlacement: NewTabPlacement = .afterCurrent
 
     // Notifications
@@ -350,8 +352,11 @@ struct AppSettings: Codable, Equatable {
     var worktreeRoot = ""
     /// Pull Requests tab filter: all, review, mine.
     var pullRequestFilter = "all"
-    /// GitHub tab board filter: mine or all.
-    var githubBoardFilter = "all"
+    /// GitHub tab board filter: forYou, mine or all.
+    var githubBoardFilter = "forYou"
+    /// When a check fails on a branch open in a Claude session, send the job
+    /// log to that session and start a fix (opt-in).
+    var sendCheckFailuresToClaude = false
 
     // Go
     /// Notify when Go's caches together pass `goCacheWarningGB`.
@@ -399,6 +404,8 @@ struct AppSettings: Codable, Equatable {
     var intelligenceSessionSummaries = false
     /// Suggest names when renaming a tab or creating a tab group.
     var intelligenceTabNames = false
+    /// Draft a commit message from the staged diff in Review Changes.
+    var intelligenceCommitMessages = false
     /// The one-time "Apple Intelligence features are available" banner was shown.
     var intelligenceAnnouncementShown = false
 
@@ -435,7 +442,16 @@ final class SettingsStore {
     /// ~/Library/Application Support/Shell: settings, the generated Ghostty
     /// config, history, session restore, themes and maintenance state. Unit
     /// tests get a throwaway folder so they never touch the real one.
+    /// Debug builds honor `SHELL_APP_SUPPORT_DIR`, so a dev build can run
+    /// beside the installed app without sharing its settings or session restore.
     static let supportDirectory: URL = {
+        #if DEBUG
+        if let dir = ProcessInfo.processInfo.environment["SHELL_APP_SUPPORT_DIR"], !dir.isEmpty, !AppEnvironment.isRunningTests {
+            let url = URL(fileURLWithPath: (dir as NSString).expandingTildeInPath, isDirectory: true)
+            try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            return url
+        }
+        #endif
         let url = AppEnvironment.isRunningTests
             ? FileManager.default.temporaryDirectory.appendingPathComponent("ShellTests-\(getpid())", isDirectory: true)
             : FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -559,6 +575,7 @@ extension AppSettings {
         s.worktreeRoot = d.worktreeRoot
         s.pullRequestFilter = d.pullRequestFilter
         s.githubBoardFilter = d.githubBoardFilter
+        s.sendCheckFailuresToClaude = d.sendCheckFailuresToClaude
         s.goCacheWarning = d.goCacheWarning
         s.goCacheWarningGB = d.goCacheWarningGB
         s.goAutoCleanBuildCache = d.goAutoCleanBuildCache

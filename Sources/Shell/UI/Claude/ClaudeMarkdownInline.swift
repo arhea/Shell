@@ -17,9 +17,10 @@ enum InlineMarkdown {
         for run in result.runs {
             if let intent = run.inlinePresentationIntent {
                 if intent.contains(.code) {
-                    result[run.range].font = (codeFont ?? .system(.body, design: .monospaced)).weight(.medium)
-                    result[run.range].foregroundColor = palette.claude
-                    result[run.range].backgroundColor = palette.raised
+                    // Neutral, not accent-colored: code reads as code without shouting.
+                    result[run.range].font = codeFont ?? .system(.body, design: .monospaced)
+                    result[run.range].foregroundColor = palette.foreground
+                    result[run.range].backgroundColor = palette.foreground.opacity(0.08)
                     if let directory, let url = ClaudeLinks.fileURL(String(result[run.range].characters), directory: directory) {
                         result[run.range].link = url
                     }
@@ -301,9 +302,54 @@ enum CodeHighlighter {
     // Regex is immutable once built; it just isn't marked Sendable.
     nonisolated(unsafe) static let pattern = /(\/\/[^\n]*|#[^\n{]*$|\/\*[\s\S]*?\*\/|"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`[^`]*`|\b\d[\d_.xXa-fA-F]*\b|\b[A-Za-z_][A-Za-z0-9_]*\b)/.anchorsMatchLineEndings()
 
-    enum Token { case comment, string, number, keyword, type }
+    enum Token { case comment, string, number, keyword, type, command, flag }
+
+    static let shellLanguages: Set<String> = ["sh", "bash", "zsh", "shell", "console"]
+    static let shellKeywords: Set<String> = [
+        "if", "then", "else", "elif", "fi", "for", "do", "done", "case", "esac", "while", "until", "in", "function", "return",
+        "export", "local", "set", "exec",
+    ]
+    // Comments, strings, $variables, -flags (with the space before them), numbers, words, and the operators that start a command.
+    nonisolated(unsafe) static let shellPattern =
+        /(#[^\n]*)|("(?:[^"\\\n]|\\.)*"|'[^'\n]*')|(\$\(|\$\{?\w+\}?)|(\s--?[A-Za-z][\w-]*)|(\b\d+(?:\.\d+)?\b)|([A-Za-z_\/.~][\w.\/~:+-]*)|([|;&(\n])/
+
+    /// Shell: the command of each pipeline stage, flags, strings, variables and comments.
+    static func shellTokens(in code: String) -> [(Range<String.Index>, Token)] {
+        var out: [(Range<String.Index>, Token)] = []
+        var first = true
+        for m in code.matches(of: shellPattern) {
+            let range = m.range
+            if m.output.1 != nil {
+                // `#` starts a comment only at the start of a word.
+                guard range.lowerBound == code.startIndex || code[code.index(before: range.lowerBound)].isWhitespace else { continue }
+                out.append((range, .comment))
+            } else if m.output.2 != nil {
+                out.append((range, .string))
+                first = false
+            } else if m.output.3 != nil {
+                out.append((range, .keyword))
+                first = false
+            } else if m.output.4 != nil {
+                out.append((code.index(after: range.lowerBound)..<range.upperBound, .flag))
+            } else if m.output.5 != nil {
+                out.append((range, .number))
+                first = false
+            } else if let word = m.output.6 {
+                if shellKeywords.contains(String(word)) {
+                    out.append((range, .keyword))
+                } else if first {
+                    out.append((range, .command))
+                    first = false
+                }
+            } else if m.output.7 != nil {
+                first = true
+            }
+        }
+        return out
+    }
 
     static func tokens(in code: String, language: String) -> [(Range<String.Index>, Token)] {
+        if shellLanguages.contains(language.lowercased()) { return shellTokens(in: code) }
         let hashComments = ["", "sh", "bash", "zsh", "shell", "python", "py", "ruby", "rb", "yaml", "yml", "toml", "make", "makefile", "dockerfile", "r"]
             .contains(language.lowercased())
         var out: [(Range<String.Index>, Token)] = []
@@ -362,7 +408,8 @@ enum CodeHighlighter {
         case .string: palette.green
         case .number: palette.yellow
         case .keyword: palette.magenta
-        case .type: palette.cyan
+        case .type, .command: palette.cyan
+        case .flag: palette.yellow
         }
     }
 }

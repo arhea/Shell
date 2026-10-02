@@ -1,8 +1,22 @@
 import AppKit
 import SwiftUI
 
-/// The window's right sidebar for the focused pane's repository: Files and
-/// Worktrees tabs. Shown for native Claude sessions and (⌃⌘B) terminal panes.
+/// What the Session tab shows besides the working tree's changes, which the
+/// inspector reads from git itself. Supplied by the Claude pane.
+struct InspectorSessionInputs {
+    var todos: [InspectorTodo] = []
+    var background: [InspectorBackgroundItem] = []
+    /// Opens the review (diff) view. Hidden when nil.
+    var onReview: (() -> Void)?
+    /// Opens a changed file or its diff. Nil opens the file in the preferred editor.
+    var onOpenFile: ((InspectorChange) -> Void)?
+    var onStop: (InspectorBackgroundItem) -> Void = { _ in }
+    var onViewTranscript: (InspectorBackgroundItem) -> Void = { _ in }
+}
+
+/// The window's right inspector for the focused pane's repository: Session
+/// (Claude panes), Worktrees, Checks (repositories on GitHub) and Files.
+/// Shown for native Claude sessions and (⌃⌘B) terminal panes.
 struct RightSidebarView: View {
     let context: SidebarContext
     let repo: GitRepository
@@ -15,83 +29,152 @@ struct RightSidebarView: View {
     var onResize: (CGFloat) -> Void
     var onResizeEnded: () -> Void
     var onClose: () -> Void
+    /// The Claude session's to-dos and background work, read on each render.
+    var session: (() -> InspectorSessionInputs)?
+    /// Open tabs' working directories → their agent state, for Worktrees.
+    var openTabs: () -> [String: WorktreeTabState] = { [:] }
+    /// Check jobs Claude is already fixing (shows "Claude is fixing").
+    var fixingChecks: () -> Set<String> = { [] }
+    /// Fix with Claude for a failing job. Nil uses `ChecksFix.start`.
+    var onFixCheck: ((CheckJob) -> Void)?
+    /// "+ New" in Worktrees. Hidden when nil.
+    var onNewWorktree: (() -> Void)?
 
-    /// The selected tab; GitHub falls back to Files when there's no GitHub remote.
-    private var tab: SidebarTab {
-        let t = SettingsStore.shared.settings.sidebarTab
-        return t == .github && repo.github == nil ? .files : t
+    @State private var showAllRuns = false
+
+    private var available: [InspectorTab] { InspectorTab.available(isClaude: context.isClaude, hasGitHub: repo.github != nil) }
+
+    private var tab: InspectorTab {
+        let preferred = context.isClaude ? InspectorTabMemory.shared.claudeTab : InspectorTab(SettingsStore.shared.settings.sidebarTab)
+        return InspectorTab.resolve(preferred: preferred, available: available)
     }
+
+    private var checks: BranchChecksModel? { repo.github == nil ? nil : BranchChecksModel.shared(for: repo) }
 
     var body: some View {
         let p = ClaudePalette.current
         HStack(spacing: 0) {
             resizeHandle(p)
             VStack(spacing: 0) {
-                tabBar(p)
-                p.border.frame(height: 1)
-                if tab == .worktrees {
-                    WorktreesView(model: worktrees, context: context, currentPath: repo.root.path)
-                } else if tab == .github, let gh = repo.github {
-                    GitHubView(repo: repo, github: gh, pullRequests: pullRequests(gh), actions: actions(gh),
-                               worktrees: worktrees, context: context)
-                } else {
-                    FileExplorerView(context: context, repo: repo, tree: tree, onClose: onClose)
-                }
+                tabBar
+                content
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         }
         .background(p.surface)
         .foregroundStyle(p.foreground)
-    }
-
-    private func tabBar(_ p: ClaudePalette) -> some View {
-        HStack(spacing: 2) {
-            tabButton("Files", icon: "doc.on.doc", id: .files, p)
-            tabButton("Worktrees", icon: "square.stack.3d.up", id: .worktrees, p,
-                      badge: worktrees.stale.isEmpty ? nil : "\(worktrees.stale.count)")
-            if let gh = repo.github {
-                let prs = pullRequests(gh)
-                let running = actions(gh).activeCount
-                tabButton("GitHub", icon: "arrow.triangle.pull", id: .github, p,
-                          badge: prs.reviewRequested.isEmpty ? (running > 0 ? "\(running)" : nil) : "\(prs.reviewRequested.count)")
-            }
-            Spacer()
-            Button(action: onClose) { Image(systemName: "sidebar.right") }
-                .buttonStyle(HeaderButtonStyle(palette: p, active: true))
-                .help(context.isClaude ? "Hide sidebar" : "Hide sidebar (⌃⌘B)")
+        // Secondary text and controls follow the terminal theme the panel is drawn in.
+        .environment(\.colorScheme, p.isDark ? .dark : .light)
+        // The toolbar's failing-checks capsule asks for the Checks view.
+        .onReceive(NotificationCenter.default.publisher(for: BranchChecksRequest.notification)) { note in
+            guard note.object == nil || (note.object as AnyObject?) === repo, available.contains(.checks) else { return }
+            select(.checks)
         }
-        .padding(.horizontal, 8)
-        .frame(height: 34)
     }
 
-    private func tabButton(_ title: String, icon: String, id: SidebarTab, _ p: ClaudePalette, badge: String? = nil) -> some View {
-        let selected = tab == id
-        return Button {
-            SettingsStore.shared.settings.sidebarTab = id
-            if id == .worktrees { worktrees.refreshIfNeeded() }
-            if id == .github, let gh = repo.github { pullRequests(gh).refreshIfNeeded() }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: icon)
-                // Only the selected tab spells out its name; the others stay compact.
-                if selected { Text(title).lineLimit(1).fixedSize() }
-                if let badge {
-                    Text(badge)
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 4)
-                        .background(Capsule().fill(p.yellow))
-                        .help(id == .github ? "Waiting on your review, or Actions running" : "\(badge) stale worktree\(badge == "1" ? "" : "s")")
+    @ViewBuilder
+    private var content: some View {
+        switch tab {
+        case .session:
+            InspectorSessionPanel(repo: repo, context: context, inputs: session?() ?? InspectorSessionInputs())
+        case .worktrees:
+            WorktreesView(model: worktrees, context: context, currentPath: repo.root.path, openTabs: openTabs(),
+                          checks: { [repo] wt in
+                              // Only the pane's own branch has a live checks model.
+                              guard WorktreeGroups.standardized(wt.path) == WorktreeGroups.standardized(repo.root.path),
+                                    repo.github != nil else { return nil }
+                              return BranchChecksModel.shared(for: repo).snapshot
+                          },
+                          onNewWorktree: onNewWorktree)
+        case .checks:
+            if let checks, let gh = repo.github {
+                InspectorChecksView(model: checks, fixing: fixingChecks(), showsAutoFix: context.isClaude,
+                                    extra: AnyView(checksExtra(gh))) { job in
+                    if let onFixCheck { onFixCheck(job) } else { ChecksFix.start([job], model: checks, context: context) }
                 }
             }
-            .font(.system(size: 11.5, weight: selected ? .semibold : .regular))
-            .foregroundStyle(selected ? p.foreground : p.dim)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(RoundedRectangle(cornerRadius: 6).fill(selected ? p.raised : .clear))
-            .contentShape(Rectangle())
+        case .files:
+            FileExplorerView(context: context, repo: repo, tree: tree, onClose: onClose)
         }
-        .buttonStyle(.plain)
-        .help(title)
+    }
+
+    // MARK: Tab bar
+
+    private var tabBar: some View {
+        let failing = (checks?.snapshot?.failing.isEmpty == false)
+        let items = available.map { t in
+            SegmentedTabs<InspectorTab>.Item(
+                id: t, title: t.title,
+                dot: t == .checks && failing ? DS.Status.failed : t == .worktrees && !worktrees.stale.isEmpty ? DS.Status.needsYou : nil)
+        }
+        return HStack(spacing: 6) {
+            SegmentedTabs(items: items, selection: Binding(get: { tab }, set: { select($0) }))
+            // With vertical tabs the window toolbar has the inspector toggle.
+            if SettingsStore.shared.settings.tabBarStyle != .vertical {
+                Button(action: onClose) { Image(systemName: "sidebar.right") }
+                    .buttonStyle(.labeled(.plain, compact: true))
+                    .help(context.isClaude ? "Hide inspector" : "Hide inspector (⌃⌘B)")
+                    .accessibilityLabel("Hide inspector")
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
+    }
+
+    private func select(_ t: InspectorTab) {
+        if context.isClaude {
+            InspectorTabMemory.shared.claudeTab = t
+        } else if let stored = t.storedTab {
+            SettingsStore.shared.settings.sidebarTab = stored
+        }
+        switch t {
+        case .worktrees: worktrees.refreshIfNeeded()
+        case .checks: checks?.refresh()
+        case .session, .files: break
+        }
+    }
+
+    // MARK: Checks extras
+
+    /// Below the branch's checks: a way to open a PR, the repo's pull requests
+    /// (on the board) and every workflow run, which the old GitHub tab listed.
+    private func checksExtra(_ gh: GitHubRemote) -> some View {
+        let prs = pullRequests(gh)
+        let runs = actions(gh)
+        return VStack(alignment: .leading, spacing: 10) {
+            if repo.pullRequest == nil, let branch = repo.status.branch, repo.isBranchPublished, branch != repo.defaultBranch {
+                Link(destination: gh.compareURL(branch)) { Text("Create pull request for \(branch) ↗").lineLimit(1) }
+                    .font(.system(size: DS.Size.small))
+            }
+            HStack(spacing: 6) {
+                Text(prs.pullRequests.isEmpty ? "Pull requests" : "\(prs.pullRequests.count) open pull request\(prs.pullRequests.count == 1 ? "" : "s")")
+                if !prs.reviewRequested.isEmpty { Pill("\(prs.reviewRequested.count) to review", color: DS.Status.needsYou) }
+                Spacer(minLength: 4)
+                if let openGitHub = context.openGitHub {
+                    Button("Open board", action: openGitHub)
+                        .buttonStyle(.labeled(.neutral, compact: true))
+                        .help("Open the GitHub tab: a board of pull requests and stacks (\(ShortcutAction.github.shortcut?.displayString ?? "⌃⌘H"))")
+                }
+            }
+            .font(.system(size: DS.Size.small))
+            DisclosureGroup(isExpanded: $showAllRuns) {
+                ActionsView(model: runs, currentBranch: repo.status.branch)
+                    .frame(height: 380)
+                    .cardSurface()
+            } label: {
+                HStack(spacing: 6) {
+                    Text("All workflow runs").font(.system(size: DS.Size.small, weight: .semibold))
+                    if runs.activeCount > 0 { Pill("\(runs.activeCount) running", color: DS.Status.working) }
+                }
+            }
+        }
+        .padding(.top, 6)
+        .onAppear {
+            prs.refreshIfNeeded()
+            runs.branch = repo.status.branch
+        }
+        .onChange(of: repo.status.branch) { _, b in runs.branch = b }
     }
 
     private func resizeHandle(_ p: ClaudePalette) -> some View {
@@ -109,259 +192,30 @@ struct RightSidebarView: View {
     }
 }
 
-// MARK: - Worktrees tab
-
-struct WorktreesView: View {
-    let model: WorktreesModel
+/// The Session tab bound to live data: changes from git (with line counts),
+/// to-dos and background work from the Claude session.
+struct InspectorSessionPanel: View {
+    let repo: GitRepository
     let context: SidebarContext
-    /// The worktree the pane is in.
-    let currentPath: String
-
-    @State private var pendingDelete: WorktreeInfo?
-    @State private var confirmCleanup = false
-    /// The merged worktrees the confirmation dialog lists, captured when it opens.
-    @State private var pendingMerged: [WorktreeInfo] = []
-    @State private var confirmMergedCleanup = false
-    @State private var hovered: String?
+    let inputs: InspectorSessionInputs
 
     var body: some View {
-        let p = ClaudePalette.current
-        let merged = model.merged(excluding: currentPath)
-        VStack(spacing: 0) {
-            header(p)
-            p.border.frame(height: 1)
-            if !merged.isEmpty {
-                mergedCleanupBar(merged, p)
-                p.border.frame(height: 1)
-            }
-            ScrollView {
-                LazyVStack(spacing: 6) {
-                    if let err = model.lastError {
-                        HStack(alignment: .top, spacing: 6) {
-                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(p.red)
-                            Text(err).font(.system(size: 11)).textSelection(.enabled)
-                            Spacer()
-                            Button { model.lastError = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain)
-                        }
-                        .padding(8)
-                        .background(RoundedRectangle(cornerRadius: 7).fill(p.red.opacity(0.1)))
-                    }
-                    ForEach(model.worktrees) { wt in
-                        row(wt, p)
-                    }
-                    if model.worktrees.isEmpty && !model.isLoading {
-                        Text("No worktrees").font(.system(size: 12)).foregroundStyle(p.dim).padding(12)
-                    }
-                }
-                .padding(8)
-            }
-        }
-        .onAppear { model.refreshIfNeeded() }
-        .sheet(item: $pendingDelete) { wt in
-            DeleteWorktreeSheet(worktree: wt, palette: p) { force, deleteBranch in
-                Task { await model.remove(wt, force: force, deleteBranch: deleteBranch) }
-            }
-        }
-        .confirmationDialog("Remove \(model.stale.count) stale worktree\(model.stale.count == 1 ? "" : "s")?", isPresented: $confirmCleanup) {
-            Button("Remove", role: .destructive) {
-                Task { await model.removeStale(deleteBranch: SettingsStore.shared.settings.worktreeCleanupDeleteMergedBranches) }
-            }
-        } message: {
-            Text(model.stale.map(\.name).joined(separator: ", ")
-                 + "\n\nEach has no uncommitted changes. Branches are "
-                 + (SettingsStore.shared.settings.worktreeCleanupDeleteMergedBranches ? "deleted when merged." : "kept."))
-        }
-        .confirmationDialog("Remove \(pendingMerged.count) merged worktree\(pendingMerged.count == 1 ? "" : "s")?",
-                            isPresented: $confirmMergedCleanup) {
-            Button("Remove", role: .destructive) {
-                let list = pendingMerged
-                Task { await model.removeMerged(list) }
-            }
-        } message: {
-            Text(pendingMerged.map { wt in wt.name + (wt.pullRequest.map { " (#\($0.number))" } ?? "") }.joined(separator: "\n")
-                 + "\n\nEach PR has merged and the worktree has no uncommitted changes. "
-                 + "A branch is deleted only if it has nothing beyond what merged; otherwise it's kept.")
-        }
+        let changes = WorkingChangesModel.shared(for: repo)
+        InspectorSessionView(
+            changes: changes.changes, todos: inputs.todos, background: inputs.background,
+            onReview: inputs.onReview,
+            onOpenFile: { change in
+                if let open = inputs.onOpenFile { open(change) } else { Self.openInEditor(repo.root.appendingPathComponent(change.path)) }
+            },
+            onStop: inputs.onStop, onViewTranscript: inputs.onViewTranscript)
+            .onAppear { changes.refresh() }
+            .onChange(of: repo.status) { _, _ in changes.refresh() }
     }
 
-    private func mergedCleanupBar(_ merged: [WorktreeInfo], _ p: ClaudePalette) -> some View {
-        Button {
-            pendingMerged = merged
-            confirmMergedCleanup = true
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.triangle.merge").foregroundStyle(p.magenta)
-                Text("Clean up merged worktrees")
-                Spacer()
-                Text("\(merged.count)").monospacedDigit().foregroundStyle(p.magenta)
-            }
-            .font(.system(size: 11, weight: .medium))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(p.magenta.opacity(0.08))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(model.busy.count > 0)
-        .help("Remove worktrees whose pull request has merged and that have no uncommitted changes")
+    static func openInEditor(_ url: URL) {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        if let editor = ExternalEditor.preferred { editor.open([url]) } else { NSWorkspace.shared.open(url) }
     }
-
-    private func header(_ p: ClaudePalette) -> some View {
-        let staleCount = model.stale.count
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: "square.stack.3d.up").foregroundStyle(p.yellow)
-                Text((model.repoRoot as NSString).lastPathComponent).font(.system(size: 12, weight: .semibold)).lineLimit(1)
-                Spacer()
-                if model.isLoading { ProgressView().controlSize(.mini) }
-                Button { model.refresh() } label: { Image(systemName: "arrow.clockwise") }
-                    .buttonStyle(HeaderButtonStyle(palette: p, active: false))
-                    .help("Refresh")
-            }
-            Text(summary).font(.system(size: 11)).foregroundStyle(p.dim)
-            HStack(spacing: 6) {
-                Button {
-                    SettingsWindowController.shared.show(pane: .worktrees)
-                } label: {
-                    Text("Stale: clean & idle \(model.staleDays)+ days").underline()
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 10.5))
-                .foregroundStyle(p.dim)
-                .help("Change the threshold and schedule automatic cleanup in Settings › Worktrees")
-                Spacer()
-                if staleCount > 0 {
-                    Button("Clean Up \(staleCount)") { confirmCleanup = true }
-                        .controlSize(.small)
-                        .tint(p.yellow)
-                }
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-    }
-
-    private var summary: String {
-        let n = model.worktrees.count
-        var parts = ["\(n) worktree\(n == 1 ? "" : "s")"]
-        if !model.stale.isEmpty { parts.append("\(model.stale.count) stale") }
-        if model.totalSize > 0 { parts.append(WorktreeService.formatBytes(model.totalSize)) }
-        return parts.joined(separator: " · ")
-    }
-
-    // MARK: Row
-
-    private func row(_ wt: WorktreeInfo, _ p: ClaudePalette) -> some View {
-        let stale = wt.isStale(days: model.staleDays)
-        let current = URL(fileURLWithPath: wt.path).standardizedFileURL.path == URL(fileURLWithPath: currentPath).standardizedFileURL.path
-        let busy = model.busy.contains(wt.path)
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Image(systemName: wt.isMain ? "shippingbox" : "square.stack.3d.up")
-                    .foregroundStyle(stale ? p.yellow : wt.isMain ? p.cyan : p.dim)
-                    .frame(width: 14)
-                Text(wt.name).font(.system(size: 12, weight: .semibold)).lineLimit(1).truncationMode(.middle)
-                Spacer(minLength: 4)
-                if busy { ProgressView().controlSize(.mini) }
-                if current { WorktreeLabels.badge("here", p.claude) }
-                if wt.isMain { WorktreeLabels.badge("main", p.cyan) }
-                if stale { WorktreeLabels.badge("stale", p.yellow) }
-                if wt.looksFinished && !wt.isMain { WorktreeLabels.badge(wt.pullRequest?.state == .merged ? "merged" : "done?", p.magenta) }
-                if wt.isLocked { WorktreeLabels.badge("locked", p.dim) }
-                if wt.isPrunable { WorktreeLabels.badge("missing", p.red) }
-            }
-            HStack(spacing: 5) {
-                Image(systemName: "arrow.triangle.branch").foregroundStyle(p.magenta).font(.system(size: 9))
-                Text(wt.branch ?? (wt.isBare ? "bare" : "detached @ \(wt.head ?? "?")"))
-                    .lineLimit(1).truncationMode(.middle)
-                    .layoutPriority(1)
-                trackingLabel(wt, p)
-            }
-            .font(.system(size: 11))
-            .foregroundStyle(p.foreground.opacity(0.85))
-            // The main checkout's branch (develop/main) only has release PRs; skip them.
-            if let pr = wt.pullRequest, !wt.isMain {
-                WorktreeLabels.pullRequest(pr, p)
-            }
-            HStack(spacing: 8) {
-                WorktreeLabels.changes(wt, p)
-                if let age = wt.ageDescription { Text(age) }
-                Spacer()
-                if let size = wt.sizeBytes { Text(WorktreeService.formatBytes(size)).monospacedDigit() }
-            }
-            .font(.system(size: 10.5))
-            .foregroundStyle(p.dim)
-            if hovered == wt.path && !busy {
-                actions(wt, current: current, p)
-            }
-        }
-        .padding(9)
-        .background(RoundedRectangle(cornerRadius: 8).fill(stale ? p.yellow.opacity(0.1) : hovered == wt.path ? p.raised : p.background.opacity(0.4)))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(stale ? p.yellow.opacity(0.45) : current ? p.claude.opacity(0.45) : p.border, lineWidth: stale || current ? 1 : 0.5))
-        .contentShape(Rectangle())
-        .onHover { hovered = $0 ? wt.path : (hovered == wt.path ? nil : hovered) }
-        .contextMenu { menu(wt, current: current) }
-        .help(wt.path + (wt.lockReason.map { "\nLocked: \($0)" } ?? "") + (wt.prunableReason.map { "\n\($0)" } ?? ""))
-    }
-
-    @ViewBuilder
-    private func trackingLabel(_ wt: WorktreeInfo, _ p: ClaudePalette) -> some View {
-        if wt.branch != nil, !wt.isMain || wt.ahead + wt.behind > 0 {
-            WorktreeLabels.tracking(wt, p).fixedSize()
-        }
-    }
-
-    private func actions(_ wt: WorktreeInfo, current: Bool, _ p: ClaudePalette) -> some View {
-        HStack(spacing: 6) {
-            if wt.exists {
-                if let openTab = context.openTab {
-                    Button { openTab(wt.path, nil) } label: { Label("New Tab", systemImage: "plus.rectangle") }
-                    Button { openTab(wt.path, "claude") } label: { Label("Claude", systemImage: "sparkle") }
-                }
-                if let editor = ExternalEditor.preferred {
-                    Button { editor.open([URL(fileURLWithPath: wt.path)]) } label: { Image(nsImage: editor.icon.resized(to: 12)) }
-                        .help("Open in \(editor.name)")
-                }
-            }
-            Spacer()
-            if !wt.isMain {
-                Button(role: .destructive) { pendingDelete = wt } label: { Image(systemName: "trash") }
-                    .disabled(current)
-                    .help(current ? "This pane is in this worktree" : wt.isPrunable ? "Prune (folder is already gone)" : "Delete worktree…")
-            }
-        }
-        .labelStyle(.titleAndIcon)
-        .buttonStyle(.bordered)
-        .controlSize(.mini)
-        .font(.system(size: 10.5))
-    }
-
-    @ViewBuilder
-    private func menu(_ wt: WorktreeInfo, current: Bool) -> some View {
-        if wt.exists {
-            if let openTab = context.openTab {
-                Button("Open in New Tab") { openTab(wt.path, nil) }
-                Button("Start Claude in New Tab") { openTab(wt.path, "claude") }
-            }
-            if let insert = context.insert, !context.isClaude {
-                Button("Insert cd Command") { insert("cd " + shellQuote(wt.path)) }
-            }
-            ForEach(ExternalEditor.installed) { editor in
-                Button("Open in \(editor.name)") { editor.open([URL(fileURLWithPath: wt.path)]) }
-            }
-            Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: wt.path)]) }
-        }
-        Button("Copy Path") {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(wt.path, forType: .string)
-        }
-        if !wt.isMain {
-            Divider()
-            Button(wt.isPrunable ? "Prune…" : "Delete Worktree…") { pendingDelete = wt }.disabled(current)
-        }
-    }
-
-    private func shellQuote(_ s: String) -> String { ShellQuote.quote(s) }
 }
 
 /// A worktree's tracking, pull request and changes, as the Worktrees sidebar

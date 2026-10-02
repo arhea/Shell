@@ -64,46 +64,54 @@ When Claude Code is installed (the `claude` binary is on your `PATH` or `~/.clau
 | When sessions are active | Only while a Claude Code session is running |
 | Never | Never; ⌃⌘A still opens the dashboard |
 
-Click it, or press ⌃⌘A, to replace the terminal area with a tiled view of every session in every window:
+Click it, or press ⌃⌘A, to replace the terminal area with the **Claude Sessions** page. The toolbar shows a one-line summary ("1 needs you · 2 working"). A row at the top of the page has a **Filter sessions** field (matches title, folder or branch, in Shell and elsewhere), a **✻ New Session** button (a new tab running `claude`; its menu starts one in a chosen folder, a recent folder, or a new worktree), and a **Recent** button that shows or hides the drawer on the right.
 
-| On each tile | Source |
+### Usage
+
+Below the controls, one strip shows your Claude usage. Cells without data yet are left out.
+
+| Cell | Shows |
 | --- | --- |
-| Status: working, needs input, done, idle | Agent hooks (terminal UI) or the native view's own state |
-| Directory, branch and PR | The pane's working directory, its live git branch, and a **PR #n** link to the branch's pull request (via `gh`), colored by state |
-| Approvals | When Claude is waiting on you, the tile shows the request with its buttons, so you can answer without leaving the dashboard: the native view's permission, question and plan cards, or the numbered options of a prompt in the terminal UI |
-| Command and run time | The `claude …` command line and how long it has been running (terminal UI) |
-| Preview | The last few lines of the conversation, refreshed every 2 seconds while the dashboard is open |
-| Location | Window, tab and pane, plus the tab group |
+| **5-hour limit** / **Weekly limit** | Percent of your plan used, a bar (green, yellow above 70%, red above 90%) and when it resets. Claude Code reports these to the native view as it runs; Shell keeps the latest report, so these fill in after you've used the native view once |
+| **Tokens today** | Today's total, the number of sessions and the share of input served from the prompt cache. Hover for the input / output / cache split, the top model and the last 5 hours |
+| **Last 7 days** | Tokens per day, today in Claude orange, and how long ago the plan limits were reported |
 
-The first tile is **Claude Usage**:
+Tokens come from the transcripts in `~/.claude/projects`, so they include terminal-UI sessions too. The first read runs in the background; after that only new lines are read, once a minute while the page is open. Nothing is sent anywhere, and Shell never reads your Claude credentials.
 
-- **Plan limits.** Current-session (5-hour) and weekly usage with reset times. Claude Code reports these to the native view as it runs; Shell keeps the latest report, so the tile fills in after you've used the native view once and shows how old the numbers are.
-- **Tokens.** Today, the last 5 hours and a 7-day chart, with the input / output / cache split and the top model. Shell reads them from the transcripts in `~/.claude/projects`, so they include terminal-UI sessions too. The first read runs in the background; after that only new lines are read, once a minute while the dashboard is open.
+### Sessions in Shell
 
-Nothing is sent anywhere, and Shell never reads your Claude credentials.
+Every Claude session in every window is grouped by what it needs from you, in tab order:
 
-In the terminal UI, clicking an option presses its number key, then Return if the prompt is still showing, just as if you'd typed it. Shell only offers this when it sees Claude Code's `❯ 1.` selector under a question, so numbered lists in Claude's replies are left alone.
+| Section | Each session shows |
+| --- | --- |
+| **Needs you** (yellow) | Title, where it runs (**Native view · Tab 4**), repository and branch, uncommitted changes and how long it has been waiting, with the request and its answers right on the card. A native permission request reads as a sentence ("Claude wants to edit TabStore.swift") with the file or command, and **Deny**, **Allow once** and, when Claude Code suggests a permission update, a button named for it (**Allow edits this session** switches the session to accept edits; **Allow this session** or **Always allow** adds the suggested rule). Questions and plans show the native view's own cards. In the terminal UI, the numbered options of Claude Code's prompt become buttons |
+| **Working** (orange) | Title and how long it has been working, repository, branch, PR link and changes, the last two lines of what it's doing (or an Apple Intelligence summary when that's on), and the tab, view, model and cost |
+| **Idle** | A compact row per session that's done (green check), idle or exited, with its last message |
 
-Click a session tile to jump to that pane. Selecting any tab (or ⌃⌘A again) closes the dashboard.
+Status comes from the agent hooks (terminal UI) or the native view's own state. Times count from when Shell saw the session change state. **Open ⌘3** (or a click on the card) jumps to the pane; the shortcut shows when there's one window. Right-click a session to open its PR, copy its path or reveal it in Finder.
+
+In the terminal UI, clicking an option presses its number key, then Return if the prompt is still showing, just as if you'd typed it. Shell only offers this when it sees Claude Code's `❯ 1.` selector under a question, so numbered lists in Claude's replies are left alone. Without the hooks, terminal sessions show as idle, but their prompts still appear under their rows.
+
+Selecting any tab (or ⌃⌘A again) closes the page.
 
 ### Running elsewhere
 
-Below the tiles, **Running Elsewhere** lists live Claude Code sessions that aren't in a Shell tab, from `claude agents --json`. Each one shows its name, status (working, waiting on a permission prompt, idle), folder, start time, and where it runs:
+Below Shell's sessions, **Running elsewhere** is a table of live Claude Code sessions that aren't in a Shell tab, from `claude agents --json`: status (**Needs permission**, **Working**, **Idle · Background**, **Idle**), session name, folder, when it started, and what you can do with it. Sessions that need you sort first. Five rows show at first; **Show N more idle sessions** shows the rest.
 
-| Where it runs | Click it to |
+| Where it runs | Last column |
 | --- | --- |
-| **Background** (`claude --bg`, or moved to the background) | Open a tab in its folder and run `claude attach <id>`. It's the same live session. Close the tab (or press ← / Ctrl+Z in Claude Code) and it keeps running |
-| **Claude desktop** or **Other terminal** | Nothing: Claude Code won't open a session another terminal holds. The tile says where to find it. Right-click to copy its session ID or path |
+| **Background** (`claude --bg`, or moved to the background) | **Attach** opens a tab in its folder and runs `claude attach <id>`. It's the same live session. Close the tab (or press ← / Ctrl+Z in Claude Code) and it keeps running |
+| **Claude desktop** or **Other terminal** | Where it runs. Claude Code won't open a session another terminal holds. Right-click to copy its session ID or path |
 
-Sessions running in Shell (in the terminal or the native view) and background sessions already attached in a Shell tab aren't listed twice. The list refreshes every 5 seconds while the dashboard is open, and nothing runs while it's closed. It needs a Claude Code version with `claude agents --json`; with older versions the section stays hidden.
+Sessions running in Shell (in the terminal or the native view) and background sessions already attached in a Shell tab aren't listed twice. The list refreshes every 5 seconds while the page is open, and nothing runs while it's closed. It needs a Claude Code version with `claude agents --json`; with older versions the section stays hidden.
 
-### Past sessions
+### Recent sessions
 
-A drawer on the right of the dashboard lists your past Claude Code conversations, newest first, read from the transcripts in `~/.claude/projects` (up to the 200 most recent; sessions in temporary folders are left out). Hide it with its sidebar button and bring it back with the clock button in the dashboard's header. Type in the filter box to search by title, prompt, folder or branch.
+The **Recent** drawer on the right lists your past Claude Code conversations, newest first and grouped by day (Today, Yesterday, then weekdays and dates), read from the transcripts in `~/.claude/projects` (up to the 200 most recent; sessions in temporary folders are left out). Hide or refresh it from its **…** menu, and bring it back with **Recent**. Type in its search field to filter by title, prompt, folder or branch.
 
-Each card leads with the repository and branch (with ahead/behind or **not pushed**, and **main** for the main checkout), then the session's first prompt. The `/rename` or Claude-generated title stands in when there's no prompt. Below that are the branch's pull request, whether the worktree is clean or has changes, the folder, and when the session was last active, the same details as the Worktrees sidebar. Git details are read only for cards on screen, and pull requests come from your `gh`, once per repository.
+Each row shows the repository and branch, the session's first prompt in bold (the `/rename` or Claude-generated title when there's no prompt), and the branch's pull request (**#674 open** in green, **merged** in purple, **draft** in gray), whether the worktree is clean or has changes, and when the session was last active. Repository details are read only for rows on screen, and pull requests come from your `gh`, once per repository.
 
-Hover a card for its actions, or right-click it:
+Hover a row for its actions, or right-click it:
 
 | Action | What it does |
 | --- | --- |
@@ -114,7 +122,7 @@ Hover a card for its actions, or right-click it:
 
 The commands are typed at your prompt, so your **Typing `claude` opens** choice (native view or terminal UI) applies. The actions are disabled when the folder no longer exists. Shell only reads the transcripts; it never changes or deletes them.
 
-A pane counts as a Claude session when it's running the native view, a `claude` command (including `command claude`, a path to the binary or `npx @anthropic-ai/claude-code`), or when Claude Code's hooks report from its running command, which covers aliases. Without the hooks, terminal sessions show as *idle*. Turn the pinned entry off in Settings › Claude & Codex.
+A pane counts as a Claude session when it's running the native view, a `claude` command (including `command claude`, a path to the binary or `npx @anthropic-ai/claude-code`), or when Claude Code's hooks report from its running command, which covers aliases. Turn the pinned entry off in Settings › Claude & Codex.
 
 ## Desktop widget
 
@@ -167,16 +175,38 @@ Sessions that use Amazon Bedrock, Google Vertex AI or another provider aren't ga
 
 - **Permission mode.** New sessions start in **auto mode** by default. Change the default in Settings › Claude & Codex (or pick *Claude Code's default* to use `permissions.defaultMode` from its settings.json). A `--permission-mode` you type wins, and Claude Code falls back to its default when auto mode isn't available for your plan or model. Sessions started from the Claude button get the same default as a `--permission-mode` flag.
 - **Header.** Switch model, effort and permission mode live (⇧⇥ cycles modes, as in the TUI). It also shows the directory, branch (ahead/behind), repository or linked worktree, and change count. It links to the repo, branch and pull request on GitHub, or offers "Create PR".
-- **Transcript.** Markdown, tables, highlighted code blocks, tool calls with diffs, permission prompts (1 / 2 / 3, Return, Esc) and questions.
-- **Chat text.** Settings › Chat Text (next to Text & Cursor) sets the chat's font family and size, line height, letter spacing, paragraph spacing, code font and size, and maximum reading width, like VS Code's chat font settings, with a live preview. Defaults: the system font one point larger than the terminal font, 1.6× line height, the terminal font for code, and a 700 pt (about 100 characters) reading width. **Composer width** sets the chat column the composer fills: Centered (up to 1200 pt, the default) or Full width; the reading width limits transcript text within it. Each setting is also in `settings.json` (`chatFontFamily`, `chatFontSize`, `chatLineHeight`, `chatLetterSpacing`, `chatParagraphSpacing`, `chatCodeFontFamily`, `chatCodeFontSize`, `chatMaxWidth`, `chatComposerWidth`).
+- **Transcript.** Your messages are right-aligned bubbles; Claude's replies are plain text with markdown, tables and links in blue. Inline code is neutral, not accent-colored. Thinking folds into one row, "▸ Thought for 6s" ("Thinking… 4s" while it streams); click it to read the thought.
+- **Code blocks.** A header with the language and the file name when the fence names one (` ```bash repro.sh`, `title="a.ts"` or ` ```bash:repro.sh`), a line-number gutter, **Copy**, **Save…**, and, for `sh`, `bash`, `zsh` and `shell` blocks, **Run in new tab**: a terminal tab opens in the session's folder and runs it (several lines run from a temporary script, so the prompt shows one command).
+- **Permission prompts.** A yellow card says what Claude wants ("Claude wants to run a command"), shows the command or diff and why it's asking, then numbered choices: **1 Allow once** (Return), **2 Always allow `<rule>` in this repo** (Claude Code's suggested rule, when there is one), **3 Deny, and tell Claude what to do instead** (Esc). Type instructions in the composer and press Return (or click 3) to deny with them; they show in the transcript and go to Claude. Plans and questions use the same card and keys.
+- **Chat text.** Settings › Chat Text (next to Text & Cursor) sets the chat's font family and size, line height, letter spacing, paragraph spacing, code font and size, and maximum reading width, like VS Code's chat font settings, with a live preview. Defaults: the system font one point larger than the terminal font, 1.6× line height, the terminal font for code, and a 700 pt (about 100 characters) reading width. **Composer width**: Centered (the default) lines the composer up with the transcript at the reading width; Full width makes the composer fill the pane. Each setting is also in `settings.json` (`chatFontFamily`, `chatFontSize`, `chatLineHeight`, `chatLetterSpacing`, `chatParagraphSpacing`, `chatCodeFontFamily`, `chatCodeFontSize`, `chatMaxWidth`, `chatComposerWidth`).
 - **Starting a conversation.** A new Claude view opens with the composer in the middle of the pane under the welcome. Sending the first message moves it to the bottom and widens it to the chat column (instantly, without the animation, when Reduce Motion is on). Continued and resumed sessions open with it at the bottom.
-- **Edit diffs.** File edits show as a real line diff with unchanged context and the file's line numbers, and the changed part of each edited line highlighted. When the pane is wide enough (640 pt or more), the diff is side by side like `git diff` (old on the left, new on the right, each edited line paired with its new version); narrower panes use a unified view. Long runs of unchanged lines collapse to "⋯ N unchanged lines". Choose *Automatic*, *Side by side* or *Unified* in Settings › Claude & Codex › Edit diffs.
-- **Tool calls.** Settings › Claude & Codex › Tool calls: *collapse all*, *collapse previous turns and show the current turn* (the default), or *show all*. A collapsed run of tool calls becomes one row, like "6 tool calls · Read 3 · Edit 2 · Bash", with a spinner while one runs and a count of failures; click it to expand. Questions, plans and to-do lists always show.
-- **Composer.** Highlights markdown, code fences, `/skills`, `/commands` and `@mcp-servers`. Autocompletes skills, commands, MCP servers, subagents and files. ↑ recalls earlier prompts, Esc interrupts, and ⌃D returns to the shell.
-- **Attachments.** Attach files and images with the paperclip, by pasting (⌘V), or by dropping them anywhere on the composer (it turns blue with a dashed border and "Drop to attach" while a file is over it; images dragged from a browser work too). Previews appear above the text box: a thumbnail for images, an icon or Quick Look preview with name and size for files. Click one to Quick Look it; hover to remove it. Images are sent inline, scaled to at most 1568 px and 3.75 MB (HEIC, TIFF and others are converted). Other files and folders are sent as `@path` references that Claude Code reads. Sent attachments show on your message in the transcript, including in resumed sessions. Copying cells from a spreadsheet still pastes the text.
+- **Edit diffs.** File edits show as a real line diff with unchanged context and the file's line numbers, and the changed part of each edited line highlighted. When the diff is wide enough (800 pt or more), the diff is side by side like `git diff` (old on the left, new on the right, each edited line paired with its new version); narrower panes use a unified view. Long runs of unchanged lines collapse to "⋯ N unchanged lines". Choose *Automatic*, *Side by side* or *Unified* in Settings › Claude & Codex › Edit diffs.
+- **Review changes.** A full-pane review of the working tree, like VS Code's diff editor. See [Review changes](#review-changes).
+- **Tool calls.** Consecutive reads, searches and quick commands show as one card, "Explored the code · Grep 1 · Read 3", with a row per step: ✓, spinner or ✕, the tool, its argument (folders dimmed so file names stand out) and a detail such as `L1–184`, `5 lines` or `+9 −2`. Hover a file step for **Open ↗**; click a step for its result or diff. A single edit shows its diff card ("✓ Edit `AppDelegate.swift` +4 −1", **Unified | Split**, **Copy**, **Review ⌘⇧R**); consecutive edits share one card. Builds, tests and failed commands get an output card with **Passed 41.2s** or **Failed exit 1**, the last 10 lines of output (colors stripped) and **Show all N lines · Copy output · Open in terminal tab**.
+- **Folding.** Settings › Claude & Codex › Tool calls: *collapse all*, *collapse previous turns and show the current turn* (the default), or *show all*. A finished turn's work folds into one row with its last reply left out, like "▸ Worked for 6m 12s · 28 tool calls · Read 9 · Edit 3 · committed 74c838f · opened PR #39". Commits and pull requests come from the `git commit` and `gh pr create` output in the turn. Questions, plans and to-do lists always show.
+- **End-of-turn summary.** A turn that changed files or committed ends with a card: what it did ("Committed 74c838f"), how long it took and what it cost, and rows for the pull request, branch, commit or changed files (+/−) and test results (XCTest, Jest/Vitest and pytest summaries) when they can be read from the transcript. **Review changes**, **Open PR on GitHub ↗** (when there is one) and **Copy summary**.
+- **Status line.** Above the composer while Claude works: a spinner, what it's doing (the to-do in progress, else the running tool, "Thinking" or "Writing"), the turn's time and output tokens ("2m 41s · ↓ 18.2k tokens"), and `esc` to interrupt. While a prompt waits: "● Waiting for your approval · Press 1, 2 or 3, or type different instructions".
+- **CI failures.** A failed check can land in the transcript as a red card: the job, workflow, commit and run time, the failed step and test count, and the failing log lines with errors tinted. **Fix with Claude** sends "Fix the failing check: Test / Build and test." with the log attached as a file Claude reads (a **LOG** chip on your message), **Re-run failed jobs** reruns the job, and **Full log ↗** opens it on GitHub.
+- **Composer.** A rounded field ("Reply to Claude…") with **+** (attach), **@ Context** and **/ Skills & commands** buttons, which start a mention or command and open its suggestions, and a stop button while Claude works (send otherwise). Under it: the keys (⏎ send · ⇧⏎ new line · ↑ previous prompt), a context meter ("143k / 1M") and the session's cost. The context window is 1M for models with the `[1m]` suffix, a picker entry "with 1M context", Opus 5 and later, or once more than 200k is in use; otherwise 200k. The field highlights markdown, code fences, `/skills`, `/commands` and `@mcp-servers`, and autocompletes skills, commands, MCP servers, subagents and files. ↑ recalls earlier prompts, Esc interrupts, and ⌃D returns to the shell.
+- **Attachments.** Attach files and images with **+**, by pasting (⌘V), or by dropping them anywhere on the composer (it turns blue with a dashed border and "Drop to attach" while a file is over it; images dragged from a browser work too). Previews appear above the text box: a thumbnail for images, an icon or Quick Look preview with name and size for files. Click one to Quick Look it; hover to remove it. Images are sent inline, scaled to at most 1568 px and 3.75 MB (HEIC, TIFF and others are converted). Other files and folders are sent as `@path` references that Claude Code reads. Sent attachments show on your message in the transcript, including in resumed sessions. Copying cells from a spreadsheet still pastes the text.
 - **Continue in Terminal UI.** Resumes the same conversation in the TUI.
 - **File explorer.** In a git repository or worktree, a right-hand explorer shows git status per file (or only the changes). It opens the repo or a file in VS Code, Cursor or Sublime Text, whichever are installed.
 - **Tab names.** Tabs and sessions are named `owner/repo · branch · PR #n`.
+
+### Review changes
+
+Review changes shows every uncommitted change in the session's repository so you can check Claude's work, comment on it and commit, without leaving the chat. **‹ Chat** returns to the conversation.
+
+- **Changes.** The left column lists each changed file with its status (M orange, A green, D red), folder and lines added and removed. The checkbox stages or unstages the whole file (a dash means part of it is staged); **Stage all** runs `git add -A`. Click a file to jump to it.
+- **Diffs.** Every file's diff in one scrolling list, from `git diff` (not staged), `git diff --cached` (staged) and untracked files (shown as new files). **Split** puts the old file on the left and the new one on the right, with diagonal stripes where one side has no line; **Unified** shows one column with both line numbers. Edited lines are paired and the changed words highlighted, and code is syntax highlighted. Runs of unchanged lines before and between hunks collapse to "⋯ N unchanged lines"; **Expand** shows them. **Hide whitespace** diffs with `-w`. A file stops after 3,000 diff lines until you click **Show full diff**. The strip on the right edge marks where the changes are; click it to jump.
+- **Hunks.** Each hunk header has **Stage hunk** and **Revert hunk** (discard it from the working tree), or **Unstage hunk** for staged changes. Shell builds a one-hunk patch and runs `git apply --cached`, `git apply --cached -R` or `git apply -R`. New, deleted and binary files are staged and unstaged whole, and reverting a new file moves it to the Trash. With Hide whitespace on, hunks are applied with `--ignore-whitespace`, and whitespace-only changes inside them stay unstaged.
+- **Files.** **Viewed** collapses a file and counts it in the footer; it stays checked for the rest of the app session until the file changes again. **Open in…** opens the file in your editor (VS Code, Cursor or Sublime Text, whichever you used last), the default app or Finder. **Revert file…** asks first, then restores the file to HEAD, discarding staged and unstaged changes.
+- **Comments.** Hover a line number for **+** and click it to comment on that line. **Send to Claude** (⌘⏎) sends your comment to the session with the file path, line number and the hunk as context.
+- **Ask Claude to review** sends Claude a prompt to read the diff and point out bugs, risky changes and missing tests.
+- **Commit.** Write the message below the file list (the first line, the subject, is bold) and click **Commit N files** (⌘⏎) or **Commit & Push** (⇧⌘⏎). Shell runs `git commit -F` with your message, so commit hooks run as usual, then `git push` (or `git push -u origin HEAD` when the branch has no upstream). Errors such as a failing hook, nothing staged or a rejected push show under the message. With Settings › Apple Intelligence › Draft commit messages on, **Write for me** drafts a message from the staged diff on your Mac; you edit it before committing.
+- **Keyboard.** While the review has focus: ⌥↓ and ⌥↑ move between changes, ⌘] and ⌘[ between files.
+
+The view refreshes when the repository's `git status` changes.
 
 ### Remote Control
 

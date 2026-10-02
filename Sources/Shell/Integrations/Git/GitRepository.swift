@@ -188,7 +188,7 @@ final class GitRepository {
     private(set) var pullRequest: PullRequestInfo?
 
     @ObservationIgnored private let git: String
-    @ObservationIgnored private var environment: [String: String] = [:]
+    @ObservationIgnored private(set) var environment: [String: String] = [:]
     @ObservationIgnored private var remoteName: String?
     @ObservationIgnored private var prBranch: String?
     @ObservationIgnored private var prCheckedAt: Date?
