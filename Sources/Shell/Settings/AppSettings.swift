@@ -258,7 +258,7 @@ struct AppSettings: Codable, Equatable {
 
     // Tabs & windows
     var tabBarStyle: TabBarStyle = .vertical
-    var sidebarWidth = 240.0
+    var sidebarWidth = 252.0
     var newTabPlacement: NewTabPlacement = .afterCurrent
 
     // Notifications

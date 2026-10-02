@@ -171,7 +171,15 @@ struct TabSubtitle: View {
             branch = repo.branchLabel
             if let pr = repo.pullRequest { trailing += " · #\(pr.number)" }
         } else {
-            folder = s.nativeClaude.map { ClaudeToolFormat.shortPath($0.directory) } ?? s.abbreviatedDirectory
+            if let claude = s.nativeClaude {
+                folder = ClaudeToolFormat.shortPath(claude.directory)
+            } else if tab.agent != nil {
+                // Agent tabs lead with the project, like native Claude tabs:
+                // "Shell · ⎇ bug/38-sigpipe… · #39".
+                folder = s.directoryName
+            } else {
+                folder = s.abbreviatedDirectory
+            }
             branch = s.gitBranch
             if let pr = controller.repository(for: s)?.pullRequest { trailing += " · #\(pr.number)" }
         }
@@ -477,6 +485,10 @@ struct VerticalTabSidebar: View {
     @Bindable var workspace: Workspace
     @Bindable var chrome: WindowChromeState
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @State private var headerHovering = false
+
+    /// The panel's default width: 260pt including the window inset, as designed.
+    static let defaultWidth: Double = 252
 
     var body: some View {
         let palette = ChromePalette.current
@@ -500,9 +512,18 @@ struct VerticalTabSidebar: View {
                 Color.primary.opacity(0.08).frame(height: 0.5).padding(.horizontal, 14).padding(.vertical, 8)
             }
 
-            SectionHeader("Tabs", count: workspace.tabs.count, trailing: AnyView(newGroupButton))
+            // The design shows only the count; New Tab Group appears on hover
+            // and in the header's context menu (also ⌃⌘G and the palette).
+            SectionHeader("Tabs", count: workspace.tabs.count,
+                          trailing: AnyView(newGroupButton.opacity(headerHovering ? 1 : 0)))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 4)
+                .contentShape(Rectangle())
+                .onHover { headerHovering = $0 }
+                .contextMenu {
+                    Button("New Tab Group…") { if let tab = workspace.selectedTab { controller.newGroup(with: tab) } }
+                        .disabled(workspace.selectedTab == nil)
+                }
 
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 2) {
@@ -524,7 +545,7 @@ struct VerticalTabSidebar: View {
                 .padding(.bottom, 8)
             }
 
-            VStack(spacing: 2) {
+            VStack(spacing: 6) {
                 SidebarFooterRow(title: "New Tab", shortcut: ShortcutAction.newTab.shortcut?.displayString) {
                     Image(systemName: "plus").font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
                 } action: { controller.newTab() }
@@ -596,7 +617,7 @@ struct VerticalTabSidebar: View {
             .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
                 .onChanged { v in controller.resizeTabSidebar(by: v.translation.width) }
                 .onEnded { _ in controller.finishTabSidebarResize() })
-            .onTapGesture(count: 2) { SettingsStore.shared.settings.sidebarWidth = 240 }
+            .onTapGesture(count: 2) { SettingsStore.shared.settings.sidebarWidth = Self.defaultWidth }
             .help("Drag to resize · double-click to reset")
     }
 }
