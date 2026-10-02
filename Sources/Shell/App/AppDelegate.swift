@@ -3,6 +3,8 @@ import GhosttyKit
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, ShortcutActionHandling, GhosttyRuntimeDelegate {
+    // main.swift sets the delegate before the run loop starts.
+    // swiftlint:disable:next force_cast - always an AppDelegate
     static var shared: AppDelegate { NSApp.delegate as! AppDelegate }
 
     private(set) var controllers: [TerminalWindowController] = []

@@ -173,8 +173,8 @@ final class BranchChecksModel {
         guard var next = Self.parse(prView: out, branch: branch) else { return }
         // Steps for failing and running Actions jobs (one API call each).
         if let remote = repository.github {
-            for i in next.jobs.indices where next.jobs[i].jobID != nil && (next.jobs[i].state == .failed || next.jobs[i].state == .running) {
-                let id = next.jobs[i].jobID!
+            for i in next.jobs.indices where next.jobs[i].state == .failed || next.jobs[i].state == .running {
+                guard let id = next.jobs[i].jobID else { continue }
                 if let json = await GitRepository.run(gh, ["api", "repos/\(remote.owner)/\(remote.name)/actions/jobs/\(id)"], in: dir, environment: env) {
                     Self.applySteps(json, to: &next.jobs[i])
                 }

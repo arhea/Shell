@@ -273,7 +273,7 @@ enum AgentLauncher {
                                 "river", "robin", "sparrow", "summit", "thistle", "tiger", "walrus", "willow", "wren", "yak"]
 
     static func randomName() -> String {
-        "\(adjectives.randomElement()!)-\(nouns.randomElement()!)"
+        "\(adjectives.randomElement() ?? "brisk")-\(nouns.randomElement() ?? "otter")"
     }
 
     nonisolated static func shellQuote(_ s: String) -> String { ShellQuote.quote(s) }

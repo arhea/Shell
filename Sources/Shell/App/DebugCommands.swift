@@ -24,6 +24,7 @@ enum DebugCommands {
         if events.count > 200 { events.removeFirst(events.count - 200) }
     }
 
+    // swiftlint:disable:next cyclomatic_complexity - one flat switch over debug commands
     static func handle(_ fields: [String]) {
         guard fields.count >= 3 else { return }
         let command = fields[2]
@@ -252,7 +253,7 @@ enum DebugCommands {
                 let scale = window.backingScaleFactor
                 let size = view.bounds.size
                 if let ctx = CGContext(data: nil, width: Int(size.width * scale), height: Int(size.height * scale), bitsPerComponent: 8,
-                                       bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                       bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
                                        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
                     ctx.scaleBy(x: scale, y: scale)
                     if !view.isFlipped {

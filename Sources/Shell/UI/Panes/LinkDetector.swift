@@ -42,6 +42,7 @@ struct DetectedLink: Equatable {
 /// without also opening it on a plain click. Shell detects links itself,
 /// draws the underlines, and handles ⌘-click for what it underlined.
 enum LinkDetector {
+    // swiftlint:disable:next force_try - constant pattern, exercised by LinkDetector tests
     static let urlRegex = try! NSRegularExpression(pattern: #"https?://[^\s<>"'`{}|\\^\[\]]+"#, options: [.caseInsensitive])
 
     struct Geometry {
@@ -111,6 +112,7 @@ enum LinkDetector {
     }
 
     private static let pathTokenBoundaries: Set<Character> = [" ", "\t", "\"", "'", "`", "(", ")", "[", "]", "{", "}", "<", ">", ",", ";", "|", "=", "\u{00A0}"]
+    // swiftlint:disable:next force_try - constant pattern, exercised by LinkDetector tests
     private static let lineSuffix = try! NSRegularExpression(pattern: #"(:\d+){1,2}:?$"#)
 
     /// Whether a token looks enough like a path to be worth a stat() call.

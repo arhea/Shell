@@ -1,5 +1,6 @@
 import AppKit
 import Observation
+import os
 
 /// State behind Review Changes: the working tree's diff, selection, view
 /// options, staging, commenting and committing. Git runs off the main actor
@@ -81,8 +82,18 @@ final class ReviewChangesModel {
         let repo = repository
         watchTask = Task { [weak self] in
             while !Task.isCancelled {
-                await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-                    withObservationTracking { _ = repo.status } onChange: { cont.resume() }
+                // Resumed by the next status change or by stop()'s cancel,
+                // whichever comes first; otherwise a stopped repository that
+                // never changes again would park this task (and itself) forever.
+                let slot = OSAllocatedUnfairLock<CheckedContinuation<Void, Never>?>(initialState: nil)
+                await withTaskCancellationHandler {
+                    await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                        slot.withLock { $0 = cont }
+                        withObservationTracking { _ = repo.status } onChange: { slot.withLock { $0.take() }?.resume() }
+                        if Task.isCancelled { slot.withLock { $0.take() }?.resume() }
+                    }
+                } onCancel: {
+                    slot.withLock { $0.take() }?.resume()
                 }
                 guard !Task.isCancelled, let self else { return }
                 scheduleRefresh()

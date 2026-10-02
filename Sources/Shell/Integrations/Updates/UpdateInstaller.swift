@@ -55,6 +55,7 @@ enum UpdateInstaller {
     }
 
     static func fetchLatest(etag: String?, session: URLSession = session) async throws -> LatestResult {
+        // swiftlint:disable:next force_unwrapping - constant URL; the repository is owner/name
         var request = URLRequest(url: URL(string: "https://api.github.com/repos/\(repository)/releases/latest")!)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")

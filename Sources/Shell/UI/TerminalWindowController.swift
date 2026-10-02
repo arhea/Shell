@@ -170,6 +170,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
     let chrome = WindowChromeState()
     private var paneViews: [UUID: PaneView] = [:]
     private var containers: [UUID: SplitContainerView] = [:]
+    // swiftlint:disable:next implicitly_unwrapped_optional - set in make(), before any use
     private var contentView: WindowContentView!
     private var tabBarHost: NSView?
     private var sidebarHost: NSView?
@@ -1231,7 +1232,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
 
     func windowWillClose(_ notification: Notification) { windowWillCloseCleanup() }
 
-    private var cleanedUp = false
+    private(set) var cleanedUp = false
     private func windowWillCloseCleanup() {
         guard !cleanedUp else { return }
         cleanedUp = true

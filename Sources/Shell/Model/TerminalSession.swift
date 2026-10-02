@@ -270,7 +270,7 @@ final class TerminalSession: Identifiable {
             lastDuration = duration
             lastCommand = runningCommand
             if let cmd = runningCommand {
-                var block = currentBlock?.command == cmd ? currentBlock! : newBlock(cmd)
+                var block = currentBlock.flatMap { $0.command == cmd ? $0 : nil } ?? newBlock(cmd)
                 block.isFinished = true
                 block.exitCode = exitCode
                 block.duration = duration ?? Date().timeIntervalSince(block.startedAt)

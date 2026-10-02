@@ -71,6 +71,8 @@ final class SessionWaiters {
                     self?.expire(token, sessionID: sessionID)
                 }
                 do {
+                    // Cancelled before we got here: don't run the action.
+                    try Task.checkCancellation()
                     try register()
                 } catch {
                     remove(token, sessionID: sessionID)

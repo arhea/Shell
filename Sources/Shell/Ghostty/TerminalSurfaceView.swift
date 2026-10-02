@@ -106,8 +106,9 @@ final class TerminalSurfaceView: NSView {
         cfg.wait_after_command = o.waitAfterCommand
         cfg.context = o.context
 
-        let keys = Array(o.environment.keys)
-        let values = keys.map { o.environment[$0]! }
+        let pairs = Array(o.environment)
+        let keys = pairs.map(\.key)
+        let values = pairs.map(\.value)
         let cKeys = keys.map { strdup($0) }
         let cValues = values.map { strdup($0) }
         defer {

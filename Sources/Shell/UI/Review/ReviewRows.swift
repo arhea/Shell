@@ -94,6 +94,7 @@ enum ReviewRows {
                         continue
                     }
                     let prev = i > 0 ? diff.hunks[i - 1] : nil
+                    // swiftlint:disable:next empty_count - Gap.count is a line count, not a collection
                     if let g = gap(before: hunk, after: prev, ref: ref), g.count > 0 {
                         if let lines = input.expandedGaps[g.id] {
                             rows += expandedRows(g, lines: lines, ref: ref, split: input.split)

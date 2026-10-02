@@ -328,16 +328,18 @@ struct PRActions {
 
     /// A terminal in the PR's worktree (checking it out first if needed).
     func openInTerminal(_ pr: OpenPullRequest) {
-        Task {
-            guard let path = await model.ensureWorktree(for: pr) else { return }
+        Task { [controller] in
+            guard let path = await model.ensureWorktree(for: pr), !controller.cleanedUp else { return }
             controller.switchToDirectory(path)
         }
     }
 
     /// A new tab in the PR's worktree running the default agent, with `prompt` when given.
     func startClaude(_ pr: OpenPullRequest, name: String? = nil, prompt: String? = nil) {
-        Task {
-            guard let path = await model.ensureWorktree(for: pr) else { return }
+        Task { [controller] in
+            // The window may have closed during the checkout: a tab built
+            // into it now would never be closed (or cleaned up).
+            guard let path = await model.ensureWorktree(for: pr), !controller.cleanedUp else { return }
             let tab = controller.newTab(directory: path)
             tab.focusedSession?.pendingCommand = Self.command(name: name ?? pr.head, prompt: prompt)
         }

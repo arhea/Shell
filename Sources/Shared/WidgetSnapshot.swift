@@ -26,7 +26,7 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
         }
 
         /// Sort order: what wants attention first.
-        var rank: Int { Self.allCases.firstIndex(of: self)! }
+        var rank: Int { Self.allCases.firstIndex(of: self) ?? Self.allCases.count }
     }
 
     struct Agent: Codable, Equatable, Identifiable, Sendable {
@@ -157,12 +157,15 @@ enum ShellAppURL: Equatable {
     /// shellapp://session/<uuid>
     case session(UUID)
 
+    // A constant scheme plus a host and a UUID always make a URL.
+    // swiftlint:disable force_unwrapping
     var url: URL {
         switch self {
         case .dashboard: URL(string: "\(Self.scheme)://dashboard")!
         case .session(let id): URL(string: "\(Self.scheme)://session/\(id.uuidString)")!
         }
     }
+    // swiftlint:enable force_unwrapping
 
     init?(_ url: URL) {
         guard url.scheme?.lowercased() == Self.scheme else { return nil }

@@ -33,10 +33,10 @@ final class EditorFixture {
         window.contentView = container
         editor.frame = container.bounds
         container.addSubview(editor)
-        editor.onSubmit = { [unowned self] in submitted.append($0) }
-        editor.onHeightChange = { [unowned self] in heightChanges += 1 }
-        editor.onCompletionVisibilityChange = { [unowned self] in visibilityChanges += 1 }
-        editor.onFocus = { [unowned self] in focusEvents += 1 }
+        editor.onSubmit = { [weak self] in self?.submitted.append($0) }
+        editor.onHeightChange = { [weak self] in self?.heightChanges += 1 }
+        editor.onCompletionVisibilityChange = { [weak self] in self?.visibilityChanges += 1 }
+        editor.onFocus = { [weak self] in self?.focusEvents += 1 }
         editor.layoutSubtreeIfNeeded()
         window.makeFirstResponder(editor.textView)
         if idle { makeIdle() }

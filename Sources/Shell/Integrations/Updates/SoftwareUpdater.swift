@@ -79,6 +79,7 @@ final class SoftwareUpdater {
     }
 
     var currentVersion: String { system.currentVersion }
+    // swiftlint:disable:next force_unwrapping - constant URL; the repository is owner/name
     var releasesURL: URL { URL(string: "https://github.com/\(UpdateInstaller.repository)/releases")! }
 
     private var stateURL: URL { system.stateURL ?? SettingsStore.supportDirectory.appendingPathComponent("updates.json") }

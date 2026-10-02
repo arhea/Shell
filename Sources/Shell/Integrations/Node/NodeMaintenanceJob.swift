@@ -26,7 +26,7 @@ final class NodeMaintenanceJob: MaintenanceJob {
             run.note(node.lastError ?? "no release data")
             return MaintenanceOutcome(failedStep: "fetch Node.js releases")
         }
-        run.note("manager: \(node.manager!.title) · active: \(node.activeVersion?.tag ?? "none") · track: \(settings.nodeTrack)")
+        run.note("manager: \(node.manager?.title ?? "none") · active: \(node.activeVersion?.tag ?? "none") · track: \(settings.nodeTrack)")
 
         // 1. Node itself
         let before = node.activeVersion
