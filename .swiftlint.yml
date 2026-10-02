@@ -1,0 +1,99 @@
+# SwiftLint config (https://github.com/realm/SwiftLint).
+# Safety rules that catch crashes and leaks are errors; style rules are
+# warnings. Run `make lint`. A justified exception gets an inline
+# `// swiftlint:disable:next <rule> - <why it can't fail>`.
+
+included:
+  - Sources
+  - Tests
+excluded:
+  - Vendor
+  - build
+  - Shell.xcodeproj
+
+opt_in_rules:
+  # Crashes from nil or invalid values
+  - force_unwrapping
+  - implicitly_unwrapped_optional
+  - discouraged_optional_collection
+  - empty_count
+  - first_where
+  - last_where
+  - contains_over_first_not_nil
+  # Leaks and lifetime bugs
+  - weak_delegate
+  - unowned_variable_capture
+  - unhandled_throwing_task
+  # General hygiene
+  - array_init
+  - closure_spacing
+  - collection_alignment
+  - empty_string
+  - fatal_error_message
+  - identical_operands
+  - overridden_super_call
+  - private_action
+  - private_outlet
+  - prohibited_super_call
+  - redundant_nil_coalescing
+  - toggle_bool
+  - unused_optional_binding
+  - yoda_condition
+
+analyzer_rules:
+  - unused_declaration
+  - unused_import
+
+# Errors: these fail `make lint` and CI.
+force_unwrapping:
+  severity: error
+force_try:
+  severity: error
+force_cast:
+  severity: error
+implicitly_unwrapped_optional:
+  severity: error
+weak_delegate:
+  severity: error
+unowned_variable_capture:
+  severity: error
+unhandled_throwing_task:
+  severity: error
+
+# Style: the codebase prefers compact one-line bodies and long descriptive
+# lines, so these limits are generous and only warn.
+line_length:
+  warning: 200
+  ignores_comments: true
+  ignores_urls: true
+  ignores_interpolated_strings: true
+file_length:
+  warning: 2000
+  error: 4000
+type_body_length:
+  warning: 1200
+  error: 2500
+function_body_length:
+  warning: 150
+  error: 400
+cyclomatic_complexity:
+  warning: 30
+  error: 80
+nesting:
+  type_level: 3
+identifier_name:
+  min_length: 1
+  max_length: 60
+type_name:
+  min_length: 2
+  max_length: 60
+large_tuple:
+  warning: 4
+
+disabled_rules:
+  - todo
+  - trailing_comma        # SwiftFormat adds trailing commas
+  - opening_brace         # SwiftFormat owns brace placement
+  - statement_position
+  - multiple_closures_with_trailing_closure
+  - function_parameter_count

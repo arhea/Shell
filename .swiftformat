@@ -1,0 +1,37 @@
+# SwiftFormat config (https://github.com/nicklockwood/SwiftFormat).
+# Matches the existing code style; run `make format` to apply, `make lint` to check.
+
+--swiftversion 6.2
+--exclude Vendor,build,Shell.xcodeproj
+
+--indent 4
+--indent-case false
+--ifdef no-indent
+--linebreaks lf
+--max-width none
+--self remove
+--self-required log,trace,debug,info,notice,warning,error,critical,fault
+--trailing-commas always
+--ranges spaced
+--no-space-operators ...,..<
+--operator-func spaced
+--else-position same-line
+--guard-else auto
+--wrap-arguments preserve
+--wrap-parameters preserve
+--wrap-collections preserve
+--closing-paren balanced
+--extension-acl on-extension
+--import-grouping alpha,testable-last
+--header ignore
+--hex-literal-case uppercase
+--some-any true
+
+# The codebase favors compact one-line bodies, aligned trailing comments and
+# its own wrapping; keep those rules off so formatting stays a light touch.
+--disable wrapIfStatementBodies,wrapPropertyBodies,wrapFunctionBodies,wrapLoopBodies,wrapIfExpressionBodies
+--disable wrapMultilineStatementBraces,wrapArguments,blankLinesBetweenScopes,consecutiveSpaces
+--disable hoistPatternLet,hoistTry,hoistAwait,conditionalAssignment,andOperator,redundantReturn
+--disable unusedArguments,preferKeyPath,docComments,numberFormatting,trailingClosures
+--disable opaqueGenericParameters,redundantMemberwiseInit,redundantThrows,redundantSwiftUIGroup
+--disable redundantViewBuilder,noForceUnwrapInTests,indent
