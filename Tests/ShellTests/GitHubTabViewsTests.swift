@@ -266,12 +266,12 @@ final class GitHubTabViewsTests: GitAreaTestCase {
         m.selection = .init(number: 1)
         try await eventually { m.details[1] != nil }
         let w = claudeWindow(PullRequestDetailView(model: m, controller: controller, pr: pr, stack: nil), width: 620, height: 900)
-        // Below the tab bar (y > 140), the first control is the draft banner's button.
-        gitPress(w) { $0.minY > 140 && $0.minY < 820 }
+        // Below the tab bar (y > 180), the first control is the draft banner's button.
+        gitPress(w) { $0.minY > 180 && $0.minY < 820 }
         try await eventually(timeout: 5, "ready") { f.gh.calls.contains("pr ready 1 --repo acme/widgets") }
         try await eventually(timeout: 5) { m.busy.isEmpty }
         w.layout(settle: 0.05)
-        gitPress(w, at: 1) { $0.minY > 140 && $0.minY < 820 }
+        gitPress(w, at: 1) { $0.minY > 180 && $0.minY < 820 }
         try await eventually(timeout: 5, "rerun") { f.gh.calls.contains("run rerun 77 --failed --repo acme/widgets") }
         try await eventually(timeout: 5) { m.busy.isEmpty }
 

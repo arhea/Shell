@@ -46,8 +46,9 @@ struct PullRequestDetailView: View {
         let p = ClaudePalette.current
         VStack(spacing: 0) {
             header
+            Divider().opacity(0.6)
             tabBar
-            Divider()
+            Divider().opacity(0.6)
             Group {
                 switch section {
                 case .overview: overview(p)
@@ -57,10 +58,11 @@ struct PullRequestDetailView: View {
                 }
             }
             .frame(maxHeight: .infinity, alignment: .top)
-            Divider()
+            Divider().opacity(0.6)
             bottomBar
         }
-        .background(p.surface)
+        // A shade off the board, like the design's #1f1f22 on #1b1b1d.
+        .background(p.background.mix(with: p.foreground, by: p.isDark ? 0.02 : 0.015))
         .confirmationDialog("Merge #\(pr.number)?", isPresented: Binding(get: { confirmMerge != nil }, set: { if !$0 { confirmMerge = nil } }),
                             presenting: confirmMerge) { method in
             Button(method.title) { run(.merge(method)) }
@@ -93,8 +95,8 @@ struct PullRequestDetailView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Text("#\(pr.number)").font(.system(size: DS.Size.title)).foregroundStyle(.secondary).monospacedDigit()
+            HStack(spacing: 8) {
+                Text("#\(pr.number)").font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary)
                 Pill(column.title, color: GitHubBoardView.color(column))
                 if creating || busy != nil {
                     SpinnerRing(size: 10)
@@ -102,7 +104,7 @@ struct PullRequestDetailView: View {
                 }
                 Spacer(minLength: 4)
                 Button { model.selection = nil } label: {
-                    Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
+                    Image(systemName: "xmark").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
                 }
                 .buttonStyle(.labeled(.plain, compact: true))
                 .help("Close details (⎋)")
@@ -110,51 +112,55 @@ struct PullRequestDetailView: View {
                 .keyboardShortcut(.escape, modifiers: [])
             }
             Text(pr.title)
-                .font(.system(size: DS.Size.heading, weight: .semibold))
+                .font(.system(size: 16, weight: .semibold))
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 0) {
-                Text(pr.authorName ?? pr.author).fontWeight(.medium).foregroundStyle(.primary)
+                Text(pr.authorName ?? pr.author)
                 Text(" wants to merge into ")
-                Text(pr.base).font(.system(size: DS.Size.subtitle, design: .monospaced)).foregroundStyle(.primary)
+                Text(pr.base).font(.system(size: DS.Size.subtitle, design: .monospaced)).foregroundStyle(Color.primary.opacity(0.8))
                     .lineLimit(1).truncationMode(.middle)
                 if let date = detail?.createdAt ?? pr.updatedAt {
                     Text(" · " + PullRequestBoard.shortAge(date) + " ago").help(detail?.createdAt != nil ? "Opened" : "Updated")
                 }
             }
-            .font(.system(size: DS.Size.subtitle))
+            .font(.system(size: 12))
             .foregroundStyle(.secondary)
             .lineLimit(1)
             .help("\(pr.head) → \(pr.base)")
-            // The full labels when the pane is wide enough, else "Review".
+            // The full labels when the pane is wide enough; then the ↗ loses
+            // its label before Review with Claude shortens to Review.
             ViewThatFits(in: .horizontal) {
                 actionRow(reviewTitle: "Review with Claude")
+                actionRow(reviewTitle: "Review with Claude", linkTitle: nil)
                 actionRow(reviewTitle: "Review")
             }
             .disabled(creating)
+            .padding(.top, 4)
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 12)
-        .padding(.bottom, 10)
+        .padding(.horizontal, 18)
+        .padding(.top, 16)
+        .padding(.bottom, 12)
     }
 
-    private func actionRow(reviewTitle: String) -> some View {
+    private func actionRow(reviewTitle: String, linkTitle: String? = "GitHub") -> some View {
         HStack(spacing: 6) {
             checkoutButton
             Button { actions.review(pr) } label: {
-                HStack(spacing: 4) { ClaudeMark(size: 11); Text(reviewTitle) }.fixedSize()
+                HStack(spacing: 5) { ClaudeMark(size: 11); Text(reviewTitle) }.fixedSize()
             }
-            .buttonStyle(.labeled(.claude))
+            .buttonStyle(DetailButtonStyle())
             .help("Check out #\(pr.number) in a worktree and start a Claude review")
             Button { actions.openOnGitHub(pr) } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: "arrow.up.right").font(.system(size: 9, weight: .bold))
-                    Text("GitHub")
+                    Image(systemName: "arrow.up.right").font(.system(size: 9, weight: .semibold))
+                    if let linkTitle { Text(linkTitle) }
                 }
                 .fixedSize()
             }
-            .buttonStyle(.labeled(.neutral))
+            .buttonStyle(DetailButtonStyle(horizontal: linkTitle == nil ? 9 : 10))
             .help("Open #\(pr.number) on github.com")
+            .accessibilityLabel("Open on GitHub")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -166,16 +172,24 @@ struct PullRequestDetailView: View {
         return HStack(spacing: 0) {
             Button { actions.openInTerminal(pr) } label: {
                 Text(existing ? "Open Worktree" : "Check Out in Worktree")
-                    .font(.system(size: DS.Size.body, weight: .semibold))
+                    .font(.system(size: DS.Size.body, weight: .medium))
                     .foregroundStyle(.white)
-                    .padding(.leading, 10).padding(.trailing, 8)
-                    .frame(height: 26)
+                    .padding(.horizontal, 11)
+                    .frame(height: 28)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(existing ? "Open a terminal in \(ShellQuote.path(model.plannedWorktreePath(for: pr)))"
                   : "Check out \(pr.head) into \(ShellQuote.path(model.plannedWorktreePath(for: pr))) and open a terminal there")
             Color.white.opacity(0.35).frame(width: 0.5, height: 14)
+            // A menu button draws its image large and tinted, so draw the ▾
+            // here and lay a see-through menu over it to take the click.
+            Image(systemName: "arrowtriangle.down.fill")
+                .font(.system(size: 7))
+                .foregroundStyle(.white)
+                .frame(width: 26, height: 28)
+                .accessibilityHidden(true)
+                .overlay {
             Menu {
                 PRWorktreeMenuItems(pr: pr, actions: actions)
                 Divider()
@@ -189,17 +203,17 @@ struct PullRequestDetailView: View {
                 Divider()
                 Button("Copy Link") { PRContextMenu.copy(pr.url.absoluteString) }
             } label: {
-                Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
+                Image(systemName: "chevron.down")
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
-            .fixedSize()
-            .tint(.white)
-            .frame(width: 24, height: 26)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .opacity(0.011)
             .help("More worktree and pull request actions")
             .accessibilityLabel("More actions")
+                }
         }
-        .background(DS.Status.selection, in: RoundedRectangle(cornerRadius: DS.Radius.control))
+        .background(DS.Status.selection, in: RoundedRectangle(cornerRadius: 7))
         .fixedSize()
     }
 
@@ -209,13 +223,14 @@ struct PullRequestDetailView: View {
         HStack(spacing: 16) {
             ForEach(Section.allCases) { s in
                 Button { section = s } label: {
-                    VStack(spacing: 5) {
-                        HStack(spacing: 4) {
-                            Text(s.title)
-                            if let n = count(s) { Text("\(n)").foregroundStyle(.secondary).monospacedDigit() }
-                        }
-                        .font(.system(size: DS.Size.body, weight: section == s ? .semibold : .regular))
-                        .foregroundStyle(section == s ? Color.primary : Color.secondary)
+                    HStack(spacing: 4) {
+                        Text(s.title)
+                        if let n = count(s) { Text("\(n)").monospacedDigit() }
+                    }
+                    .font(.system(size: DS.Size.body, weight: section == s ? .medium : .regular))
+                    .foregroundStyle(section == s ? Color.primary : Color.secondary)
+                    .padding(.vertical, 9)
+                    .overlay(alignment: .bottom) {
                         Rectangle().fill(section == s ? DS.Status.selection : .clear).frame(height: 2)
                     }
                     .fixedSize()
@@ -226,8 +241,7 @@ struct PullRequestDetailView: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 2)
+        .padding(.horizontal, 18)
     }
 
     private func count(_ s: Section) -> Int? {
@@ -243,7 +257,7 @@ struct PullRequestDetailView: View {
 
     private func overview(_ p: ClaudePalette) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 16) {
                 if pr.isDraft {
                     HStack(spacing: 8) {
                         Text("This pull request is still a draft.").font(.system(size: DS.Size.body))
@@ -256,7 +270,7 @@ struct PullRequestDetailView: View {
                     .cardSurface()
                 }
                 if let detail {
-                    MarkdownView(text: detail.body.isEmpty ? "_No description._" : detail.body, palette: p, fontSize: DS.Size.body)
+                    MarkdownView(text: detail.body.isEmpty ? "_No description._" : detail.body, palette: p, fontSize: DS.Size.title)
                         .textSelection(.enabled)
                     reviewers(detail)
                     checksSummary(detail)
@@ -265,7 +279,8 @@ struct PullRequestDetailView: View {
                 }
                 if let stack, stack.layers.count > 1 { stackSection(stack) }
             }
-            .padding(14)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 14)
         }
     }
 
@@ -278,17 +293,19 @@ struct PullRequestDetailView: View {
     }
 
     private func reviewers(_ detail: PullRequestDetail) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
+        // You first, then everyone else in the order the API gives.
+        let reviewers = detail.reviewers.filter { $0.login == model.login } + detail.reviewers.filter { $0.login != model.login }
+        return VStack(alignment: .leading, spacing: 6) {
             SectionHeader("Reviewers")
-            if detail.reviewers.isEmpty {
+            if reviewers.isEmpty {
                 Text("No reviewers yet").font(.system(size: DS.Size.body)).foregroundStyle(.secondary)
             }
-            ForEach(detail.reviewers) { r in
+            ForEach(reviewers) { r in
                 HStack(spacing: 8) {
-                    AvatarCircle(login: r.login.replacingOccurrences(of: "team:", with: ""), size: 18)
+                    AvatarCircle(login: r.login.replacingOccurrences(of: "team:", with: ""), size: 20)
                     Text(r.login == model.login ? "You" : r.login).lineLimit(1)
                     Spacer(minLength: 4)
-                    Text(Self.reviewerState(r.state)).foregroundStyle(Self.reviewerColor(r.state))
+                    Text(Self.reviewerState(r.state)).font(.system(size: DS.Size.subtitle)).foregroundStyle(Self.reviewerColor(r.state))
                 }
                 .font(.system(size: DS.Size.body))
             }
@@ -323,10 +340,10 @@ struct PullRequestDetailView: View {
         let passed = jobs.filter { $0.state == .passed || $0.state == .skipped }
         let shownPassed = showAllPassed ? passed : Array(passed.prefix(max(0, 3 - unfinished.count)))
         let hidden = passed.count - shownPassed.count
-        return VStack(alignment: .leading, spacing: 7) {
+        return VStack(alignment: .leading, spacing: 6) {
             SectionHeader("Checks", trailing: AnyView(HStack(spacing: 8) {
                 if pr.checks == .failing { rerunButton }
-                Text(Self.checksLine(jobs)).font(.system(size: DS.Size.small)).foregroundStyle(.secondary)
+                Text(Self.checksLine(jobs)).font(.system(size: DS.Size.subtitle)).foregroundStyle(.secondary)
             }))
             if jobs.isEmpty {
                 Text("No checks on the latest commit.").font(.system(size: DS.Size.body)).foregroundStyle(.secondary)
@@ -370,28 +387,31 @@ struct PullRequestDetailView: View {
     }
 
     private func stackSection(_ stack: PullRequestBoard.Stack) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             SectionHeader("Stack", trailing: AnyView(Text("into \(stack.bottom.base)")
-                .font(.system(size: DS.Size.small, design: .monospaced)).foregroundStyle(.secondary)))
-            ForEach(stack.layers.reversed(), id: \.pr.number) { layer in
-                let current = layer.pr.number == pr.number
-                let layerColumn = PullRequestBoard.column(for: layer.pr)
-                Button { model.selection = .init(number: layer.pr.number, stackID: stack.id) } label: {
-                    HStack(spacing: 8) {
-                        Circle().fill(GitHubBoardView.color(layerColumn)).frame(width: 6, height: 6)
-                        Text("#\(layer.pr.number)").foregroundStyle(.secondary).monospacedDigit()
-                        Text(stack.shortTitle(layer.pr)).fontWeight(current ? .semibold : .regular).lineLimit(1)
-                        Spacer(minLength: 4)
-                        Text(current ? "Viewing" : Self.shortState(layerColumn)).font(.system(size: DS.Size.small)).foregroundStyle(.secondary)
+                .font(.system(size: DS.Size.small, design: .monospaced)).foregroundStyle(.tertiary)))
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(stack.layers.reversed(), id: \.pr.number) { layer in
+                    let current = layer.pr.number == pr.number
+                    let layerColumn = PullRequestBoard.column(for: layer.pr)
+                    Button { model.selection = .init(number: layer.pr.number, stackID: stack.id) } label: {
+                        HStack(spacing: 8) {
+                            Circle().fill(GitHubBoardView.color(layerColumn)).frame(width: 7, height: 7)
+                            Text("#\(layer.pr.number)").font(.system(size: DS.Size.subtitle, design: .monospaced)).foregroundStyle(.secondary)
+                            Text(stack.shortTitle(layer.pr)).fontWeight(current ? .medium : .regular).lineLimit(1)
+                            Spacer(minLength: 4)
+                            Text(current ? "Viewing" : Self.shortState(layerColumn)).font(.system(size: DS.Size.subtitle))
+                                .foregroundStyle(current ? .secondary : .tertiary)
+                        }
+                        .font(.system(size: DS.Size.body))
+                        .padding(.leading, 8 + (stack.isBranching ? CGFloat(layer.depth) * 10 : 0)).padding(.trailing, 8)
+                        .padding(.vertical, 5)
+                        .background(RoundedRectangle(cornerRadius: DS.Radius.control).fill(current ? Color.primary.opacity(0.07) : .clear))
+                        .contentShape(Rectangle())
                     }
-                    .font(.system(size: DS.Size.body))
-                    .padding(.leading, 6 + CGFloat(layer.depth) * 10).padding(.trailing, 8)
-                    .frame(minHeight: 26)
-                    .rowBackground(selected: current, hovering: false)
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(current ? [.isButton, .isSelected] : .isButton)
                 }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(current ? [.isButton, .isSelected] : .isButton)
             }
         }
     }
@@ -561,25 +581,25 @@ struct PullRequestDetailView: View {
                     .help("Submit (⌘⏎)")
                 } else {
                     Button("Comment…") { compose(.comment) }
-                        .buttonStyle(.labeled(.neutral))
+                        .buttonStyle(DetailButtonStyle(horizontal: 12))
                     // GitHub doesn't let authors approve or request changes on their own PR.
                     if !mine {
                         Button("Request changes") { compose(.requestChanges) }
-                            .buttonStyle(.labeled(.neutral))
+                            .buttonStyle(DetailButtonStyle(horizontal: 12))
                     }
                     Spacer(minLength: 4)
                     mergeButton
                     if !mine && !approvedByMe {
                         Button("Approve") { run(.approve("")) }
-                            .buttonStyle(FilledButtonStyle(color: DS.Status.done))
+                            .buttonStyle(FilledButtonStyle(color: Self.approveGreen))
                             .help("Approve #\(pr.number)")
                     }
                 }
             }
         }
         .disabled(busy != nil)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
     }
 
     private func compose(_ mode: Compose) {
@@ -594,7 +614,7 @@ struct PullRequestDetailView: View {
             let ready = column == .ready
             if methods.count == 1 {
                 Button("Merge") { confirmMerge = methods[0] }
-                    .buttonStyle(ready ? AnyButtonStyle(FilledButtonStyle(color: DS.Status.done)) : AnyButtonStyle(LabeledButtonStyle()))
+                    .buttonStyle(ready ? AnyButtonStyle(FilledButtonStyle(color: Self.approveGreen)) : AnyButtonStyle(DetailButtonStyle(horizontal: 12)))
                     .help("\(methods[0].title)…")
             } else {
                 Menu {
@@ -606,13 +626,20 @@ struct PullRequestDetailView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
-                .padding(.horizontal, 8)
-                .frame(height: 26)
-                .background(ready ? DS.Status.done.opacity(0.22) : Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.Radius.control))
+                .padding(.horizontal, 10)
+                .frame(height: 28)
+                .background(ready ? DS.Status.done.opacity(0.22) : Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
                 .help("\(methods[0].title) (click), or pick another method")
             }
         }
     }
+
+    /// The design's deeper green for Approve and a ready Merge (#248a3d), so
+    /// white text reads on it; the system green on light themes.
+    static let approveGreen = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(srgbRed: 0x24 / 255, green: 0x8A / 255, blue: 0x3D / 255, alpha: 1) : .systemGreen
+    })
 
     // MARK: Review states
 
@@ -665,12 +692,27 @@ struct FilledButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: DS.Size.body, weight: .semibold))
+            .font(.system(size: DS.Size.body, weight: .medium))
             .foregroundStyle(.white)
-            .padding(.horizontal, 12)
-            .frame(minHeight: 26)
-            .background(color.opacity(configuration.isPressed ? 0.8 : 1), in: RoundedRectangle(cornerRadius: DS.Radius.control))
-            .contentShape(RoundedRectangle(cornerRadius: DS.Radius.control))
+            .padding(.horizontal, 14)
+            .frame(minHeight: 28)
+            .background(color.opacity(configuration.isPressed ? 0.8 : 1), in: RoundedRectangle(cornerRadius: 7))
+            .contentShape(RoundedRectangle(cornerRadius: 7))
+    }
+}
+
+/// The detail pane's neutral buttons: 28pt tall, 12.5pt regular, on a faint fill.
+struct DetailButtonStyle: ButtonStyle {
+    var horizontal: CGFloat = 11
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: DS.Size.body))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, horizontal)
+            .frame(minHeight: 28)
+            .background(Color.primary.opacity(configuration.isPressed ? 0.14 : 0.08), in: RoundedRectangle(cornerRadius: 7))
+            .contentShape(RoundedRectangle(cornerRadius: 7))
     }
 }
 
