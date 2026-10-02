@@ -107,16 +107,23 @@ struct GitHubRemote: Equatable {
     var name: String
 
     var slug: String { "\(owner)/\(name)" }
-    var url: URL { URL(string: "https://\(host)/\(owner)/\(name)")! }
+    /// `parse` only returns remotes whose URL builds.
+    // swiftlint:disable:next force_unwrapping - validated in parse(_:)
+    var url: URL { Self.url(host: host, owner: owner, name: name)! }
+
+    private static func url(host: String, owner: String, name: String) -> URL? {
+        URL(string: "https://\(host)/\(owner)/\(name)")
+    }
 
     func branchURL(_ branch: String) -> URL {
         url.appendingPathComponent("tree").appendingPathComponent(branch)
     }
 
     func compareURL(_ branch: String) -> URL {
-        var c = URLComponents(url: url.appendingPathComponent("compare").appendingPathComponent(branch), resolvingAgainstBaseURL: false)!
+        let compare = url.appendingPathComponent("compare").appendingPathComponent(branch)
+        guard var c = URLComponents(url: compare, resolvingAgainstBaseURL: false) else { return compare }
         c.queryItems = [URLQueryItem(name: "expand", value: "1")]
-        return c.url!
+        return c.url ?? compare
     }
 
     /// Parses https, ssh and scp-style remote URLs. Nil for non-GitHub hosts.
@@ -140,7 +147,8 @@ struct GitHubRemote: Equatable {
         if path.hasSuffix(".git") { path.removeLast(4) }
         s = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let parts = s.split(separator: "/").map(String.init)
-        guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
+        guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty,
+              url(host: host, owner: parts[0], name: parts[1]) != nil else { return nil }
         return GitHubRemote(host: host, owner: parts[0], name: parts[1])
     }
 }

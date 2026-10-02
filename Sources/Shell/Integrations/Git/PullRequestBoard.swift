@@ -152,7 +152,9 @@ enum PullRequestBoard {
         var layers: [Layer]
 
         var id: Int { layers.first?.pr.number ?? 0 }
-        var bottom: OpenPullRequest { layers[0].pr }
+        // stacks() never builds an empty Stack.
+        // swiftlint:disable:next force_unwrapping - non-empty by construction
+        var bottom: OpenPullRequest { layers.first!.pr }
         var pullRequests: [OpenPullRequest] { layers.map(\.pr) }
         var isBranching: Bool { Set(layers.map(\.depth)).count < layers.count }
 
@@ -160,11 +162,13 @@ enum PullRequestBoard {
         /// as its least-ready PR.
         var column: Column {
             let order = Column.allCases
-            return layers.map { PullRequestBoard.column(for: $0.pr) }.min { order.firstIndex(of: $0)! < order.firstIndex(of: $1)! } ?? .waitingForReview
+            let rank = { (c: Column) in order.firstIndex(of: c) ?? order.count }
+            return layers.map { PullRequestBoard.column(for: $0.pr) }.min { rank($0) < rank($1) } ?? .waitingForReview
         }
 
         /// The last layer: the top of the stack.
-        var top: OpenPullRequest { layers[layers.count - 1].pr }
+        // swiftlint:disable:next force_unwrapping - non-empty by construction
+        var top: OpenPullRequest { layers.last!.pr }
 
         /// The stack's name: the "Prefix:" every layer's title shares
         /// ("Tab groups: iCloud sync", "Tab groups: Settings UI" → "Tab
@@ -293,7 +297,8 @@ enum PullRequestBoard {
         for pr in prs.sorted(by: { $0.number < $1.number }) where parent(of: pr) == nil {
             var layers: [Stack.Layer] = []
             walk(pr, depth: 0, into: &layers)
-            result.append(Stack(layers: layers))
+            // Empty when the same PR appears twice: a Stack needs a layer.
+            if !layers.isEmpty { result.append(Stack(layers: layers)) }
         }
         // Anything left is in a cycle (A → B → A); start it at its lowest number.
         for pr in prs.sorted(by: { $0.number < $1.number }) where !placed.contains(pr.number) {

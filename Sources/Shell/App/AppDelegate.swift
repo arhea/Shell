@@ -74,7 +74,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShortcutActionHandling
         ScheduledMaintenance.configureAll()
         SoftwareUpdater.shared.start()
         GoService.shared.startMonitoring()
-        Task.detached(priority: .background) { ClaudeAttachment.removeStaleFiles() }
+        Task.detached(priority: .background) {
+            ClaudeAttachment.removeStaleFiles()
+            AppDelegate.removeStaleScratchFiles()
+        }
 
         if !SessionRestore.restore(into: self) {
             newWindow()
@@ -99,6 +102,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShortcutActionHandling
             // Leave folders of test runs that are still going (parallel runs).
             if let pid = pid_t(name.dropFirst("ShellTests-".count)), kill(pid, 0) == 0 || errno == EPERM { continue }
             try? FileManager.default.removeItem(at: tmp.appendingPathComponent(name))
+        }
+    }
+
+    /// Snippet scripts and failed-command logs handed to commands in earlier
+    /// sessions; a day is long past any command that could still read them.
+    nonisolated static func removeStaleScratchFiles(olderThan age: TimeInterval = 86400) {
+        let fm = FileManager.default
+        let cutoff = Date().addingTimeInterval(-age)
+        for folder in ["ShellSnippets", "shell-fixes"] {
+            let dir = fm.temporaryDirectory.appendingPathComponent(folder, isDirectory: true)
+            let files = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+            for file in files {
+                let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+                if let modified, modified < cutoff { try? fm.removeItem(at: file) }
+            }
         }
     }
 

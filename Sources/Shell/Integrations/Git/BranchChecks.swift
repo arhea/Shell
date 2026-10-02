@@ -72,7 +72,7 @@ struct BranchChecksSnapshot: Equatable, Sendable {
 @MainActor
 @Observable
 final class BranchChecksModel {
-    let repository: GitRepository
+    private(set) var repository: GitRepository
     private(set) var snapshot: BranchChecksSnapshot?
     private(set) var isLoading = false
     private(set) var error: String?
@@ -115,7 +115,16 @@ final class BranchChecksModel {
 
     /// The shared model for a repository (one per worktree root).
     static func shared(for repository: GitRepository) -> BranchChecksModel {
-        if let model = models[repository.root] { return model }
+        if let model = models[repository.root] {
+            // A new instance for the same root means the old one was stopped
+            // (every holder left, then one came back). Rebind, keeping the
+            // watchers and failure observers, so checks follow the live branch.
+            if model.repository !== repository {
+                model.repository = repository
+                if model.users > 0 { model.refresh(force: true) }
+            }
+            return model
+        }
         let model = BranchChecksModel(repository: repository)
         models[repository.root] = model
         return model

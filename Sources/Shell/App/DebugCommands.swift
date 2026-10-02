@@ -16,6 +16,8 @@ extension NSView {
 @MainActor
 enum DebugCommands {
     private(set) static var events: [String] = []
+    /// Keeps `render-storage`'s window alive while it's on screen.
+    private static var debugWindow: NSWindow?
 
     static func trace(_ s: String) {
         events.append(String(format: "%.3f ", Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 1000)) + s)
@@ -199,12 +201,18 @@ enum DebugCommands {
                 : NSHostingView(rootView: AnyView(AgentStoragePane().frame(width: 700, height: 1100)))
             w.center()
             w.makeKeyAndOrderFront(nil)
+            debugWindow = w
         case "storage":
             // Read-only: measures every category and traces sizes.
             let m = AgentStorageModel.shared
             m.measure()
             Task {
-                while m.isMeasuring || m.measured.isEmpty { try? await Task.sleep(for: .milliseconds(300)) }
+                // Bounded: a measure that finds nothing would otherwise poll forever.
+                var polls = 0
+                while m.isMeasuring || m.measured.isEmpty, polls < 200 {
+                    polls += 1
+                    try? await Task.sleep(for: .milliseconds(300))
+                }
                 trace("storage total=\(WorktreeService.formatBytes(m.total))")
                 for c in m.categories {
                     let r = m.removable(c)

@@ -209,9 +209,11 @@ final class ClaudeLogin {
         (p.standardOutput as? Pipe)?.fileHandleForReading.readabilityHandler = nil
         guard p.isRunning else { return }
         p.terminate()
-        let pid = p.processIdentifier
+        // Ask the Process, not kill(pid, 0): once it's reaped, the pid may
+        // already belong to an unrelated process.
+        let box = UncheckedSendable(p)
         DispatchQueue.global().asyncAfter(deadline: .now() + AppEnvironment.wait(2)) {
-            if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
+            if box.value.isRunning { kill(box.value.processIdentifier, SIGKILL) }
         }
     }
 

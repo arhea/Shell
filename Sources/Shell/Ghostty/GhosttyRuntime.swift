@@ -168,7 +168,9 @@ final class GhosttyRuntime {
 
         switch action.tag {
         case GHOSTTY_ACTION_QUIT:
-            NSApp.terminate(nil)
+            // Deferred like close_surface: terminating frees every surface,
+            // including the one whose callback is still on the stack.
+            DispatchQueue.main.async { MainActor.assumeIsolated { NSApp.terminate(nil) } }
         case GHOSTTY_ACTION_NEW_WINDOW:
             delegate?.ghosttyNewWindow(from: view)
         case GHOSTTY_ACTION_NEW_TAB:
@@ -188,7 +190,8 @@ final class GhosttyRuntime {
             guard let view else { return false }
             delegate?.ghosttyToggleSplitZoom(from: view)
         case GHOSTTY_ACTION_CLOSE_ALL_WINDOWS:
-            delegate?.ghosttyCloseAllWindows()
+            // Deferred: closing frees the calling surface mid-callback.
+            DispatchQueue.main.async { MainActor.assumeIsolated { self.delegate?.ghosttyCloseAllWindows() } }
         case GHOSTTY_ACTION_TOGGLE_FULLSCREEN:
             view?.window?.toggleFullScreen(nil)
         case GHOSTTY_ACTION_SET_TITLE:
@@ -346,8 +349,9 @@ final class GhosttyRuntime {
             if let contents = c.contents {
                 for i in 0..<c.contents_len {
                     let item = contents[i]
-                    let data = item.len > 0 ? Data(bytes: item.data, count: item.len) : Data()
-                    reps.append((String(cString: item.mime), data))
+                    guard let mime = item.mime else { continue }
+                    let data = item.len > 0 && item.data != nil ? Data(bytes: item.data, count: item.len) : Data()
+                    reps.append((String(cString: mime), data))
                 }
             }
             var avail: [String] = []

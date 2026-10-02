@@ -262,6 +262,15 @@ final class SessionSummaries {
         summarized[id] = hash
         lastRun[id] = Date()
         if let line = await Intelligence.sessionStatus(transcript: text) { lines[id] = line }
+        prune()
+    }
+
+    /// Drops entries for sessions that have closed.
+    private func prune() {
+        let live = Set(SessionRegistry.shared.all.map(\.id))
+        lines = lines.filter { live.contains($0.key) }
+        summarized = summarized.filter { live.contains($0.key) }
+        lastRun = lastRun.filter { live.contains($0.key) }
     }
 
     /// The latest turns of a native session, or the conversation lines of a
@@ -461,6 +470,9 @@ final class DashboardRepos {
     static let shared = DashboardRepos()
     private var repos: [UUID: (directory: String, repo: GitRepository?)] = [:]
     @ObservationIgnored private var discovering: Set<UUID> = []
+    /// Bumped by `releaseAll()`, so a discovery that finishes after the
+    /// dashboard closed stops its repository instead of keeping it.
+    @ObservationIgnored private var generation = 0
 
     func repository(for session: TerminalSession) -> GitRepository? {
         session.nativeClaude?.repository ?? repos[session.id]?.repo
@@ -472,7 +484,12 @@ final class DashboardRepos {
               repos[session.id]?.directory != dir, !discovering.contains(session.id) else { return }
         discovering.insert(session.id)
         defer { discovering.remove(session.id) }
+        let started = generation
         let repo = await GitRepository.discover(from: dir, environment: MCPManager.defaultEnvironment())
+        guard generation == started, !Task.isCancelled else {
+            repo?.stop()
+            return
+        }
         repos[session.id]?.repo?.stop()
         repos[session.id] = (dir, repo)
         prune()
@@ -480,6 +497,7 @@ final class DashboardRepos {
 
     /// The dashboard closed everywhere: let go of the repositories it held.
     func releaseAll() {
+        generation += 1
         for entry in repos.values { entry.repo?.stop() }
         repos.removeAll()
     }

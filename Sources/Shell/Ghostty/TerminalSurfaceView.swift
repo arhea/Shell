@@ -90,6 +90,12 @@ final class TerminalSurfaceView: NSView {
         surface = nil
     }
 
+    /// Safety net for a pane dropped without `destroy()`: libghostty holds an
+    /// unretained pointer to this view, so the surface must not outlive it.
+    isolated deinit {
+        destroy()
+    }
+
     private static func withCConfig<T>(_ o: SurfaceOptions, view: TerminalSurfaceView, _ body: (inout ghostty_surface_config_s) -> T) -> T {
         var cfg = ghostty_surface_config_new()
         cfg.userdata = Unmanaged.passUnretained(view).toOpaque()

@@ -637,7 +637,9 @@ final class ClaudeCodeSession {
         if let mcpObserver { NotificationCenter.default.removeObserver(mcpObserver) }
         mcpObserver = nil
         // Release our share of the repository once (it's shared with other views).
-        if let repository, repository.github != nil { BranchChecksModel.shared(for: repository).removeFailureObserver(self) }
+        // Unconditional: the remote may have changed since watchChecks(), and
+        // removing an observer that was never added is a no-op.
+        if let repository { BranchChecksModel.shared(for: repository).removeFailureObserver(self) }
         repository?.stop()
         repository = nil
         try? stdin?.close()
@@ -651,9 +653,11 @@ final class ClaudeCodeSession {
         for pipe in [p.standardOutput, p.standardError] { (pipe as? Pipe)?.fileHandleForReading.readabilityHandler = nil }
         guard p.isRunning else { return }
         p.terminate()
-        let pid = p.processIdentifier
+        // Ask the Process, not kill(pid, 0): once it's reaped, the pid may
+        // already belong to an unrelated process.
+        let box = UncheckedSendable(p)
         DispatchQueue.global().asyncAfter(deadline: .now() + AppEnvironment.wait(2)) {
-            if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
+            if box.value.isRunning { kill(box.value.processIdentifier, SIGKILL) }
         }
     }
 
@@ -993,6 +997,12 @@ final class ClaudeCodeSession {
     }
 
     private func sendControl(_ request: [String: Any], completion: (([String: Any]?, String?) -> Void)? = nil) {
+        // After exit, endProcessState() has already failed the pending
+        // callbacks; one stored now would never be answered or released.
+        guard !hasExited else {
+            completion?(nil, "Claude Code exited")
+            return
+        }
         requestCounter += 1
         let id = "shell-\(requestCounter)"
         if let completion { callbacks[id] = completion }
@@ -1523,7 +1533,7 @@ final class ClaudeCodeSession {
                 return da < db
             }
         }
-        guard let file, let data = try? Data(contentsOf: file, options: .mappedIfSafe) else { return [] }
+        guard let file, let data = try? Data(contentsOf: file) else { return [] }
         var entries: [HistoryEntry] = []
         let isoFormatter = ISO8601DateFormatter()
         isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
