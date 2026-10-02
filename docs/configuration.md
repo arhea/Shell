@@ -44,7 +44,7 @@ The full model, with defaults, is `AppSettings` in [`Sources/Shell/Settings/AppS
 | `newTabDirectory` | `"inherit"` | `inherit`, `home` or `custom` (with `customDirectory`) |
 | `notifyCommandFinished` / `commandFinishedThreshold` | `true` / `10` | Seconds a command must run before Shell notifies you |
 | `claudeLaunchMode` | `"ask"` | `ask`, `native` or `terminal` |
-| `chatComposerWidth` | `"centered"` | Width of the native Claude view's chat column: `centered` (capped at 1200 pt) or `full` (the whole pane). The composer fills the column. |
+| `chatComposerWidth` | `"centered"` | Width of the native Claude view's composer: `centered` (as wide as the transcript's reading width, `chatMaxWidth`) or `full` (the whole pane). |
 | `chatMaxWidth` | `700` | Reading width of the Claude transcript text, in points, within the chat column. `0` uses the whole column. |
 | `claudeRemoteControl` | `true` | See [Claude Code and Codex](claude-code.md#remote-control) |
 | `claudeSessionsButton` | `"always"` | When Claude Sessions is pinned to the tabs: `always` (whenever Claude Code is installed), `whenActive` (while a session runs) or `never`. Replaces `claudeDashboard`; `false` there becomes `never`. |

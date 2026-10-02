@@ -139,7 +139,9 @@ struct ClaudePaneView: View {
     // MARK: Bottom: prompts, status, composer, hints
 
     private func bottom(_ p: ClaudePalette, docked: Bool) -> some View {
-        let width = docked ? columnWidth : min(Self.emptyStateWidth, columnWidth ?? .infinity)
+        // Docked and centered, the composer lines up with the transcript's
+        // reading width; full width, it fills the pane.
+        let width = docked ? (columnWidth == nil ? nil : readingWidth) : min(Self.emptyStateWidth, columnWidth ?? .infinity)
         return VStack(alignment: .leading, spacing: 8) {
             if let req = claude.pending.first {
                 if req.isQuestion {

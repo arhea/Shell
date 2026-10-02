@@ -310,7 +310,7 @@ struct KeyHint: View {
     var body: some View {
         Text(keys)
             .font(.system(size: DS.Size.small))
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(boxed ? AnyShapeStyle(Color.primary.opacity(0.8)) : AnyShapeStyle(.tertiary))
             .padding(.horizontal, boxed ? 5 : 0).padding(.vertical, boxed ? 1 : 0)
             .background(boxed ? Color.primary.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 4))
             .fixedSize()
@@ -436,7 +436,7 @@ struct SegmentedTabs<ID: Hashable>: View {
                         if let count = item.count { Text("\(count)").foregroundStyle(.secondary) }
                         if let dot = item.dot { Circle().fill(dot).frame(width: 6, height: 6) }
                     }
-                    .font(.system(size: DS.Size.body, weight: .medium))
+                    .font(.system(size: 12, weight: selection == item.id ? .medium : .regular))
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
                     .padding(.horizontal, 6).frame(height: 22)
