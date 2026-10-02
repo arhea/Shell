@@ -86,10 +86,7 @@ private final class NodeFixture {
 
     @discardableResult
     func exe(_ url: URL, _ body: String) throws -> String {
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try ("#!/bin/sh\n" + body + "\n").write(to: url, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
-        return url.path
+        try writeExecutable("#!/bin/sh\n" + body + "\n", to: url)
     }
 
     func link(_ url: URL, to target: URL) throws {

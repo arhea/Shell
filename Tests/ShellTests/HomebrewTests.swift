@@ -59,8 +59,7 @@ private struct FakeBrew {
             if [ "$2" = "--formula" ]; then printf '==> Formulae\nxjq\njq-extra\njq\nhas space\n\n'; else printf 'jq-cask\n'; fi ;;
         esac
         """#
-        try script.write(to: dir.appendingPathComponent("brew"), atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path)
+        try writeExecutable(script, to: dir.appendingPathComponent("brew"))
     }
 
     var calls: [String] {

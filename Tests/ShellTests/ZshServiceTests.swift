@@ -16,9 +16,7 @@ private final class ZshFixture {
         omz = home.appendingPathComponent(".oh-my-zsh")
         let fm = FileManager.default
         let zsh = home.appendingPathComponent("bin/zsh")
-        try fm.createDirectory(at: zsh.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try "#!/bin/sh\necho 'zsh 5.9 (arm64-apple-darwin25.0)'\n".write(to: zsh, atomically: true, encoding: .utf8)
-        try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: zsh.path)
+        try writeExecutable("#!/bin/sh\necho 'zsh 5.9 (arm64-apple-darwin25.0)'\n", to: zsh)
         guard withOhMyZsh else { return }
         for dir in ["plugins/git", "plugins/docker", "plugins/zsh-autosuggestions", "plugins/.hidden", "plugins/rare-plugin",
                     "custom/plugins/example", "custom/plugins/zsh-syntax-highlighting", "themes", "custom/themes/powerlevel10k",

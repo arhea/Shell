@@ -63,10 +63,7 @@ private final class GoFixture {
 
     @discardableResult
     func script(_ name: String, _ body: String) throws -> String {
-        let url = bin.appendingPathComponent(name)
-        try ("#!/bin/sh\n" + body + "\n").write(to: url, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
-        return url.path
+        try writeExecutable("#!/bin/sh\n" + body + "\n", to: bin.appendingPathComponent(name))
     }
 
     var goLog: [String] {

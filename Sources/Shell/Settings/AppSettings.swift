@@ -444,7 +444,7 @@ final class SettingsStore {
     /// tests get a throwaway folder so they never touch the real one.
     /// Debug builds honor `SHELL_APP_SUPPORT_DIR`, so a dev build can run
     /// beside the installed app without sharing its settings or session restore.
-    static let supportDirectory: URL = {
+    nonisolated static let supportDirectory: URL = {
         #if DEBUG
         if let dir = ProcessInfo.processInfo.environment["SHELL_APP_SUPPORT_DIR"], !dir.isEmpty, !AppEnvironment.isRunningTests {
             let url = URL(fileURLWithPath: (dir as NSString).expandingTildeInPath, isDirectory: true)
