@@ -77,22 +77,24 @@ struct WorktreesView: View {
                     if !merged.isEmpty { mergedCleanupButton(merged) }
                     if !groups.open.isEmpty {
                         group("Open in tabs", count: nil) {
-                            ForEach(groups.open) { wt in row(wt, open: true) }
+                            ForEach(groups.open) { wt in row(wt, style: .open) }
                         }
                     }
                     if let main = groups.main {
-                        group("Main checkout", count: nil) { row(main, open: false) }
+                        group("Main checkout", count: nil) { row(main, style: .main) }
                     }
                     if !groups.others.isEmpty {
                         let shown = showAllOthers ? groups.others : Array(groups.others.prefix(Self.collapsedCount))
                         group("Agent worktrees", count: groups.others.count) {
-                            ForEach(shown) { wt in row(wt, open: false) }
+                            VStack(alignment: .leading, spacing: 0) {
+                                ForEach(shown) { wt in row(wt, style: .compact) }
+                            }
                             if groups.others.count > shown.count {
                                 Button("Show \(groups.others.count - shown.count) more") { showAllOthers = true }
                                     .buttonStyle(.plain)
-                                    .font(.system(size: DS.Size.small))
+                                    .font(.system(size: DS.Size.subtitle))
                                     .foregroundStyle(DS.Status.info)
-                                    .padding(.horizontal, 8)
+                                    .padding(.horizontal, 10).padding(.vertical, 6)
                             }
                         }
                     }
@@ -101,10 +103,11 @@ struct WorktreesView: View {
                             .font(.system(size: DS.Size.body)).foregroundStyle(.secondary).padding(.horizontal, 4)
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+                .padding(.horizontal, 14)
+                .padding(.top, 4)
+                .padding(.bottom, 14)
             }
-            if !model.stale.isEmpty { staleCard.padding(.horizontal, 12).padding(.bottom, 10).padding(.top, 4) }
+            if !model.stale.isEmpty { staleCard.padding(.horizontal, 14).padding(.bottom, 14).padding(.top, 4) }
         }
         .onAppear { model.refreshIfNeeded() }
         .sheet(item: $pendingDelete) { wt in
@@ -138,10 +141,11 @@ struct WorktreesView: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 6) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text((model.repoRoot as NSString).lastPathComponent).font(.system(size: DS.Size.title, weight: .semibold)).lineLimit(1)
-                Text(summary).font(.system(size: DS.Size.small)).foregroundStyle(.secondary).monospacedDigit()
+            VStack(alignment: .leading, spacing: 1) {
+                Text(repositoryName).font(.system(size: DS.Size.title, weight: .semibold)).lineLimit(1)
+                Text(summary).font(.system(size: DS.Size.subtitle)).foregroundStyle(.secondary).monospacedDigit()
             }
+            .padding(.horizontal, 2)
             Spacer(minLength: 4)
             if model.isLoading { ProgressView().controlSize(.mini) }
             Button { model.refresh() } label: { Image(systemName: "arrow.clockwise") }
@@ -150,10 +154,16 @@ struct WorktreesView: View {
                 .accessibilityLabel("Refresh worktrees")
             if let onNewWorktree {
                 Button(action: onNewWorktree) { Text("+ New") }
-                    .buttonStyle(.labeled(.neutral, compact: true))
+                    .buttonStyle(CheckCardButtonStyle())
                     .help("Start Claude in a new worktree")
             }
         }
+    }
+
+    /// The repository's name: its main checkout's folder, not the linked worktree this pane is in.
+    private var repositoryName: String {
+        let root = model.worktrees.first(where: \.isMain)?.path ?? model.repoRoot
+        return (root as NSString).lastPathComponent
     }
 
     private var summary: String {
@@ -170,13 +180,14 @@ struct WorktreesView: View {
                 Button { filter = f } label: {
                     VStack(alignment: .leading, spacing: 0) {
                         Text(f.title).lineLimit(1)
-                        Text("\(counts[f] ?? 0)").monospacedDigit().foregroundStyle(.secondary)
+                        Text("\(counts[f] ?? 0)").monospacedDigit()
                     }
-                    .font(.system(size: DS.Size.small, weight: .medium))
-                    .padding(.horizontal, 8).padding(.vertical, 4)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(filter == f ? Color.primary.opacity(0.12) : Color.primary.opacity(0.05),
-                                in: RoundedRectangle(cornerRadius: DS.Radius.row))
+                    .font(.system(size: DS.Size.subtitle))
+                    .foregroundStyle(filter == f ? Color.primary : Color.primary.opacity(0.8))
+                    .padding(.horizontal, 9).padding(.vertical, 3)
+                    .background(filter == f ? Color.primary.opacity(0.14) : Color.primary.opacity(0.05),
+                                in: RoundedRectangle(cornerRadius: 12))
+                    .fixedSize()
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -223,7 +234,7 @@ struct WorktreesView: View {
 
     private func group(_ title: String, count: Int?, @ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            SectionHeader(title, count: count).padding(.horizontal, 4)
+            SectionHeader(title, count: count).padding(.horizontal, 2).padding(.top, 4).padding(.bottom, 2)
             content()
         }
     }
@@ -231,7 +242,7 @@ struct WorktreesView: View {
     private var staleCard: some View {
         let deletes = SettingsStore.shared.settings.worktreeCleanupDeleteMergedBranches
         let n = model.stale.count
-        return VStack(alignment: .leading, spacing: 6) {
+        return VStack(alignment: .leading, spacing: 8) {
             Text("\(n) stale worktree\(n == 1 ? "" : "s")" + (model.staleSize > 0 ? " use \(WorktreeService.formatBytes(model.staleSize))" : ""))
                 .font(.system(size: DS.Size.body, weight: .semibold))
             Button {
@@ -243,15 +254,18 @@ struct WorktreesView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .buttonStyle(.plain)
-            .font(.system(size: DS.Size.small))
+            .font(.system(size: DS.Size.subtitle))
+            .lineSpacing(2)
             .foregroundStyle(.secondary)
             .help("Change the threshold and schedule automatic cleanup in Settings › Worktrees")
             Button { confirmCleanup = true } label: { Text("Review & Remove…").frame(maxWidth: .infinity) }
-                .buttonStyle(.labeled(.neutral))
+                .buttonStyle(CheckCardButtonStyle())
                 .disabled(model.busy.count > 0)
         }
-        .padding(10)
-        .cardSurface()
+        .padding(.horizontal, 12).padding(.vertical, 11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: DS.Radius.card))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card).strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
     }
 
     // MARK: Rows
@@ -265,13 +279,20 @@ struct WorktreesView: View {
         return states.min { $0.agent.priority < $1.agent.priority }
     }
 
-    private func row(_ wt: WorktreeInfo, open: Bool) -> some View {
+    /// Open worktrees are cards with their PR and agent state; the main
+    /// checkout sits on a faint fill; the rest are compact two-line rows.
+    enum RowStyle { case open, main, compact }
+
+    private func row(_ wt: WorktreeInfo, style: RowStyle) -> some View {
         let current = isCurrent(wt)
         let busy = model.busy.contains(wt.path)
         let stale = wt.isStale(days: model.staleDays)
-        return VStack(alignment: .leading, spacing: 3) {
+        let open = style == .open
+        return VStack(alignment: .leading, spacing: style == .compact ? 2 : 4) {
             HStack(spacing: 6) {
-                Text(wt.branch ?? wt.name).font(.system(size: DS.Size.body, weight: .semibold)).lineLimit(1).truncationMode(.middle)
+                Text(wt.branch ?? wt.name)
+                    .font(.system(size: DS.Size.body, weight: style == .compact ? .regular : .semibold))
+                    .lineLimit(1).truncationMode(.middle)
                 if wt.isMain { mainTracking(wt) }
                 Spacer(minLength: 4)
                 if busy { ProgressView().controlSize(.mini) }
@@ -280,29 +301,33 @@ struct WorktreesView: View {
                 }
                 if wt.isMain && wt.behind > 0 && wt.exists {
                     Button("Pull") { Task { await model.pull(wt) } }
-                        .buttonStyle(.labeled(.neutral, compact: true))
+                        .buttonStyle(CheckCardButtonStyle())
                         .disabled(busy)
                         .help("git pull --ff-only")
                 }
             }
-            if open, let pr = wt.pullRequest { prLine(wt, pr) }
-            detailLine(wt, stale: stale)
+            HStack(spacing: 8) {
+                if open, let pr = wt.pullRequest { prLine(wt, pr) }
+                detailLine(wt, stale: stale, brief: open && wt.pullRequest != nil)
+            }
             if open, let state = tabState(wt), let text = state.text {
-                HStack(spacing: 5) {
+                HStack(spacing: 6) {
                     Circle().fill(state.agent.color).frame(width: 6, height: 6)
                     Text(text).foregroundStyle(state.agent == .needsYou ? DS.Status.needsYou : state.agent == .idle ? .secondary : state.agent.color)
                 }
-                .font(.system(size: DS.Size.small))
+                .font(.system(size: DS.Size.subtitle))
             }
             if hovered == wt.path && !busy { actions(wt, current: current) }
         }
-        .padding(.horizontal, 8).padding(.vertical, 7)
+        .padding(.horizontal, 10).padding(.vertical, style == .compact ? 6 : 9)
         .background(
-            RoundedRectangle(cornerRadius: DS.Radius.row)
-                .fill(current ? DS.Status.selection.opacity(0.14) : hovered == wt.path ? Color.primary.opacity(0.06) : .clear))
+            RoundedRectangle(cornerRadius: style == .compact ? 7 : 9)
+                .fill(current ? DS.Status.selection.opacity(0.16)
+                      : hovered == wt.path ? Color.primary.opacity(0.05)
+                      : style == .main ? Color.primary.opacity(0.03) : .clear))
         .overlay(
-            RoundedRectangle(cornerRadius: DS.Radius.row)
-                .strokeBorder(current ? DS.Status.selection.opacity(0.6) : .clear, lineWidth: 1))
+            RoundedRectangle(cornerRadius: style == .compact ? 7 : 9)
+                .strokeBorder(current ? DS.Status.selection.opacity(0.45) : .clear, lineWidth: 1))
         .contentShape(Rectangle())
         .onHover { hovered = $0 ? wt.path : (hovered == wt.path ? nil : hovered) }
         .onTapGesture(count: 2) { if wt.exists, !current { context.switchTo?(wt.path) } }
@@ -338,10 +363,11 @@ struct WorktreesView: View {
         }()
         return Button { NSWorkspace.shared.open(pr.url) } label: {
             HStack(spacing: 5) {
-                Circle().fill(dot).frame(width: 6, height: 6)
+                Circle().fill(dot).frame(width: 7, height: 7)
                 Text(text).foregroundStyle(dot == .secondary ? .secondary : dot)
             }
-            .font(.system(size: DS.Size.small))
+            .font(.system(size: DS.Size.subtitle))
+            .fixedSize()
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -349,12 +375,13 @@ struct WorktreesView: View {
     }
 
     /// "clean · not pushed · today", "18 changes  not pushed", "detached @ d8013cf · 1 day ago".
-    private func detailLine(_ wt: WorktreeInfo, stale: Bool) -> some View {
+    /// `brief` (next to a PR line) leaves out the age.
+    private func detailLine(_ wt: WorktreeInfo, stale: Bool, brief: Bool = false) -> some View {
         HStack(spacing: 4) {
             if wt.isPrunable {
                 Text("folder missing").foregroundStyle(DS.Status.failed)
             } else if let n = wt.changes {
-                if n == 0 { Text("clean") } else { Text("\(n) change\(n == 1 ? "" : "s")").foregroundStyle(DS.Status.working) }
+                if n == 0 { Text("clean") } else { Text("\(n) change\(n == 1 ? "" : "s")").foregroundStyle(DS.Status.needsYou) }
             } else {
                 Text("checking…")
             }
@@ -363,14 +390,14 @@ struct WorktreesView: View {
             } else if !wt.isMain {
                 tracking(wt)
             }
-            if let age = wt.ageDescription { Text("· \(age)") }
+            if !brief, let age = wt.ageDescription { Text("· \(age)") }
             if stale { Text("· stale").foregroundStyle(DS.Status.needsYou) }
             if wt.isLocked { Text("· locked") }
             if wt.looksFinished && !wt.isMain && !stale {
                 Text(wt.pullRequest?.state == .merged ? "· merged" : "· done?").foregroundStyle(DS.Status.review)
             }
         }
-        .font(.system(size: DS.Size.small))
+        .font(.system(size: DS.Size.subtitle))
         .foregroundStyle(.secondary)
         .lineLimit(1)
     }

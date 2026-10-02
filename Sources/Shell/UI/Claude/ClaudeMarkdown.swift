@@ -7,6 +7,8 @@ struct ClaudePalette: Equatable {
     var background: Color
     var surface: Color
     var raised: Color
+    /// Below the background: the bodies of code blocks, diffs and command output.
+    var sunken: Color
     var foreground: Color
     var dim: Color
     var border: Color
@@ -41,6 +43,7 @@ struct ClaudePalette: Equatable {
             background: c(bg),
             surface: c(bg.mixed(with: fg, t.isDark ? 0.05 : 0.035)),
             raised: c(bg.mixed(with: fg, t.isDark ? 0.09 : 0.07)),
+            sunken: c(t.isDark ? bg.mixed(with: RGB(r: 0, g: 0, b: 0), 0.2) : bg.mixed(with: fg, 0.025)),
             foreground: c(fg),
             dim: c(bg.mixed(with: fg, t.isDark ? 0.64 : 0.6)),
             border: c(bg.mixed(with: fg, 0.14)),
@@ -64,11 +67,13 @@ struct MarkdownView: View {
     var fontSize: CGFloat = 13
     /// Resolves relative file links and code spans naming files.
     var directory: String?
+    /// Takes the whole width offered; false hugs the text (a message bubble).
+    var fills = true
 
     var body: some View {
         let t = ChatTypography.current.scaled(to: fontSize)
         MarkdownBlocksView(blocks: MarkdownParseCache.shared.blocks(for: text), palette: palette, mentions: mentions, fontSize: fontSize, directory: directory,
-                           typography: t, spacing: t.blockSpacing)
+                           typography: t, spacing: t.blockSpacing, fills: fills)
             .environment(\.openURL, OpenURLAction { url in ClaudeLinks.open(url, directory: directory) })
     }
 }
@@ -81,6 +86,7 @@ struct MarkdownBlocksView: View {
     let directory: String?
     var typography: ChatTypography
     var spacing: CGFloat = 8
+    var fills = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: spacing) {
@@ -93,7 +99,7 @@ struct MarkdownBlocksView: View {
                     .equatable()
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: fills ? .infinity : nil, alignment: .leading)
     }
 }
 
@@ -412,7 +418,8 @@ struct CodeBlockView: View {
             }
             .padding(.leading, 12).padding(.trailing, 8)
             .frame(minHeight: 36)
-            .background(palette.raised)
+            .background(palette.surface)
+            palette.border.opacity(0.6).frame(height: 0.5)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: 14) {
                     // One Text per column keeps a long block cheap; the same font
@@ -420,7 +427,7 @@ struct CodeBlockView: View {
                     Text((1...lineCount).map(String.init).joined(separator: "\n"))
                         .font(codeFont)
                         .lineSpacing(lineSpacing)
-                        .foregroundStyle(palette.dim.opacity(0.7))
+                        .foregroundStyle(palette.dim.opacity(0.55))
                         .multilineTextAlignment(.trailing)
                         .frame(minWidth: 22, alignment: .trailing)
                         .accessibilityHidden(true)
@@ -435,9 +442,10 @@ struct CodeBlockView: View {
                 .padding(.leading, 6).padding(.trailing, 12)
             }
         }
-        .background(palette.surface)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.sunken)
         .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card))
-        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card).strokeBorder(palette.border, lineWidth: 0.5))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card).strokeBorder(palette.border.opacity(0.8), lineWidth: 0.5))
     }
 
     private func headerButton(_ title: String, action: @escaping () -> Void) -> some View {
