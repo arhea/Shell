@@ -1,0 +1,10 @@
+# Tests: a force unwrap or `try!` fails the test that hit it, which is the
+# point, and `XCTUnwrap` everywhere would bury the assertions. The leak rules
+# (weak_delegate, unowned_variable_capture) still apply.
+disabled_rules:
+  - force_unwrapping
+  - force_try
+  - force_cast
+  - implicitly_unwrapped_optional
+  - identifier_name
+  - discouraged_optional_collection

@@ -2,7 +2,7 @@ CONFIG ?= Debug
 DERIVED := build/DerivedData
 APP := $(DERIVED)/Build/Products/$(CONFIG)/Shell.app
 
-.PHONY: bootstrap project build test coverage release dist dmg-preview install run clean
+.PHONY: bootstrap project build test coverage lint format release dist dmg-preview install run clean
 
 bootstrap:
 	./scripts/bootstrap.sh
@@ -20,6 +20,14 @@ test: project
 # Unit tests with line coverage per file and in total (scripts/coverage.sh).
 coverage: project
 	./scripts/coverage.sh
+
+# SwiftFormat check + SwiftLint (crash and leak rules are errors).
+lint:
+	./scripts/lint.sh
+
+# Apply SwiftFormat, then lint.
+format:
+	./scripts/lint.sh --fix
 
 release:
 	$(MAKE) build CONFIG=Release

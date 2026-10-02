@@ -23,6 +23,23 @@ Test classes run in parallel: the scheme marks `ShellTests` parallelizable, so X
 
 `make coverage` (`scripts/coverage.sh`) runs the suite with coverage and prints line coverage per file, the total (same exclusions as CI) and the pass/fail counts. `FILTER=UI/Claude make coverage` limits the per-file list; extra arguments go to `xcodebuild`, e.g. `./scripts/coverage.sh -only-testing:ShellTests/ThemeTests`.
 
+### Formatting and linting
+
+```bash
+make lint
+```
+
+```bash
+make format
+```
+
+`make lint` (`scripts/lint.sh`) checks formatting with [SwiftFormat](https://github.com/nicklockwood/SwiftFormat) (`.swiftformat`) and runs [SwiftLint](https://github.com/realm/SwiftLint) (`.swiftlint.yml`). `make format` applies the formatting first. Install both with `brew install swiftformat swiftlint`. CI runs the pinned versions in `scripts/lint.sh` and warns locally if yours differ.
+
+- **Errors fail CI.** These are the rules that catch crashes and leaks: `force_unwrapping`, `force_try`, `force_cast`, `implicitly_unwrapped_optional`, `weak_delegate`, `unowned_variable_capture` and `unhandled_throwing_task`. Style rules (line length, complexity, naming) only warn.
+- **Prefer a rewrite to a suppression.** Use `guard let`, `?? fallback`, `first`/`last`, `flatMap`. When a force is provably safe (a constant regex, a hex literal, an IUO set in `init`), suppress just that line and say why: `// swiftlint:disable:next force_try - constant pattern, exercised by LinkDetector tests`.
+- **Tests** (`Tests/.swiftlint.yml`) may force-unwrap and `try!`, because a crash there only fails the test. The leak rules still apply.
+- **Formatting is a light touch.** The config keeps the codebase's compact one-line bodies and its own wrapping, and only normalizes things like `self.`, trailing commas, modifier and import order. Run `make format` before committing so formatting doesn't show up mixed into a review.
+
 ### Writing tests
 
 - **Helpers.** `Tests/ShellTests/Support/TestSupport.swift` has `render(_:size:)` (lays out and draws a SwiftUI or AppKit view so its body runs), `withSettings` (changes settings and restores them), `makeTemporaryDirectory()` and `waitUntil`. `ClaudeViewTestSupport.swift` hosts views in an offscreen key window with `press(_:)` to trigger real SwiftUI button actions. `AppDelegate.shared.newWindowController()` and `newTab(directory:)` work in tests (no terminal engine); close every controller you open.
