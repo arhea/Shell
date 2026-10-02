@@ -32,6 +32,38 @@ final class ReviewRowsTests: XCTestCase {
         XCTAssertEqual(lines[1].1?.number(left: false), 41)
     }
 
+    func testLinesPairedByPositionStillMarkTheirChange() {
+        let hunk = UnifiedDiffHunk(oldStart: 45, oldCount: 1, newStart: 45, newCount: 2, section: "", lines: [
+            .init(kind: .removed, text: "if n < 0 { throw StreamError.posix(errno) }", oldNumber: 45),
+            .init(kind: .added, text: "if n < 0 {", newNumber: 45),
+            .init(kind: .added, text: "    isOpen = false", newNumber: 46),
+        ])
+        let rows = ReviewRows.build(.init(files: [file(hunks: [hunk])]))
+        guard case .line(_, let l, let r) = rows.first(where: { if case .line = $0.kind { true } else { false } })?.kind else {
+            return XCTFail("no line row")
+        }
+        XCTAssertEqual(l?.change, 10..<43)
+        XCTAssertNil(r?.change)
+    }
+
+    func testRulerMarksSpanRunsOfChangedLines() {
+        let rows = ReviewRows.build(.init(files: [file(hunks: [later])]))
+        let marks = ReviewRows.rulerMarks(rows)
+        XCTAssertEqual(marks.count, 1)
+        let total = ReviewRows.estimatedHeight(rows)
+        XCTAssertEqual(marks[0].length, 21 / total, accuracy: 1e-9)
+        // The ruler's inverse lands on the marked row.
+        let row = try? XCTUnwrap(ReviewRows.row(atFraction: marks[0].position + marks[0].length / 2, in: rows))
+        XCTAssertEqual(row.map { rows[$0].hasChange.added }, true)
+    }
+
+    func testHunkHeaderSplitsRangeFromSection() {
+        XCTAssertEqual(ReviewHunkHeader.split("@@ -40,7 +40,14 @@ func write()").range, "@@ -40,7 +40,14 @@")
+        XCTAssertEqual(ReviewHunkHeader.split("@@ -40,7 +40,14 @@ func write()").section, "func write()")
+        XCTAssertEqual(ReviewHunkHeader.split("@@ -1 +1 @@").section, "")
+        XCTAssertEqual(ReviewHunkHeader.split("binary").range, "binary")
+    }
+
     func testUnifiedRowsKeepEveryLine() {
         let rows = ReviewRows.build(.init(files: [file(hunks: [edit])], split: false))
         let lines = rows.filter { if case .line(_, _, let r) = $0.kind { r == nil } else { false } }

@@ -133,8 +133,11 @@ final class ReviewChangesModel {
         if firstLoad { collapsed.formUnion(files.filter(isViewed).map(\.path)) }
         // Expanded gaps refer to old line numbers; drop them when the diff moves.
         expandedGaps = [:]
+        // Opened on a file (from a link in the chat): start scrolled to it.
+        let opened = firstLoad && selectedPath.map(paths.contains) == true
         if selectedPath == nil || !paths.contains(selectedPath ?? "") { selectedPath = files.first?.path }
         rebuild()
+        if opened, let path = selectedPath { scroll(to: "file|\(path)") }
     }
 
     func rebuild() {
@@ -195,8 +198,7 @@ final class ReviewChangesModel {
 
     /// The row at a fraction of the list, for clicks on the overview ruler.
     func scroll(toFraction f: Double) {
-        guard !rows.isEmpty else { return }
-        let i = min(max(Int(f * Double(rows.count)), 0), rows.count - 1)
+        guard let i = ReviewRows.row(atFraction: f, in: rows) else { return }
         scroll(to: rows[i].id)
     }
 
