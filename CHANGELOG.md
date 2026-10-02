@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-02
+
+Shell gets a calmer, more native look with one status language everywhere: an orange spinner means working, a yellow **Input** badge means Claude needs you, green means done. The review-and-fix loop now stays in Shell, with a Pull Requests board, CI checks that can go straight to Claude, a Review Changes view for staging and committing, and command blocks in the terminal.
+
+### Added
+
+- **Pull Requests board** with a new **For you** view (review requested or assigned, plus the rest of their stacks) next to Mine and All. Filter by Review requested or Assigned, search, and collapse stacks into one layered card. Each card can start a Claude review or open the branch in a worktree, and the detail pane has Overview, Conversation, Checks and Files tabs with Comment, Request changes and Approve. ([#43](https://github.com/arhea/Shell/pull/43), fixes [#40](https://github.com/arhea/Shell/issues/40))
+- **CI checks in Claude and terminal sessions.** Shell watches the branch's checks through your `gh`. A newly failing check appears in the Claude transcript with the failing log lines and **Fix with Claude**, **Re-run** and **Full log**. Turn on **Send failures to Claude** in the inspector's Checks tab to have Claude start the fix when it's idle (off by default). The terminal prompt shows PR and Checks chips with a per-job Fix. ([#43](https://github.com/arhea/Shell/pull/43), fixes [#41](https://github.com/arhea/Shell/issues/41))
+- **Review Changes** (⇧⌘R): a full-pane diff of the working tree in Unified or Split view with word-level highlights. Stage, unstage or revert by file or hunk, mark files Viewed, click a line number to send a comment to Claude, and Commit or Commit & Push. An optional on-device **Write for me** drafts the commit message (off by default). ([#43](https://github.com/arhea/Shell/pull/43), fixes [#42](https://github.com/arhea/Shell/issues/42))
+- **Command blocks** in the terminal: each command shows its duration and time, or a red Exit N pill. Failed commands are highlighted with Copy output and Rerun, and a fix bar above the prompt suggests a corrected command or **Fix with Claude**. Turn them off in Settings › Prompt & Completions. ([#43](https://github.com/arhea/Shell/pull/43), fixes [#42](https://github.com/arhea/Shell/issues/42))
+- Prompt chips for the current folder, branch and its clean/dirty state, PR, checks, and the active Node, Python or Go version. ([#43](https://github.com/arhea/Shell/pull/43), fixes [#42](https://github.com/arhea/Shell/issues/42))
+- The Claude inspector has **Session** (changed files, to-dos, background work), **Worktrees**, **Checks** and **Files** tabs. ([#43](https://github.com/arhea/Shell/pull/43), fixes [#40](https://github.com/arhea/Shell/issues/40))
+- ⌃⌘S hides and shows the tab sidebar. ([#43](https://github.com/arhea/Shell/pull/43), fixes [#40](https://github.com/arhea/Shell/issues/40))
+
+### Changed
+
+- **⌥⌘N now opens Claude in New Worktree…; Agent Activity moved to ⌥⌘A.** ([#43](https://github.com/arhea/Shell/pull/43), fixes [#40](https://github.com/arhea/Shell/issues/40))
+- **The GitHub sidebar panel is gone.** Pull requests and workflow runs now live on the Pull Requests board and in the inspector's Checks tab. ([#43](https://github.com/arhea/Shell/pull/43), fixes [#40](https://github.com/arhea/Shell/issues/40))
+- Vertical tabs are the default for new installs; existing settings are kept. The tab sidebar floats as a glass panel with the window controls inside it, a pinned Claude Sessions row with a needs-you badge, each tab's folder and branch, and a Pull Requests row with how many are waiting for your review. ([#43](https://github.com/arhea/Shell/pull/43), fixes [#40](https://github.com/arhea/Shell/issues/40))
+- A unified toolbar shows the focused pane's title, repository, branch and worktree, its PR, and a red capsule when checks fail. In Claude panes it holds Model, Effort and Mode, MCP and the inspector toggle, replacing the Claude view's own header bar. ([#43](https://github.com/arhea/Shell/pull/43), fixes [#40](https://github.com/arhea/Shell/issues/40))
+- The command palette groups results into Tabs, Worktrees, Folders and Actions with each tab's agent state. Start a query with `>` for actions only or `@` for folders only; ⌘⏎ opens in a new tab and ⌥⏎ starts Claude there. ([#43](https://github.com/arhea/Shell/pull/43), fixes [#40](https://github.com/arhea/Shell/issues/40))
+- The Claude transcript is easier to scan: "Thought for…" timings, tool runs grouped into one card, edit cards with Unified/Split and Review, Bash cards with Passed/Failed and duration, code blocks with Copy, Save… and Run in new tab, numbered permission prompts, an end-of-turn summary, and a status line with activity, time and tokens. The composer adds Context and Skills buttons and a context-window meter. ([#43](https://github.com/arhea/Shell/pull/43), fixes [#40](https://github.com/arhea/Shell/issues/40))
+- The Claude Sessions page has a compact usage strip and Needs you (approve inline), Working and Idle sections. ([#43](https://github.com/arhea/Shell/pull/43), fixes [#40](https://github.com/arhea/Shell/issues/40))
+
+### Fixed
+
+- Shell no longer quits without warning during long Claude Code chats. Writing to a Claude Code process that had already exited ended the app; now the pane shows that Claude Code exited. ([#39](https://github.com/arhea/Shell/pull/39), fixes [#38](https://github.com/arhea/Shell/issues/38))
+
 ## [0.4.0] - 2026-10-01
 
 Claude Sessions becomes the place to find every Claude Code conversation: it stays pinned in the sidebar, lists past sessions you can resume, and shows sessions running outside Shell. Updates now show their progress and can restart straight from the notification, and merged worktrees can be cleaned up in one step.
@@ -74,7 +102,8 @@ First public release.
 - Optional on-device Apple Intelligence features, all off by default.
 - Shortcuts and Spotlight actions, Finder services, a Dock menu, a desktop widget, Quick Look previews and optional iCloud settings sync.
 
-[Unreleased]: https://github.com/arhea/Shell/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/arhea/Shell/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/arhea/Shell/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/arhea/Shell/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/arhea/Shell/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/arhea/Shell/releases/tag/v0.2.0
