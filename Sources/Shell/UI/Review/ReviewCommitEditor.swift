@@ -22,7 +22,7 @@ struct ReviewCommitEditor: NSViewRepresentable {
         tv.isAutomaticQuoteSubstitutionEnabled = false
         tv.isAutomaticDashSubstitutionEnabled = false
         tv.isAutomaticTextReplacementEnabled = false
-        tv.textContainerInset = NSSize(width: 6, height: 8)
+        tv.textContainerInset = NSSize(width: 5, height: 8)
         tv.isVerticallyResizable = true
         tv.autoresizingMask = [.width]
         tv.textContainer?.widthTracksTextView = true
@@ -45,6 +45,12 @@ struct ReviewCommitEditor: NSViewRepresentable {
 
     static let bodyFont = NSFont.systemFont(ofSize: DS.Size.body)
     static let subjectFont = NSFont.systemFont(ofSize: DS.Size.body, weight: .semibold)
+    /// About 1.5× line height, as in the design.
+    static let paragraph: NSParagraphStyle = {
+        let p = NSMutableParagraphStyle()
+        p.lineSpacing = 3.5
+        return p
+    }()
 
     /// Bold subject line, regular body.
     static func style(_ tv: NSTextView) {
@@ -53,12 +59,13 @@ struct ReviewCommitEditor: NSViewRepresentable {
         let all = NSRange(location: 0, length: ns.length)
         let firstLine = ns.lineRange(for: NSRange(location: 0, length: 0))
         storage.beginEditing()
-        storage.addAttributes([.font: bodyFont, .foregroundColor: NSColor.labelColor], range: all)
-        if firstLine.length > 0 { storage.addAttribute(.font, value: subjectFont, range: firstLine) }
+        storage.addAttributes([.font: bodyFont, .foregroundColor: NSColor.secondaryLabelColor, .paragraphStyle: paragraph], range: all)
+        if firstLine.length > 0 { storage.addAttributes([.font: subjectFont, .foregroundColor: NSColor.labelColor], range: firstLine) }
         storage.endEditing()
         // Restyled after every change, so the typing font only matters for the next character.
         let inSubject = tv.selectedRange().location < firstLine.upperBound || !ns.contains("\n")
-        tv.typingAttributes = [.font: inSubject ? subjectFont : bodyFont, .foregroundColor: NSColor.labelColor]
+        tv.typingAttributes = [.font: inSubject ? subjectFont : bodyFont, .paragraphStyle: paragraph,
+                               .foregroundColor: inSubject ? NSColor.labelColor : NSColor.secondaryLabelColor]
         tv.needsDisplay = true
     }
 

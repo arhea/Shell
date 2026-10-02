@@ -4,15 +4,17 @@ import SwiftUI
 struct ReviewSidebar: View {
     @Bindable var model: ReviewChangesModel
     var onEditorFocus: (Bool) -> Void = { _ in }
+    @State private var editorFocused = false
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("Changes").font(.system(size: DS.Size.title, weight: .semibold))
+            HStack(spacing: 8) {
+                Text("Changes").font(.system(size: 12, weight: .semibold))
                 Spacer()
                 Button("Stage all") { model.stageAll() }
-                    .buttonStyle(.link)
-                    .font(.system(size: DS.Size.small))
+                    .buttonStyle(.plain)
+                    .font(.system(size: DS.Size.subtitle))
+                    .foregroundStyle(DS.Status.selection)
                     .disabled(model.files.allSatisfy { $0.stageState == .full })
             }
             .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 6)
@@ -25,35 +27,44 @@ struct ReviewSidebar: View {
                 }
                 .padding(.horizontal, 8)
             }
-            Divider()
+            Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 0.5)
             commitBox
         }
         .frame(width: 290)
+        .background(ClaudePalette.current.surface)
     }
 
     private var commitBox: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Commit message").font(.system(size: DS.Size.body, weight: .semibold))
+            HStack(spacing: 8) {
+                Text("Commit message").font(.system(size: 12, weight: .semibold))
                 Spacer()
                 if model.canDraft {
                     Button { model.draftMessage() } label: {
-                        HStack(spacing: 4) {
-                            if model.isDrafting { ProgressView().controlSize(.mini) } else {
-                                Image(systemName: "sparkle").foregroundStyle(DS.Status.review)
-                            }
+                        HStack(spacing: 5) {
+                            if model.isDrafting { ProgressView().controlSize(.mini) } else { IntelligenceDiamond() }
                             Text("Write for me")
                         }
+                        .font(.system(size: DS.Size.subtitle))
+                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.labeled(.plain, compact: true))
+                    .buttonStyle(.plain)
                     .disabled(model.isDrafting)
                     .help("Draft a message from the staged changes with Apple Intelligence, on this Mac")
                 }
             }
-            ReviewCommitEditor(text: $model.commitMessage, onFocusChange: onEditorFocus)
-                .frame(height: 130)
-                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: DS.Radius.row))
-                .overlay(RoundedRectangle(cornerRadius: DS.Radius.row).strokeBorder(Color.primary.opacity(0.12)))
+            ReviewCommitEditor(text: $model.commitMessage) { focused in
+                editorFocused = focused
+                onEditorFocus(focused)
+            }
+            .frame(height: 140)
+            .background(ClaudePalette.current.isDark ? Color.black.opacity(0.22) : Color.white, in: RoundedRectangle(cornerRadius: DS.Radius.row))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.row).strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5))
+            .background {
+                if editorFocused {
+                    RoundedRectangle(cornerRadius: DS.Radius.row + 3).fill(DS.Status.selection.opacity(0.35)).padding(-3)
+                }
+            }
             if let error = model.error {
                 ScrollView {
                     Text(error)
@@ -71,20 +82,35 @@ struct ReviewSidebar: View {
                         if model.isCommitting { ProgressView().controlSize(.mini) }
                         Text(Self.commitTitle(model.stagedCount))
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, minHeight: 28)
                 }
                 .buttonStyle(.labeled(.primary))
-                Button("Commit & Push") { model.commit(push: true) }
-                    .buttonStyle(.labeled(.neutral))
+                Button { model.commit(push: true) } label: {
+                    Text("Commit & Push").frame(minHeight: 28)
+                }
+                .buttonStyle(.labeled(.neutral))
             }
             .disabled(model.isCommitting)
-            Text("⌘⏎ commit · ⇧⌘⏎ commit and push").font(.system(size: DS.Size.caption)).foregroundStyle(.tertiary)
+            Text("⌘⏎ commit · ⇧⌘⏎ commit and push").font(.system(size: DS.Size.small)).foregroundStyle(.tertiary)
         }
-        .padding(14)
+        .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 14)
     }
 
     static func commitTitle(_ n: Int) -> String {
         n == 0 ? "Commit" : "Commit \(n) file\(n == 1 ? "" : "s")"
+    }
+}
+
+/// The small blue-to-purple diamond marking on-device Apple Intelligence actions.
+struct IntelligenceDiamond: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 2)
+            .fill(LinearGradient(colors: [Color(red: 0.37, green: 0.69, blue: 1), Color(red: 0.75, green: 0.35, blue: 0.95)],
+                                 startPoint: .topLeading, endPoint: .bottomTrailing))
+            .frame(width: 8, height: 8)
+            .rotationEffect(.degrees(45))
+            .frame(width: 12, height: 12)
+            .accessibilityHidden(true)
     }
 }
 
@@ -100,21 +126,22 @@ struct ReviewFileRow: View {
         HStack(spacing: 8) {
             Button(action: toggle) {
                 Image(systemName: checkbox)
-                    .font(.system(size: 14))
-                    .foregroundStyle(file.stageState == .none ? (selected ? Color.white.opacity(0.8) : .secondary)
-                                     : (selected ? .white : DS.Status.selection))
+                    .font(.system(size: 13))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(checkmarkColor, boxColor)
+                    .frame(width: 14)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(file.stageState == .full ? "Unstage \(file.fileName)" : "Stage \(file.fileName)")
             Text(file.letter)
-                .font(.system(size: DS.Size.small, weight: .bold, design: .monospaced))
+                .font(.system(size: DS.Size.small, weight: .bold))
                 .foregroundStyle(selected ? .white : ReviewStyle.color(file.status))
-                .frame(width: 12)
+                .frame(width: 14)
             VStack(alignment: .leading, spacing: 1) {
-                Text(file.fileName).font(.system(size: DS.Size.body, weight: .medium)).lineLimit(1)
+                Text(file.fileName).font(.system(size: DS.Size.body)).lineLimit(1)
                 if !file.folder.isEmpty {
-                    Text(file.folder).font(.system(size: DS.Size.caption))
-                        .foregroundStyle(selected ? Color.white.opacity(0.75) : .secondary)
+                    Text(file.folder).font(.system(size: DS.Size.small))
+                        .foregroundStyle(selected ? Color.white.opacity(0.8) : .secondary)
                         .lineLimit(1).truncationMode(.head)
                 }
             }
@@ -123,7 +150,7 @@ struct ReviewFileRow: View {
                 if file.additions > 0 { Text("+\(file.additions)") }
                 if file.deletions > 0 { Text("−\(file.deletions)") }
             }
-            .font(.system(size: DS.Size.small).monospacedDigit())
+            .font(ChatTypography.current.codeFont(size: DS.Size.small))
             .foregroundStyle(selected ? Color.white.opacity(0.85) : .secondary)
         }
         .foregroundStyle(selected ? .white : .primary)
@@ -141,5 +168,16 @@ struct ReviewFileRow: View {
         case .partial: "minus.square.fill"
         case .none: "square"
         }
+    }
+
+    /// The tick: blue on the white box of a selected row, white on blue otherwise.
+    private var checkmarkColor: Color {
+        guard file.stageState != .none else { return boxColor }
+        return selected ? DS.Status.selection : .white
+    }
+
+    private var boxColor: Color {
+        if file.stageState == .none { return selected ? Color.white.opacity(0.8) : Color.secondary }
+        return selected ? .white : DS.Status.selection
     }
 }
