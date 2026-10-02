@@ -30,7 +30,7 @@ struct ClaudeUsageTile: View {
                     }
                 }
                 .fixedSize(horizontal: false, vertical: true)
-                .cardSurface()
+                .dashboardCard()
             } else if usage.isScanning {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.mini)
@@ -53,7 +53,7 @@ struct ClaudeUsageTile: View {
     private func cell<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         content()
             .padding(.horizontal, 16)
-            .padding(.vertical, 14)
+            .padding(.vertical, 12)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
@@ -63,24 +63,23 @@ struct ClaudeUsageTile: View {
         case .warning: DS.Status.needsYou
         case .normal: DS.Status.done
         }
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(label).foregroundStyle(.secondary)
+        return VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(label).font(.system(size: 12)).foregroundStyle(.secondary)
                 Spacer(minLength: 6)
-                Text("\(window.percent)%").fontWeight(.semibold).monospacedDigit()
+                Text("\(window.percent)%").font(.system(size: DS.Size.title, weight: .semibold).monospacedDigit())
             }
-            .font(.system(size: DS.Size.body))
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Color.primary.opacity(0.08))
-                    Capsule().fill(color).frame(width: max(4, geo.size.width * Double(window.percent) / 100))
+                    RoundedRectangle(cornerRadius: 2.5).fill(Color.primary.opacity(0.09))
+                    RoundedRectangle(cornerRadius: 2.5).fill(color).frame(width: max(5, geo.size.width * Double(window.percent) / 100))
                 }
             }
-            .frame(height: 4)
+            .frame(height: 5)
             if let reset = window.resetsAt {
                 Text("Resets \(Self.resetText(reset, weekly: weekly))")
-                    .font(.system(size: DS.Size.small))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: DS.Size.subtitle))
+                    .foregroundStyle(.tertiary)
             }
         }
         .accessibilityElement(children: .combine)
@@ -133,12 +132,14 @@ struct ClaudeUsageTokens: View {
         // each cell gets its own share of the width).
         if let stats {
             today(stats)
-                .padding(.horizontal, 16).padding(.vertical, 14)
+                .padding(.horizontal, 16).padding(.vertical, 12)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             Color.primary.opacity(0.08).frame(width: 0.5)
+            // As wide as its bars, like the design's auto-sized last column.
             week(stats)
-                .padding(.horizontal, 16).padding(.vertical, 14)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(.horizontal, 16).padding(.vertical, 12)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(maxHeight: .infinity, alignment: .topLeading)
         } else {
             Text("Reading token usage from ~/.claude/projects…")
                 .font(.system(size: DS.Size.small))
@@ -158,10 +159,10 @@ struct ClaudeUsageTokens: View {
             help += "\nMostly \(ClaudeUsageTile.modelName(model)) (\(Int((Double(count) / Double(t.total) * 100).rounded()))%)"
         }
         help += "\nLast 5 hours: \(ClaudeUsageTile.compact(stats.lastFiveHours.total))"
-        return VStack(alignment: .leading, spacing: 3) {
-            Text("Tokens today").font(.system(size: DS.Size.body)).foregroundStyle(.secondary)
-            Text(ClaudeUsageTile.compact(t.total)).font(.system(size: 20, weight: .semibold).monospacedDigit())
-            Text(detail).font(.system(size: DS.Size.small)).foregroundStyle(.secondary).lineLimit(1)
+        return VStack(alignment: .leading, spacing: 4) {
+            Text("Tokens today").font(.system(size: 12)).foregroundStyle(.secondary)
+            Text(ClaudeUsageTile.compact(t.total)).font(.system(size: 20, weight: .semibold).monospacedDigit()).tracking(-0.2)
+            Text(detail).font(.system(size: DS.Size.subtitle)).foregroundStyle(.tertiary).lineLimit(1)
         }
         .accessibilityElement(children: .combine)
         .help(help)
@@ -169,27 +170,24 @@ struct ClaudeUsageTokens: View {
 
     private func week(_ stats: ClaudeUsage.TokenStats) -> some View {
         let bars = ClaudeUsage.sparkline(stats.days)
-        let height: CGFloat = 26
+        let height: CGFloat = 32
         return VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top, spacing: 8) {
-                Text("Last 7 days").font(.system(size: DS.Size.body)).foregroundStyle(.secondary)
-                Spacer(minLength: 4)
-                HStack(alignment: .bottom, spacing: 3) {
-                    ForEach(bars) { bar in
-                        UnevenRoundedRectangle(topLeadingRadius: 2, topTrailingRadius: 2)
-                            .fill(DS.claude.opacity(bar.isToday ? 1 : 0.5))
-                            .frame(width: 7, height: bar.tokens == 0 ? 1 : max(3, height * bar.fraction))
-                            .frame(height: height, alignment: .bottom)
-                            .help("\(bar.day.formatted(.dateTime.weekday(.abbreviated).month().day())): \(bar.tokens.formatted()) tokens")
-                    }
+            Text("Last 7 days").font(.system(size: 12)).foregroundStyle(.secondary)
+            HStack(alignment: .bottom, spacing: 5) {
+                ForEach(bars) { bar in
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(DS.claude.opacity(bar.isToday ? 1 : 0.45))
+                        .frame(width: 10, height: bar.tokens == 0 ? 1 : max(3, height * bar.fraction))
+                        .frame(height: height, alignment: .bottom)
+                        .help("\(bar.day.formatted(.dateTime.weekday(.abbreviated).month().day())): \(bar.tokens.formatted()) tokens")
                 }
-                .accessibilityHidden(true)
             }
+            .accessibilityHidden(true)
             if let limitsUpdatedAt {
                 TimelineView(.periodic(from: .now, by: 30)) { context in
                     Text("Updated \(ClaudeUsageTile.relative(limitsUpdatedAt, now: context.date))")
                         .font(.system(size: DS.Size.small))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.tertiary)
                         .help("Plan limits as last reported by a Claude session in the native view")
                 }
             }

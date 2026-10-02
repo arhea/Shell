@@ -83,6 +83,7 @@ final class ClaudeDashboardModelTests: XCTestCase {
     func testRenderingNeverScansTranscriptsUnderTests() {
         XCTAssertFalse(ClaudeUsageTile.refreshesUsage)
         XCTAssertFalse(PastSessionsDrawer.refreshesHistory)
+        XCTAssertFalse(RunningElsewhereSection.refreshesSessions, "never runs the user's claude")
     }
 
     func testSummaryDetail() {
