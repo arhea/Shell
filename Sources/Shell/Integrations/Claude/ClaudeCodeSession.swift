@@ -1,6 +1,6 @@
 import AppKit
-import UniformTypeIdentifiers
 import Observation
+import UniformTypeIdentifiers
 
 // MARK: - Model
 
@@ -508,8 +508,8 @@ final class ClaudeCodeSession {
                 let status = await ClaudeAuth.status(binary: request.binary, environment: request.environment,
                                                      directory: request.directory)
                 guard let self, !self.closed else { return }
-                self.authChecked = true
-                if status == .loggedOut { self.requireLogin(expired: false) } else { self.start() }
+                authChecked = true
+                if status == .loggedOut { requireLogin(expired: false) } else { start() }
             }
             return
         }
@@ -524,9 +524,9 @@ final class ClaudeCodeSession {
         Task { [weak self, directory, env = request.environment] in
             let repo = await GitRepository.discover(from: directory, environment: env)
             guard let self else { repo?.stop(); return }
-            if self.hasExited || self.closed { repo?.stop() } else { self.repository = repo; self.watchChecks() }
-            self.repositoryChecked = true
-            self.syncSessionName()
+            if hasExited || closed { repo?.stop() } else { repository = repo; watchChecks() }
+            repositoryChecked = true
+            syncSessionName()
         }
         if let prompt = request.arguments.prompt { send(prompt) }
     }
@@ -562,8 +562,8 @@ final class ClaudeCodeSession {
         p.standardOutput = outPipe
         p.standardError = errPipe
         let decoder = StreamJSONDecoder { [weak self] batch in
-            guard let self, gen == self.generation else { return }
-            for obj in batch.objects { self.handle(obj) }
+            guard let self, gen == generation else { return }
+            for obj in batch.objects { handle(obj) }
         }
         outPipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
@@ -606,9 +606,9 @@ final class ClaudeCodeSession {
 
         sendControl(["subtype": "initialize"]) { [weak self] response, _ in
             guard let self else { return }
-            self.applyInitialize(response ?? [:])
-            if SettingsStore.shared.settings.claudeRemoteControl || self.request.arguments.passthrough.contains("--remote-control") {
-                self.setRemoteControl(true)
+            applyInitialize(response ?? [:])
+            if SettingsStore.shared.settings.claudeRemoteControl || request.arguments.passthrough.contains("--remote-control") {
+                setRemoteControl(true)
             }
         }
         return true
@@ -867,8 +867,8 @@ final class ClaudeCodeSession {
         model = value
         sendControl(["subtype": "set_model", "model": value]) { [weak self] _, error in
             guard let self, let error else { return }
-            self.model = previous
-            self.append(ClaudeItem(kind: .error, text: "Couldn't switch model: \(error)"))
+            model = previous
+            append(ClaudeItem(kind: .error, text: "Couldn't switch model: \(error)"))
         }
         SettingsStore.shared.settings.claudeModel = value == "default" ? "" : value
         // Keep the effort valid for the new model.
@@ -879,7 +879,7 @@ final class ClaudeCodeSession {
         effort = level
         sendControl(["subtype": "apply_flag_settings", "settings": ["effortLevel": level.isEmpty ? NSNull() as Any : level as Any]]) { [weak self] _, error in
             guard let self, let error else { return }
-            self.append(ClaudeItem(kind: .error, text: "Couldn't change effort: \(error)"))
+            append(ClaudeItem(kind: .error, text: "Couldn't change effort: \(error)"))
         }
         SettingsStore.shared.settings.claudeEffort = level
     }
@@ -890,10 +890,10 @@ final class ClaudeCodeSession {
         sendControl(["subtype": "set_permission_mode", "mode": mode.rawValue]) { [weak self] response, error in
             guard let self else { return }
             if let error {
-                self.permissionMode = previous
-                self.append(ClaudeItem(kind: .error, text: "Couldn't switch to \(mode.title): \(error)"))
+                permissionMode = previous
+                append(ClaudeItem(kind: .error, text: "Couldn't switch to \(mode.title): \(error)"))
             } else if let m = (response?["mode"] as? String).flatMap(ClaudePermissionMode.init(rawValue:)) {
-                self.permissionMode = m
+                permissionMode = m
             }
         }
     }
@@ -907,12 +907,12 @@ final class ClaudeCodeSession {
         remoteControlError = nil
         sendControl(["subtype": "remote_control", "enabled": enabled]) { [weak self] response, error in
             guard let self else { return }
-            self.remoteControlBusy = false
+            remoteControlBusy = false
             if let error {
-                self.remoteControlError = error
+                remoteControlError = error
                 return
             }
-            self.remoteControlURL = enabled ? (response?["session_url"] as? String).flatMap(URL.init(string:)) : nil
+            remoteControlURL = enabled ? (response?["session_url"] as? String).flatMap(URL.init(string:)) : nil
         }
     }
 
@@ -927,7 +927,7 @@ final class ClaudeCodeSession {
     func refreshMCPStatus() {
         sendControl(["subtype": "mcp_status"]) { [weak self] response, _ in
             guard let self, let list = response?["mcpServers"] as? [[String: Any]] else { return }
-            self.mcpServers = list.map { ClaudeMCPServer(name: $0["name"] as? String ?? "", status: $0["status"] as? String ?? "") }
+            mcpServers = list.map { ClaudeMCPServer(name: $0["name"] as? String ?? "", status: $0["status"] as? String ?? "") }
         }
     }
 
@@ -1007,7 +1007,6 @@ final class ClaudeCodeSession {
     }
 
     // MARK: Receiving
-
 
     func handle(_ msg: [String: Any]) {
         let type = msg["type"] as? String ?? ""

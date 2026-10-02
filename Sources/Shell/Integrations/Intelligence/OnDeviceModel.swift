@@ -8,10 +8,10 @@ import FoundationModels
 enum OnDeviceModel {
     /// Permissive guardrails: terminal text is full of words like "kill",
     /// "force" and "exploit" that the default guardrails can refuse on.
-    nonisolated private static let model = SystemLanguageModel(useCase: .general, guardrails: .permissiveContentTransformations)
+    private nonisolated static let model = SystemLanguageModel(useCase: .general, guardrails: .permissiveContentTransformations)
 
     /// Generous for a small model on a short answer; a late suggestion is worse than none.
-    nonisolated private static let timeout: Duration = .seconds(8)
+    private nonisolated static let timeout: Duration = .seconds(8)
 
     static var status: Intelligence.Status {
         switch model.availability {

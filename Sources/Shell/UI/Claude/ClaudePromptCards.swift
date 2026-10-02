@@ -19,8 +19,8 @@ private struct PromptCardChrome: ViewModifier {
     }
 }
 
-extension View {
-    fileprivate func promptCard(_ palette: ClaudePalette) -> some View { modifier(PromptCardChrome(palette: palette)) }
+private extension View {
+    func promptCard(_ palette: ClaudePalette) -> some View { modifier(PromptCardChrome(palette: palette)) }
 }
 
 /// "!" in a yellow disc, then the card's title.

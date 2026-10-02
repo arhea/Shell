@@ -18,7 +18,6 @@ final class GitHubSidebarViewsTests: GitAreaTestCase {
         try await super.tearDown()
     }
 
-
     func testActionsSectionAndRunRows() async throws {
         let f = try GitSidebarFixture(in: gitTempDirectory())
         let worktrees = WorktreesModel(repoRoot: f.repo.root.path, environment: f.env)
@@ -92,5 +91,4 @@ final class GitHubSidebarViewsTests: GitAreaTestCase {
             render(StateIcon(state: state, palette: .current, size: 10), size: CGSize(width: 20, height: 20))
         }
     }
-
 }

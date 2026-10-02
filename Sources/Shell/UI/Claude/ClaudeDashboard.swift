@@ -539,8 +539,7 @@ struct PullRequestLink: View {
 extension View {
     /// The pinned Claude entry in the tab bar or sidebar, for VoiceOver.
     func dashboardEntryAccessibility(summary: ClaudeDashboard.Summary, selected: Bool, action: @escaping () -> Void) -> some View {
-        self
-            .accessibilityElement(children: .ignore)
+        accessibilityElement(children: .ignore)
             .accessibilityLabel("Claude sessions")
             .accessibilityValue(summary.detail.isEmpty ? "\(summary.total) sessions" : summary.detail)
             .accessibilityHint("Shows every Claude session. Control-Command-A")

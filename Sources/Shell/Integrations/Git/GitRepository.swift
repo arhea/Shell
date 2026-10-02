@@ -154,9 +154,9 @@ struct PullRequestInfo: Equatable {
     var state: State
     var isDraft: Bool
     /// APPROVED, CHANGES_REQUESTED or REVIEW_REQUIRED.
-    var reviewDecision: String? = nil
+    var reviewDecision: String?
     /// The PR's head commit (full SHA), when known.
-    var headOID: String? = nil
+    var headOID: String?
 }
 
 /// A git repository (or linked worktree) that a native Claude view is working
@@ -333,7 +333,7 @@ final class GitRepository {
         // A 1 s latency coalesces bursts (a build writes thousands of files).
         watcher = DirectoryWatcher(path: root.path, latency: AppEnvironment.wait(1.0)) { [weak self] paths in
             guard let self else { return }
-            if paths.contains(where: { self.affectsStatus($0) }) { self.refresh() }
+            if paths.contains(where: { self.affectsStatus($0) }) { refresh() }
         }
     }
 

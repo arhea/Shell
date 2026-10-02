@@ -474,7 +474,6 @@ struct GroupDropDelegate: DropDelegate {
     func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
 }
 
-
 // MARK: - Vertical sidebar
 
 /// The floating glass sidebar: traffic lights and the hide button on top,
@@ -830,8 +829,7 @@ extension View {
         var parts = [tab.title]
         if let status = TabPresentation.accessibilityStatus(tab) { parts.append(status) }
         if let group { parts.append("in group \(group.name.isEmpty ? "untitled" : group.name)") }
-        return self
-            .accessibilityElement(children: .ignore)
+        return accessibilityElement(children: .ignore)
             .accessibilityLabel(parts.joined(separator: ", "))
             .accessibilityHint(index < 9 ? "Tab \(index + 1), Command-\(index + 1)" : "Tab \(index + 1)")
             .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)

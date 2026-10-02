@@ -1,6 +1,6 @@
 import AppKit
-import QuickLookThumbnailing
 import Quartz
+import QuickLookThumbnailing
 import SwiftUI
 
 /// The system Quick Look panel for files Shell shows (file explorer, completions).

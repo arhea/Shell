@@ -50,7 +50,7 @@ final class GhosttyRuntime {
             return false
         }
         self.app = app
-        self.config = cfg
+        config = cfg
         ghostty_app_set_focus(app, NSApp.isActive)
         applyColorScheme(NSApp.effectiveAppearance)
 
@@ -76,7 +76,7 @@ final class GhosttyRuntime {
     /// libghostty calls these from its own threads. Built outside the main
     /// actor so the closures aren't inferred as main-actor-isolated (Swift
     /// would then trap on its isolation check); each one hops to main itself.
-    nonisolated private static func runtimeConfig(userdata: UnsafeMutableRawPointer) -> ghostty_runtime_config_s {
+    private nonisolated static func runtimeConfig(userdata: UnsafeMutableRawPointer) -> ghostty_runtime_config_s {
         ghostty_runtime_config_s(
             userdata: userdata,
             supports_selection_clipboard: true,
@@ -103,7 +103,7 @@ final class GhosttyRuntime {
                         GhosttyRuntime.shared.delegate?.ghosttyCloseSurface(view, processAlive: processAlive)
                     }
                 }
-            }
+            },
         )
     }
 
@@ -156,7 +156,7 @@ final class GhosttyRuntime {
         return Unmanaged<TerminalSurfaceView>.fromOpaque(ud).takeUnretainedValue()
     }
 
-    nonisolated private static func handleAction(app: ghostty_app_t?, target: ghostty_target_s, action: ghostty_action_s) -> Bool {
+    private nonisolated static func handleAction(app: ghostty_app_t?, target: ghostty_target_s, action: ghostty_action_s) -> Bool {
         // libghostty invokes actions from within ghostty_app_tick / surface
         // calls, which we only ever make on the main thread.
         mainSync { shared.perform(target: target, action: action) }
@@ -281,7 +281,7 @@ final class GhosttyRuntime {
             return true
         }
         // Only allow schemes that make sense to open from terminal output.
-        let allowed: Set<String> = ["http", "https", "file", "mailto", "ftp", "ssh", "vscode", "cursor", "zed", "x-man-page"]
+        let allowed: Set = ["http", "https", "file", "mailto", "ftp", "ssh", "vscode", "cursor", "zed", "x-man-page"]
         guard let scheme = url.scheme?.lowercased(), allowed.contains(scheme) else { return false }
         NSWorkspace.shared.open(url)
         return true
@@ -289,18 +289,18 @@ final class GhosttyRuntime {
 
     // MARK: - Clipboard
 
-    nonisolated private static func view(from userdata: UnsafeMutableRawPointer?) -> TerminalSurfaceView? {
+    private nonisolated static func view(from userdata: UnsafeMutableRawPointer?) -> TerminalSurfaceView? {
         guard let userdata else { return nil }
         return Unmanaged<TerminalSurfaceView>.fromOpaque(userdata).takeUnretainedValue()
     }
 
-    nonisolated private static func readClipboard(
+    private nonisolated static func readClipboard(
         _ userdata: UnsafeMutableRawPointer?,
         location: ghostty_clipboard_e,
         state: UnsafeMutableRawPointer?,
         mimes: UnsafePointer<UnsafePointer<CChar>?>?,
         mimesLen: Int,
-        list: Bool
+        list: Bool,
     ) -> ghostty_clipboard_read_result_e {
         // C pointers from libghostty, only used during this synchronous call.
         let args = UncheckedSendable((userdata, state, mimes))
@@ -327,11 +327,11 @@ final class GhosttyRuntime {
         }
     }
 
-    nonisolated private static func confirmReadClipboard(
+    private nonisolated static func confirmReadClipboard(
         _ userdata: UnsafeMutableRawPointer?,
         confirm: UnsafePointer<ghostty_clipboard_confirm_s>?,
         state: UnsafeMutableRawPointer?,
-        request: ghostty_clipboard_request_e
+        request: ghostty_clipboard_request_e,
     ) {
         let args = UncheckedSendable((userdata, confirm, state))
         mainSync {
@@ -377,12 +377,12 @@ final class GhosttyRuntime {
         }
     }
 
-    nonisolated private static func writeClipboard(
+    private nonisolated static func writeClipboard(
         _ userdata: UnsafeMutableRawPointer?,
         location: ghostty_clipboard_e,
         content: UnsafePointer<ghostty_clipboard_content_s>?,
         len: Int,
-        confirm: Bool
+        confirm: Bool,
     ) {
         let items: [(String, Data)] = (0..<len).compactMap { i in
             guard let content, let mime = content[i].mime else { return nil }
@@ -413,7 +413,7 @@ final class GhosttyRuntime {
                     for: view,
                     title: "Allow a program to write to your clipboard?",
                     message: "A program running in this terminal wants to replace your clipboard contents.",
-                    contents: text
+                    contents: text,
                 ) { allowed in if allowed { write() } }
             }
         }
@@ -424,7 +424,7 @@ final class GhosttyRuntime {
         contents: [(String, Data)],
         available: [String],
         state: UnsafeMutableRawPointer?,
-        confirmed: Bool = false
+        confirmed: Bool = false,
     ) {
         var cStrings: [UnsafeMutablePointer<CChar>] = []
         var buffers: [UnsafeMutableRawPointer] = []

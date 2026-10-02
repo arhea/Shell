@@ -102,7 +102,7 @@ enum ReviewRows {
                         }
                     }
                     rows.append(ReviewRow(id: hunkID(ref), kind: .hunkHeader(ref, header: hunk.header)))
-                    let lineRows = self.lineRows(hunk, ref: ref, split: input.split)
+                    let lineRows = lineRows(hunk, ref: ref, split: input.split)
                     let shown = lineRows.prefix(budget)
                     hidden += lineRows.count - shown.count
                     budget -= shown.count

@@ -40,9 +40,9 @@ final class PromptContextModel {
         let gen = generation
         Task { [weak self] in
             let repo = await GitRepository.discover(from: directory, environment: MCPManager.defaultEnvironment())
-            guard let self, self.active, gen == self.generation else { repo?.stop(); return }
-            self.discovering = nil
-            self.setRepository(repo)
+            guard let self, active, gen == generation else { repo?.stop(); return }
+            discovering = nil
+            setRepository(repo)
         }
     }
 
@@ -53,8 +53,8 @@ final class PromptContextModel {
         }
         Task { [weak self] in
             let label = await RuntimeDetector.shared.label(for: directory, environment: MCPManager.defaultEnvironment())
-            guard let self, self.directory == directory, self.runtime != label else { return }
-            self.runtime = label
+            guard let self, self.directory == directory, runtime != label else { return }
+            runtime = label
         }
     }
 

@@ -85,7 +85,7 @@ final class ReviewChangesModel {
                     withObservationTracking { _ = repo.status } onChange: { cont.resume() }
                 }
                 guard !Task.isCancelled, let self else { return }
-                self.scheduleRefresh()
+                scheduleRefresh()
             }
         }
     }

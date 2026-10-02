@@ -562,12 +562,12 @@ final class TerminalSession: Identifiable {
         nativeClaude?.terminate()
         let claude = ClaudeCodeSession(request: request)
         claude.onEvent = { [weak self, weak claude] event, message in
-            guard let self, let claude, self.nativeClaude === claude else { return }
+            guard let self, let claude, nativeClaude === claude else { return }
             switch event {
             case "ended":
-                self.agent = nil
+                agent = nil
             default:
-                self.agentEvent(kind: .claude, event: event, message: message)
+                agentEvent(kind: .claude, event: event, message: message)
             }
         }
         nativeClaude = claude

@@ -43,7 +43,7 @@ final class TerminalWindow: NSWindow {
     }
     private var defaultTitlebarHeight: CGFloat?
     private var defaultButtonOrigins: [NSPoint] = []
-    nonisolated(unsafe) private var buttonObserver: NSObjectProtocol?
+    private nonisolated(unsafe) var buttonObserver: NSObjectProtocol?
 
     private var trafficLights: [NSButton] {
         [.closeButton, .miniaturizeButton, .zoomButton].compactMap { standardWindowButton($0) }
@@ -390,7 +390,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
                 isClaude: claude != nil,
                 openTab: { [weak self] dir, command in
                     guard let self else { return }
-                    let tab = self.newTab(directory: dir)
+                    let tab = newTab(directory: dir)
                     if let command { tab.focusedSession?.pendingCommand = command }
                 },
                 switchTo: { [weak self] dir in self?.switchToDirectory(dir) },
@@ -519,10 +519,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
         Task { [weak self] in
             let repo = await GitRepository.discover(from: dir, environment: MCPManager.defaultEnvironment())
             guard let self else { repo?.stop(); return }
-            self.discoveringRepos.remove(session.id)
-            self.terminalRepos[session.id]?.repo?.stop()
-            self.terminalRepos[session.id] = (dir, repo)
-            self.updateExplorer()
+            discoveringRepos.remove(session.id)
+            terminalRepos[session.id]?.repo?.stop()
+            terminalRepos[session.id] = (dir, repo)
+            updateExplorer()
         }
         return cached?.repo
     }
@@ -630,7 +630,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
         wireBroadcast(pane)
         session.onRequestFocus = { [weak self, weak session] in
             guard let self, let session else { return }
-            self.reveal(session)
+            reveal(session)
         }
         paneViews[session.id] = pane
         return session
@@ -641,11 +641,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
     private func wireBroadcast(_ pane: PaneView) {
         let sessionID = pane.session.id
         pane.session.surfaceView.broadcastTargets = { [weak self] in
-            guard let self, let tab = self.workspace.tabs.first(where: { $0.sessions[sessionID] != nil }), tab.broadcastInput else { return [] }
+            guard let self, let tab = workspace.tabs.first(where: { $0.sessions[sessionID] != nil }), tab.broadcastInput else { return [] }
             return tab.sessions.values.filter { $0.id != sessionID }.map(\.surfaceView)
         }
         pane.editor.onSubmit = { [weak self] command in
-            guard let self, let tab = self.workspace.tabs.first(where: { $0.sessions[sessionID] != nil }), tab.broadcastInput else { return }
+            guard let self, let tab = workspace.tabs.first(where: { $0.sessions[sessionID] != nil }), tab.broadcastInput else { return }
             for other in tab.sessions.values where other.id != sessionID {
                 if other.state == .idle {
                     other.submit(command: command)
@@ -665,7 +665,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
             wireBroadcast(pane)
             pane.session.onRequestFocus = { [weak self, weak session = pane.session] in
                 guard let self, let session else { return }
-                self.reveal(session)
+                reveal(session)
             }
         }
         tab.groupID = nil
@@ -871,9 +871,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
             workspace.githubBoard = GitHubBoardModel.model(repoRoot: repo.mainWorktree?.path ?? repo.root.path, remote: remote)
         } else if let dir {
             Task { [weak self] in
-                guard let found = await GitHubBoardModel.resolve(directory: dir), let self, self.workspace.githubBoard == nil,
-                      self.workspace.githubTabOpen else { return }
-                self.showGitHub(repoRoot: found.root, remote: found.remote)
+                guard let found = await GitHubBoardModel.resolve(directory: dir), let self, workspace.githubBoard == nil,
+                      workspace.githubTabOpen else { return }
+                showGitHub(repoRoot: found.root, remote: found.remote)
             }
         }
     }
@@ -970,7 +970,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
         let directory = session.nativeClaude?.directory ?? session.workingDirectory ?? NSHomeDirectory()
         let report: (String, Bool) -> Void = { [weak self] message, ok in
             guard let self else { return }
-            if let pane = self.paneView(for: session), session.nativeClaude == nil {
+            if let pane = paneView(for: session), session.nativeClaude == nil {
                 pane.editor.barState.flash(message, success: ok)
             } else if !ok {
                 Log.app.error("Claude in new worktree: \(message, privacy: .public)")
@@ -1111,7 +1111,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Shor
             container.onRatioChange = { [weak self, weak tab] id, ratio in
                 guard let self, let tab else { return }
                 tab.setRatio(ratio, forSplit: id)
-                self.containers[tab.id]?.update(tree: tab.tree, panes: self.panes(for: tab), zoomed: tab.zoomedSessionID)
+                containers[tab.id]?.update(tree: tab.tree, panes: panes(for: tab), zoomed: tab.zoomedSessionID)
             }
             containers[tab.id] = container
             contentView.terminalArea.addSubview(container)

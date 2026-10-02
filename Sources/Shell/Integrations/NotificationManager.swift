@@ -9,7 +9,7 @@ final class NotificationManager: NSObject {
 
     /// Update notifications carry a Restart Now button.
     static let updateCategory = "update"
-    nonisolated private static let restartAction = "restart-to-update"
+    private nonisolated static let restartAction = "restart-to-update"
 
     private var authorized: Bool?
     private var delivered: [UUID: [String]] = [:]

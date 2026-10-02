@@ -180,7 +180,7 @@ final class MCPManagerWindowTests: XCTestCase {
         for server in manager.servers { renderDetail(manager, server) }
     }
 
-    func testDetailForEdgeCaseServers() async throws {
+    func testDetailForEdgeCaseServers() throws {
         let manager = makeMCPManager(fake, directory: dir)
         let servers = [
             MCPFixtures.server("failed-no-message", status: "failed"),

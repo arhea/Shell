@@ -142,7 +142,7 @@ final class GitHubBoardModel {
             while !Task.isCancelled {
                 try? await Task.sleep(for: Self.interval)
                 guard let self, !Task.isCancelled else { return }
-                if !self.isPaused { self.refresh() }
+                if !isPaused { refresh() }
             }
         }
     }

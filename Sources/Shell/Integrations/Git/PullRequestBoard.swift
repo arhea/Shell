@@ -459,7 +459,7 @@ enum PullRequestBoard {
 
     /// Actions run IDs (`…/actions/runs/<id>/…`) of failing check runs.
     static func failedRunIDs(_ contexts: [[String: Any]]) -> [Int] {
-        let failing: Set<String> = ["FAILURE", "TIMED_OUT", "CANCELLED", "STARTUP_FAILURE"]
+        let failing: Set = ["FAILURE", "TIMED_OUT", "CANCELLED", "STARTUP_FAILURE"]
         var ids: [Int] = []
         for c in contexts where failing.contains((c["conclusion"] as? String ?? "").uppercased()) {
             guard let url = c["detailsUrl"] as? String, let id = runID(in: url), !ids.contains(id) else { continue }

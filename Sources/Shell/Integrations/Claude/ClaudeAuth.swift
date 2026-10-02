@@ -235,11 +235,11 @@ final class ClaudeLogin {
         phase = .verifying
         Task { [weak self, binary, environment, directory] in
             let status = await ClaudeAuth.status(binary: binary, environment: environment, directory: directory)
-            guard let self, gen == self.generation else { return }
+            guard let self, gen == generation else { return }
             if status == .loggedOut {
-                self.phase = .failed("Claude Code still isn't signed in. Try again.")
+                phase = .failed("Claude Code still isn't signed in. Try again.")
             } else {
-                self.onSignedIn?()
+                onSignedIn?()
             }
         }
     }

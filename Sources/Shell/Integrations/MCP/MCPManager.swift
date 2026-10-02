@@ -231,8 +231,8 @@ final class MCPManager {
         trusted = isTrusted(directory)
         let c = ClaudeControlClient(binary: binary, directory: trusted ? directory : NSHomeDirectory(), environment: environment)
         c.onExit = { [weak self, weak c] in
-            guard let self, self.client === c else { return }
-            self.initialized = false
+            guard let self, client === c else { return }
+            initialized = false
         }
         try c.start()
         client = c

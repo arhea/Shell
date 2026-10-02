@@ -209,7 +209,7 @@ final class SoftwareUpdater {
             while !Task.isCancelled {
                 try? await Task.sleep(for: AppEnvironment.wait(.milliseconds(250)))
                 guard let self, case .downloading = self.phase else { return }
-                self.downloadFraction = min(1, Double(monitor.bytesReceived) / total)
+                downloadFraction = min(1, Double(monitor.bytesReceived) / total)
             }
         }
         defer {

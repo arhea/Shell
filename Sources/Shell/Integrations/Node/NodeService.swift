@@ -80,7 +80,7 @@ struct NodeLine: Hashable {
 }
 
 struct PackageManagerStatus: Identifiable, Hashable {
-    enum Source: String { case bundled = "bundled with Node", corepack = "corepack", npm = "npm global", homebrew = "Homebrew", standalone = "standalone" }
+    enum Source: String { case bundled = "bundled with Node", corepack, npm = "npm global", homebrew = "Homebrew", standalone }
     var name: String
     var path: String?
     var version: SemVer?

@@ -400,7 +400,7 @@ final class GitHubBoardModelTests: GitAreaTestCase {
     }
 }
 
-fileprivate extension OpenPullRequest {
+private extension OpenPullRequest {
     /// The same PR under another number (so tests can run actions side by side).
     func withNumber(_ n: Int) -> OpenPullRequest {
         var copy = self
