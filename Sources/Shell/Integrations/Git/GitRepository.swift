@@ -326,7 +326,7 @@ final class GitRepository {
 
     private func startWatching() {
         // A 1 s latency coalesces bursts (a build writes thousands of files).
-        watcher = DirectoryWatcher(path: root.path, latency: 1.0) { [weak self] paths in
+        watcher = DirectoryWatcher(path: root.path, latency: AppEnvironment.wait(1.0)) { [weak self] paths in
             guard let self else { return }
             if paths.contains(where: { self.affectsStatus($0) }) { self.refresh() }
         }

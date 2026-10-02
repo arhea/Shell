@@ -111,7 +111,7 @@ final class SettingsSync {
         guard Self.isAvailable else { return }
         try? FileManager.default.createDirectory(at: Self.folder, withIntermediateDirectories: true)
         watcher?.stop()
-        watcher = DirectoryWatcher(path: Self.folder.path, latency: 1) { paths in
+        watcher = DirectoryWatcher(path: Self.folder.path, latency: AppEnvironment.wait(1)) { paths in
             guard paths.contains(where: { $0.hasSuffix("/settings.json") || $0.hasSuffix(".settings.json.icloud") }) else { return }
             SettingsSync.shared.pullIfNewer()
         }
@@ -156,7 +156,7 @@ final class SettingsSync {
         pushWork?.cancel()
         let work = DispatchWorkItem { MainActor.assumeIsolated { SettingsSync.shared.pushNow() } }
         pushWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + AppEnvironment.wait(1), execute: work)
     }
 
     func pushNow() {

@@ -92,7 +92,7 @@ enum ProcessRunner {
         guard p.isRunning else { return }
         p.terminate()
         let pid = p.processIdentifier
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 3) {
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + AppEnvironment.wait(3)) {
             if p.isRunning { kill(pid, SIGKILL) }
         }
     }

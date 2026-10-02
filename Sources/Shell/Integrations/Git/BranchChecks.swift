@@ -224,7 +224,7 @@ final class BranchChecksModel {
     }
 
     private func afterRerun() async {
-        try? await Task.sleep(for: .seconds(2))
+        try? await Task.sleep(for: AppEnvironment.wait(.seconds(2)))
         rerunning.removeAll()
         refreshedAt = nil
         await load()

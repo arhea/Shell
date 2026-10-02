@@ -1010,7 +1010,7 @@ final class EditorBarState {
         clearWork?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.flashMessage = nil }
         clearWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + AppEnvironment.wait(1.6), execute: work)
     }
 }
 

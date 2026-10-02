@@ -652,7 +652,7 @@ final class ClaudeCodeSession {
         guard p.isRunning else { return }
         p.terminate()
         let pid = p.processIdentifier
-        DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
+        DispatchQueue.global().asyncAfter(deadline: .now() + AppEnvironment.wait(2)) {
             if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
         }
     }

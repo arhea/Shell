@@ -99,7 +99,7 @@ final class ReviewChangesModel {
     private func scheduleRefresh() {
         debounce?.cancel()
         debounce = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(300))
+            try? await Task.sleep(for: AppEnvironment.wait(.milliseconds(300)))
             guard !Task.isCancelled else { return }
             self?.refresh()
         }

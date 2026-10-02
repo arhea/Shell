@@ -174,7 +174,7 @@ final class BranchPickerModel {
             return
         }
         suggestionTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(450))
+            try? await Task.sleep(for: AppEnvironment.wait(.milliseconds(450)))
             guard let self, !Task.isCancelled else { return }
             isSuggesting = true
             let recent = all.filter { $0.remote == nil }.map(\.name)
