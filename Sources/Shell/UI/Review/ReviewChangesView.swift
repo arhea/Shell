@@ -90,41 +90,52 @@ struct ReviewTopBar: View {
     var body: some View {
         HStack(spacing: 12) {
             Button(action: onBack) {
-                HStack(spacing: 3) { Image(systemName: "chevron.left").font(.system(size: 11, weight: .semibold)); Text("Chat") }
+                HStack(spacing: 4) { Image(systemName: "chevron.left").font(.system(size: 10, weight: .semibold)); Text("Chat") }
+                    .font(.system(size: DS.Size.body))
+                    .foregroundStyle(.secondary)
             }
             .buttonStyle(.labeled(.plain))
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text("Review changes").font(.system(size: DS.Size.title, weight: .semibold))
-                HStack(spacing: 4) {
-                    BranchGlyph(size: 10)
-                    Text(model.branch).lineLimit(1).truncationMode(.middle)
-                    Image(systemName: "arrow.right").font(.system(size: 8))
+                HStack(spacing: 6) {
+                    HStack(spacing: 3) {
+                        BranchGlyph(size: 10)
+                        Text(model.branch).lineLimit(1).truncationMode(.middle)
+                    }
+                    Text("→").foregroundStyle(.tertiary)
                     Text(model.baseBranch)
-                    Text("·")
+                    Text("·").foregroundStyle(.tertiary)
                     Text("\(model.files.count) file\(model.files.count == 1 ? "" : "s")")
-                    Text("+\(model.totalAdditions)").foregroundStyle(ReviewStyle.added)
-                    Text("−\(model.totalDeletions)").foregroundStyle(ReviewStyle.removed)
+                    HStack(spacing: 6) {
+                        Text("+\(model.totalAdditions)").foregroundStyle(ReviewStyle.added)
+                        Text("−\(model.totalDeletions)").foregroundStyle(ReviewStyle.removed)
+                    }
+                    .font(ChatTypography.current.codeFont(size: DS.Size.subtitle))
                     if model.isLoading { ProgressView().controlSize(.mini) }
                 }
-                .font(.system(size: DS.Size.small))
+                .font(.system(size: DS.Size.subtitle))
                 .foregroundStyle(.secondary)
             }
             Spacer(minLength: 12)
             SegmentedTabs(items: [.init(id: false, title: "Unified"), .init(id: true, title: "Split")], selection: $model.split)
-                .frame(width: 160)
+                .frame(width: 124)
             Toggle("Hide whitespace", isOn: $model.hideWhitespace)
                 .toggleStyle(.checkbox)
                 .font(.system(size: DS.Size.body))
+                .padding(.horizontal, 4)
             Button(action: askClaude) {
-                HStack(spacing: 5) { ClaudeMark(size: 12); Text("Ask Claude to review") }
+                HStack(spacing: 6) { ClaudeMark(size: 12); Text("Ask Claude to review") }
+                    .frame(minHeight: 28)
             }
-            .buttonStyle(.labeled(.claude))
+            .buttonStyle(.labeled(.neutral))
             .disabled(model.files.isEmpty)
-            Button(ReviewSidebar.commitTitle(model.stagedCount) + "…", action: onCommit)
-                .buttonStyle(.labeled(.primary))
-                .disabled(model.isCommitting)
+            Button(action: onCommit) {
+                Text(ReviewSidebar.commitTitle(model.stagedCount) + "…").frame(minHeight: 28)
+            }
+            .buttonStyle(.labeled(.primary))
+            .disabled(model.isCommitting)
         }
-        .padding(.horizontal, 14)
+        .padding(.leading, 14).padding(.trailing, 14)
         .frame(height: DS.toolbarHeight)
     }
 }
@@ -134,15 +145,17 @@ struct ReviewFooter: View {
     let model: ReviewChangesModel
 
     var body: some View {
-        HStack(spacing: 14) {
-            Text(position).foregroundStyle(.secondary)
+        HStack(spacing: 16) {
+            Text(position)
             Spacer(minLength: 8)
-            hint("⌥↓", "next change")
-            hint("⌘]", "next file")
-            Text("Click a line number to comment").foregroundStyle(.tertiary)
+            Text("⌥↓ next change")
+            Text("⌘] next file")
+            Text("Click a line number to comment")
         }
-        .font(.system(size: DS.Size.small))
-        .padding(.horizontal, 14)
+        .font(.system(size: DS.Size.subtitle))
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .padding(.horizontal, 16)
         .frame(height: 30)
     }
 
@@ -150,9 +163,5 @@ struct ReviewFooter: View {
         guard !model.files.isEmpty else { return "No changes" }
         let i = (model.selectedIndex ?? 0) + 1
         return "File \(i) of \(model.files.count) · \(model.viewedCount) viewed"
-    }
-
-    private func hint(_ keys: String, _ label: String) -> some View {
-        HStack(spacing: 4) { KeyHint(keys); Text(label).foregroundStyle(.tertiary) }
     }
 }

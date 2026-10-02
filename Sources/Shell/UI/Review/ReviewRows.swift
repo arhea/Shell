@@ -138,7 +138,15 @@ enum ReviewRows {
             ClaudeDiff.Line(kind: l.kind == .added ? .added : l.kind == .removed ? .removed : .context,
                             text: l.text, oldNumber: l.oldNumber, newNumber: l.newNumber)
         }
-        let pairs = ClaudeDiff.rows(lines)
+        // Lines paired by position (not by similarity) can still share a prefix
+        // or suffix, like "if n < 0 { throw … }" → "if n < 0 {": mark their middles too.
+        let pairs = ClaudeDiff.rows(lines).map { p in
+            guard p.leftChange == nil, p.rightChange == nil, let l = p.left, let r = p.right,
+                  l.kind == .removed, r.kind == .added else { return p }
+            var p = p
+            (p.leftChange, p.rightChange) = ClaudeDiff.changedRanges(l.text, r.text)
+            return p
+        }
         let base = "line|\(ref.path)|\(ref.staged ? "s" : "u")|\(ref.index)|"
         func cell(_ l: ClaudeDiff.Line?, _ change: Range<Int>?) -> ReviewCell? {
             guard let l else { return nil }
@@ -200,23 +208,66 @@ enum ReviewRows {
 
     struct Mark: Equatable {
         enum Kind { case added, removed, modified }
+        /// Top of the run of changed lines, as a fraction of the list's height.
         var position: Double
         var kind: Kind
+        /// Height of the run, as a fraction of the list's height.
+        var length: Double = 0
     }
 
-    /// Change positions as fractions of the row list, merged when adjacent.
+    /// About how tall a row draws, so ruler fractions line up with the scroll
+    /// position without measuring every row.
+    static func estimatedHeight(_ row: ReviewRow) -> Double {
+        switch row.kind {
+        case .fileHeader: 42
+        case .sectionLabel: 30
+        case .hunkHeader: 30
+        case .line: 21
+        case .gap, .truncated: 28
+        case .note: 36
+        case .comment: 150
+        case .fileEnd: 14
+        }
+    }
+
+    /// The list's estimated height, with its bottom padding.
+    static func estimatedHeight(_ rows: [ReviewRow]) -> Double {
+        rows.reduce(24) { $0 + estimatedHeight($1) }
+    }
+
+    /// Runs of changed lines as fractions of the list's height, one mark per
+    /// run of the same kind.
     static func rulerMarks(_ rows: [ReviewRow]) -> [Mark] {
         guard !rows.isEmpty else { return [] }
+        let total = estimatedHeight(rows)
         var marks: [Mark] = []
-        let total = Double(rows.count)
+        var y = 0.0
+        var lastIndex = -2
         for (i, row) in rows.enumerated() {
+            let h = estimatedHeight(row)
+            defer { y += h }
             let c = row.hasChange
             guard c.added || c.removed else { continue }
             let kind: Mark.Kind = c.added && c.removed ? .modified : c.added ? .added : .removed
-            let pos = Double(i) / total
-            if let last = marks.last, last.kind == kind, pos - last.position < 0.004 { continue }
-            marks.append(Mark(position: pos, kind: kind))
+            if lastIndex == i - 1, let last = marks.last, last.kind == kind {
+                marks[marks.count - 1].length += h / total
+            } else {
+                marks.append(Mark(position: y / total, kind: kind, length: h / total))
+            }
+            lastIndex = i
         }
         return marks
+    }
+
+    /// The row at a fraction of the list's height (the ruler's inverse).
+    static func row(atFraction f: Double, in rows: [ReviewRow]) -> Int? {
+        guard !rows.isEmpty else { return nil }
+        let target = min(max(f, 0), 1) * estimatedHeight(rows)
+        var y = 0.0
+        for (i, row) in rows.enumerated() {
+            y += estimatedHeight(row)
+            if y > target { return i }
+        }
+        return rows.count - 1
     }
 }

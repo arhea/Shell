@@ -5,6 +5,9 @@ import SwiftUI
 struct ReviewDiffList: View {
     @Bindable var model: ReviewChangesModel
     let onSendToClaude: (String) -> Void
+    /// The visible part of the list, for the ruler. A reference, so scrolling
+    /// redraws only the ruler, not the list.
+    @State private var viewport = ReviewViewport()
 
     var body: some View {
         let palette = ClaudePalette.current
@@ -18,12 +21,23 @@ struct ReviewDiffList: View {
                     }
                     .padding(.bottom, 24)
                 }
+                .onScrollGeometryChange(for: ClosedRange<Double>.self) { geo in
+                    let height = max(geo.contentSize.height, 1)
+                    let lo = min(max(geo.contentOffset.y / height, 0), 1)
+                    return lo...min(max((geo.contentOffset.y + geo.containerSize.height) / height, lo), 1)
+                } action: { _, range in
+                    viewport.range = range
+                }
+                .onAppear {
+                    // A load that finished before the list existed asked for a file.
+                    if let id = model.scrollTarget { proxy.scrollTo(id, anchor: .top) }
+                }
                 .onChange(of: model.scrollToken) {
                     guard let id = model.scrollTarget else { return }
                     withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id, anchor: .top) }
                 }
             }
-            ReviewOverviewRuler(marks: model.marks) { model.scroll(toFraction: $0) }
+            ReviewOverviewRuler(marks: model.marks, viewport: viewport) { model.scroll(toFraction: $0) }
         }
         .overlay {
             if model.hasLoaded, model.files.isEmpty { emptyState }
@@ -37,14 +51,14 @@ struct ReviewDiffList: View {
             ReviewFileHeader(file: file, collapsed: collapsed, model: model)
         case .sectionLabel(_, let staged):
             Text(staged ? "Staged" : "Not staged")
-                .font(.system(size: DS.Size.caption, weight: .semibold))
+                .font(.system(size: DS.Size.small, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 4)
+                .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 4)
         case .hunkHeader(let ref, let header):
             ReviewHunkHeader(ref: ref, header: header, model: model)
         case .line(let ref, let left, let right):
             ReviewLineRow(left: left, right: right, split: model.split, language: ReviewStyle.language(for: ref.path),
-                          palette: palette) { line, isNew in
+                          palette: palette, comment: model.comment?.rowID == row.id ? model.comment : nil) { line, isNew in
                 model.beginComment(rowID: row.id, ref: ref, line: line, isNew: isNew)
             }
         case .gap(let id, let ref, let count):
@@ -52,20 +66,22 @@ struct ReviewDiffList: View {
         case .truncated(let path, let hidden):
             HStack(spacing: 8) {
                 Text("\(hidden) more line\(hidden == 1 ? "" : "s") not shown").foregroundStyle(.secondary)
-                Button("Show full diff") { model.showFullDiff(path) }.buttonStyle(.link)
+                Button("Show full diff") { model.showFullDiff(path) }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(DS.Status.selection)
                 Spacer(minLength: 0)
             }
-            .font(.system(size: DS.Size.small))
-            .padding(.horizontal, 14).frame(height: 28)
+            .font(.system(size: DS.Size.subtitle))
+            .padding(.horizontal, 16).frame(height: 28)
         case .note(_, let text):
             Text(text)
-                .font(.system(size: DS.Size.small))
+                .font(.system(size: DS.Size.subtitle))
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 14).padding(.vertical, 10)
+                .padding(.horizontal, 16).padding(.vertical, 10)
         case .comment(let target):
             commentCard(target)
         case .fileEnd:
-            Color.clear.frame(height: 10)
+            Color.clear.frame(height: 14)
         }
     }
 
@@ -77,13 +93,23 @@ struct ReviewDiffList: View {
             model.cancelComment()
         }
         if model.split {
+            // The card sits in its line's column, indented past the gutter, with
+            // the column divider running through.
             HStack(spacing: 0) {
-                if target.isNew { Spacer(minLength: 0).frame(maxWidth: .infinity) }
-                card.frame(maxWidth: .infinity)
-                if !target.isNew { Spacer(minLength: 0).frame(maxWidth: .infinity) }
+                Group {
+                    if target.isNew { Color.clear } else { card }
+                }
+                .frame(maxWidth: .infinity)
+                Rectangle().fill(Color.primary.opacity(0.08)).frame(width: 1)
+                Group {
+                    if target.isNew { card } else { Color.clear }
+                }
+                .frame(maxWidth: .infinity)
             }
+            .fixedSize(horizontal: false, vertical: true)
         } else {
-            card.frame(maxWidth: 640, alignment: .leading).padding(.leading, ReviewStyle.gutterWidth * 2)
+            card.frame(maxWidth: 640 + ReviewStyle.gutterWidth * 2, alignment: .leading)
+                .padding(.leading, ReviewStyle.gutterWidth)
         }
     }
 
@@ -94,4 +120,11 @@ struct ReviewDiffList: View {
             Text("The working tree matches HEAD.").font(.system(size: DS.Size.small)).foregroundStyle(.secondary)
         }
     }
+}
+
+/// The scrolled-to part of the diff list, as fractions of its height.
+@MainActor
+@Observable
+final class ReviewViewport {
+    var range: ClosedRange<Double> = 0...0
 }
