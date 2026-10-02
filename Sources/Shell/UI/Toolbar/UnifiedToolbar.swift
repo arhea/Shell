@@ -160,14 +160,27 @@ struct RepoSubtitleText: View {
             let st = repo.status
             let parts = ToolbarSubtitle.repo(slug: repo.github?.slug ?? repo.name, branch: repo.branchLabel, ahead: st.ahead,
                                              behind: st.behind, isWorktree: repo.isLinkedWorktree, changes: st.changeCount)
-            Text("\(parts.lead) \(Image(systemName: "arrow.triangle.branch")) \(parts.branch)\(parts.trailing)")
-                .help(repo.root.path)
+            Self.text(parts).help(repo.root.path)
         } else {
             let home = NSHomeDirectory()
             let short = directory.hasPrefix(home) ? "~" + directory.dropFirst(home.count) : directory
             Text(ToolbarSubtitle.plain(directory: short, shell: isClaude ? nil : ToolbarSubtitle.shellName))
                 .help(directory)
         }
+    }
+
+    /// "arhea/Shell / ⎇ bug/38-… · worktree" with the separators dimmed, as designed.
+    static func text(_ parts: ToolbarSubtitle.Repo) -> Text {
+        let sep = Color.secondary.opacity(0.6)
+        let lead = parts.lead.hasSuffix(" /") ? String(parts.lead.dropLast(2)) : parts.lead
+        let slash = Text("  /  ").foregroundStyle(sep)
+        let dot = Text("  ·  ").foregroundStyle(sep)
+        var text = Text("\(lead)\(slash)\(Image(systemName: "arrow.triangle.branch")) \(parts.branch)")
+        let tail = parts.trailing.hasPrefix(" · ") ? String(parts.trailing.dropFirst(3)) : parts.trailing
+        for piece in tail.components(separatedBy: " · ") where !piece.isEmpty {
+            text = Text("\(text)\(dot)\(piece)")
+        }
+        return text
     }
 }
 
@@ -209,19 +222,19 @@ struct StatusCapsules: View {
             if let pr = repo.pullRequest {
                 let (label, color) = Self.state(pr)
                 Button { NSWorkspace.shared.open(pr.url) } label: {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 6) {
                         Circle().fill(color).frame(width: 6, height: 6)
                         Text("PR #\(pr.number) · \(label)")
-                        Image(systemName: "arrow.up.right").font(.system(size: 8, weight: .bold))
+                        Image(systemName: "arrow.up.right").font(.system(size: 9, weight: .regular))
                     }
                 }
                 .buttonStyle(StatusCapsuleStyle(color: color))
                 .help("\(pr.title)\nOpen on GitHub")
             } else if let gh = repo.github, let branch = repo.status.branch, repo.isBranchPublished, branch != repo.defaultBranch {
                 Button { NSWorkspace.shared.open(gh.compareURL(branch)) } label: {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 6) {
                         Text("Create PR")
-                        Image(systemName: "arrow.up.right").font(.system(size: 8, weight: .bold))
+                        Image(systemName: "arrow.up.right").font(.system(size: 9, weight: .regular))
                     }
                 }
                 .buttonStyle(StatusCapsuleStyle(color: .secondary))
@@ -229,7 +242,7 @@ struct StatusCapsules: View {
             }
             if let snapshot = checks.snapshot, !snapshot.failing.isEmpty {
                 Button(action: onShowChecks) {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 6) {
                         Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
                         Text(snapshot.summary)
                     }
@@ -256,11 +269,11 @@ struct StatusCapsuleStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: DS.Size.small, weight: .semibold))
+            .font(.system(size: DS.Size.subtitle, weight: .semibold))
             .foregroundStyle(color)
             .padding(.horizontal, 9)
             .frame(height: 22)
-            .background(Capsule().fill(color.opacity(configuration.isPressed ? 0.24 : 0.14)))
+            .background(Capsule().fill(color.opacity(configuration.isPressed ? 0.22 : 0.12)))
             .contentShape(Capsule())
     }
 }
@@ -283,7 +296,7 @@ struct ToolbarCapsule<Content: View>: View {
 
 /// A hairline between items in a capsule.
 struct ToolbarDivider: View {
-    var body: some View { Color.primary.opacity(0.12).frame(width: 0.5, height: 14) }
+    var body: some View { Color.primary.opacity(0.1).frame(width: 1, height: 14) }
 }
 
 /// An item inside a capsule: hover fill, 24pt tall.
@@ -304,10 +317,11 @@ private struct ToolbarItemBody<Label: View>: View {
     var body: some View {
         label
             .font(.system(size: DS.Size.body))
-            .foregroundStyle(active ? Color.accentColor : .primary)
+            // An active toggle (the inspector) is a filled item, not a blue icon.
+            .foregroundStyle(Color.primary)
             .padding(.horizontal, 8)
-            .frame(minWidth: 28, minHeight: 24)
-            .background(Capsule().fill(Color.primary.opacity(pressed ? 0.14 : hovering || active ? 0.08 : 0)))
+            .frame(minWidth: 30, minHeight: 24)
+            .background(Capsule().fill(Color.primary.opacity(pressed ? 0.14 : active ? 0.1 : hovering ? 0.08 : 0)))
             .contentShape(Capsule())
             .onHover { hovering = $0 }
     }
@@ -338,14 +352,22 @@ struct ToolbarMenu<Label: View, Content: View>: View {
     @State private var hovering = false
 
     var body: some View {
-        Menu(content: content) {
-            label().font(.system(size: DS.Size.body))
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .padding(.horizontal, 8)
-        .frame(minWidth: 28, minHeight: 24)
+        // A menu button's label drops custom views (the ▼, the mode dot, the
+        // dimmed "Effort"), so draw the label ourselves and lay a
+        // see-through menu over it to take the click.
+        label()
+            .font(.system(size: DS.Size.body))
+            .fixedSize()
+            .accessibilityHidden(true)
+            .padding(.horizontal, 10)
+            .frame(minWidth: 28, minHeight: 24)
+            .overlay {
+                Menu(content: content) { label() }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .opacity(0.011)
+            }
         .background(Capsule().fill(Color.primary.opacity(hovering ? 0.08 : 0)))
         .contentShape(Capsule())
         .onHover { hovering = $0 }
@@ -452,9 +474,9 @@ struct ClaudeToolbarControls<Extra: View>: View {
                 }
             }
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: 6) {
                 Text(claude.modelTitle)
-                Image(systemName: "chevron.down").font(.system(size: 7, weight: .bold)).foregroundStyle(.secondary)
+                Image(systemName: "arrowtriangle.down.fill").font(.system(size: 6)).foregroundStyle(.secondary)
             }
         }
     }
@@ -468,10 +490,10 @@ struct ClaudeToolbarControls<Extra: View>: View {
                     Toggle(Self.effortTitle(level), isOn: Binding(get: { claude.effort == level }, set: { _ in claude.setEffort(level) }))
                 }
             } label: {
-                HStack(spacing: 4) {
+                HStack(spacing: 6) {
                     Text("Effort").foregroundStyle(.secondary)
                     Text(claude.effort.isEmpty ? "Auto" : Self.effortTitle(claude.effort))
-                    Image(systemName: "chevron.down").font(.system(size: 7, weight: .bold)).foregroundStyle(.secondary)
+                    Image(systemName: "arrowtriangle.down.fill").font(.system(size: 6)).foregroundStyle(.secondary)
                 }
             }
         }
@@ -486,10 +508,10 @@ struct ClaudeToolbarControls<Extra: View>: View {
                 }
             }
         } label: {
-            HStack(spacing: 5) {
-                Circle().fill(Self.modeColor(claude.permissionMode)).frame(width: 6, height: 6)
+            HStack(spacing: 6) {
+                Circle().fill(Self.modeColor(claude.permissionMode)).frame(width: 7, height: 7)
                 Text(claude.permissionMode.title)
-                Text("⇧⇥").font(.system(size: DS.Size.small)).foregroundStyle(.tertiary)
+                Text("⇧⇥").font(.system(size: DS.Size.caption)).foregroundStyle(.secondary)
             }
         }
     }
@@ -502,7 +524,7 @@ struct ClaudeToolbarControls<Extra: View>: View {
         } label: {
             HStack(spacing: 5) {
                 Text("MCP").foregroundStyle(.secondary)
-                Text("\(claude.mcpServers.count)").foregroundStyle(waiting > 0 ? DS.Status.needsYou : DS.Status.done)
+                Text("\(claude.mcpServers.count)").fontWeight(.semibold).foregroundStyle(waiting > 0 ? DS.Status.needsYou : DS.Status.done)
             }
         }
         .buttonStyle(ToolbarItemStyle())
