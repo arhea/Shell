@@ -21,7 +21,7 @@ xcodebuild test \
   -enableCodeCoverage YES \
   CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \
   "$@" 2>&1 | tee build/coverage.log \
-  | grep -E '^/.*error:|error: |Test Case .* failed|Executed [0-9]+ tests|\*\* (TEST|BUILD) (SUCCEEDED|FAILED) \*\*' || true
+  | grep -E '^/.*error:|error: |[Tt]est [Cc]ase .* failed|Executed [0-9]+ tests|\*\* (TEST|BUILD) (SUCCEEDED|FAILED) \*\*' || true
 
 if [[ ! -d $RESULT ]] || ! xcrun xccov view --report --json "$RESULT" > build/coverage.json 2>/dev/null; then
   echo "error: no coverage data; the build or test run failed (see build/coverage.log)" >&2

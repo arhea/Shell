@@ -207,6 +207,10 @@ schemes:
         ShellTests: [test]
     test:
       targets:
-        - ShellTests
+        # Each test class can run in its own clone of the test host. Clones
+        # get separate support folders (ShellTests-<pid>), so they share no
+        # settings, sockets or files.
+        - name: ShellTests
+          parallelizable: true
     run:
       config: Debug

@@ -86,7 +86,7 @@ jobs:
             CODE_SIGN_STYLE=Manual \
             DEVELOPMENT_TEAM= \
             2>&1 | tee build/xcodebuild-test.log \
-            | grep -E '^/.*(error|warning):|Test Case .* failed|Executed [0-9]+ tests|\*\* (TEST|BUILD) (SUCCEEDED|FAILED) \*\*'
+            | grep -E '^/.*(error|warning):|[Tt]est [Cc]ase .* failed|Executed [0-9]+ tests|\*\* (TEST|BUILD) (SUCCEEDED|FAILED) \*\*'
 
       # Counts and coverage go to the PR comment; failure details, to the job
       # summary and inline annotations.
