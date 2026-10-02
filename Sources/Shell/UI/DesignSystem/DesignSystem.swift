@@ -432,7 +432,9 @@ struct SegmentedTabs<ID: Hashable>: View {
                         if let dot = item.dot { Circle().fill(dot).frame(width: 6, height: 6) }
                     }
                     .font(.system(size: DS.Size.body, weight: .medium))
-                    .padding(.horizontal, 10).frame(height: 22)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .padding(.horizontal, 6).frame(height: 22)
                     .frame(maxWidth: .infinity)
                     .background(selection == item.id ? Color.primary.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.control))
                     .contentShape(Rectangle())

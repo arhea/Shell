@@ -308,6 +308,17 @@ final class CommandBlockOverlayView: NSView {
 
     private var theme: TerminalTheme { ConfigController.shared.theme }
 
+    /// Height of the strip above a block's header that holds its status and
+    /// buttons, so they never cover the command line itself.
+    private static let actionRow: CGFloat = 22
+
+    /// Vertical center of a block's status/buttons: in the strip above the
+    /// header, or on the header line when the header is the first visible row.
+    private func actionMid(headerViewportRow row: Int, _ g: LinkDetector.Geometry) -> CGFloat {
+        let y = rowTop(row, g)
+        return row >= 1 ? y - Self.actionRow / 2 - 1 : y + g.cellHeight / 2
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         guard let g = geometry, let sb = scrollbar, let session else { return }
         let t = theme
@@ -319,7 +330,8 @@ final class CommandBlockOverlayView: NSView {
             let first = max(seg.headerRow - sb.offset, 0), last = min(seg.endRow - sb.offset, g.rows - 1)
             guard first <= last else { continue }
             if block.failed {
-                let top = seg.headerRow - sb.offset >= 0 ? rowTop(first, g) - 5 : -8
+                let headerRow = seg.headerRow - sb.offset
+                let top = headerRow >= 1 ? rowTop(first, g) - Self.actionRow - 4 : headerRow >= 0 ? rowTop(first, g) - 5 : -8
                 let bottom = seg.endRow - sb.offset <= g.rows - 1 ? rowTop(last + 1, g) + 5 : bounds.maxY + 8
                 let rect = NSRect(x: max(2, g.originX - 8), y: top, width: bounds.width - max(2, g.originX - 8) - 6, height: bottom - top)
                 let path = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 7, yRadius: 7)
@@ -330,8 +342,7 @@ final class CommandBlockOverlayView: NSView {
                 path.stroke()
             }
             guard seg.headerVerified, seg.headerRow >= sb.offset, seg.headerRow < sb.offset + g.rows else { continue }
-            let y = rowTop(seg.headerRow - sb.offset, g)
-            let mid = y + g.cellHeight / 2
+            let mid = actionMid(headerViewportRow: seg.headerRow - sb.offset, g)
             var x = bounds.maxX - 14
             let status = CommandBlockLayout.statusText(duration: block.duration, startedAt: block.startedAt)
             if block.failed {
@@ -374,7 +385,7 @@ final class CommandBlockOverlayView: NSView {
                 let durW = block.duration.map { NSAttributedString(string: TerminalSession.format(duration: $0), attributes: [.font: NSFont.systemFont(ofSize: 11, weight: .medium)]).size().width } ?? 0
                 let pillW = NSAttributedString(string: "Exit \(block.exitCode ?? 1)", attributes: [.font: font]).size().width + 10
                 var x = bounds.maxX - 14 - durW - 8 - pillW - 6
-                let mid = rowTop(seg.headerRow - sb.offset, g) + g.cellHeight / 2
+                let mid = actionMid(headerViewportRow: seg.headerRow - sb.offset, g)
                 for (title, action) in [("Rerun", onRerun), ("Copy output", onCopyOutput)] {
                     let b = button(at: used)
                     used += 1

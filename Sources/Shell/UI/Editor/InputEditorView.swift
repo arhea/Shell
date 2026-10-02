@@ -74,6 +74,8 @@ final class InputEditorView: NSView, NSTextViewDelegate {
     private let scrollView = NSScrollView()
     private let promptLabel = NSTextField(labelWithString: "❯")
     private let separator = NSView()
+    /// The rounded field the prompt glyph, input and key hints sit in.
+    private let field = NSView()
     private var contextHost: NSHostingView<EditorContextBar>!
     private var fixHost: NSHostingView<CommandFixBar>?
     private let hintsLabel = NSTextField(labelWithString: "")
@@ -110,6 +112,11 @@ final class InputEditorView: NSView, NSTextViewDelegate {
 
         separator.wantsLayer = true
         addSubview(separator)
+        field.wantsLayer = true
+        field.layer?.cornerRadius = DS.Radius.row
+        field.layer?.cornerCurve = .continuous
+        field.layer?.borderWidth = 1
+        addSubview(field)
 
         contextHost = NSHostingView(rootView: EditorContextBar(session: session, bar: barState, onCopy: { _ in }))
         contextHost.translatesAutoresizingMaskIntoConstraints = true
@@ -179,7 +186,10 @@ final class InputEditorView: NSView, NSTextViewDelegate {
         hintsLabel.font = .systemFont(ofSize: 10.5)
         hintsLabel.textColor = t.background.mixed(with: t.foreground, 0.42).nsColor
         separator.layer?.backgroundColor = t.background.mixed(with: t.foreground, 0.14).nsColor.cgColor
-        layer?.backgroundColor = t.background.mixed(with: t.foreground, t.isDark ? 0.035 : 0.025).nsColor.cgColor
+        // The prompt area shares the terminal's background; the field is raised.
+        layer?.backgroundColor = t.background.nsColor.cgColor
+        field.layer?.backgroundColor = t.background.mixed(with: t.foreground, t.isDark ? 0.045 : 0.03).nsColor.cgColor
+        field.layer?.borderColor = t.background.mixed(with: t.foreground, t.isDark ? 0.12 : 0.1).nsColor.cgColor
         contextHost.rootView = makeContextBar()
         if let fix = barState.fix { fixHost?.rootView = makeFixBar(fix) }
         highlight()
@@ -231,7 +241,7 @@ final class InputEditorView: NSView, NSTextViewDelegate {
         return h
     }
 
-    private var contextHeight: CGFloat { 24 }
+    private var contextHeight: CGFloat { 26 }
     private static let fixBarHeight: CGFloat = 38
     private static let fixBarGap: CGFloat = 8
     private var fixBarSpace: CGFloat { barState.fix == nil ? 0 : Self.fixBarHeight + Self.fixBarGap }
@@ -240,10 +250,12 @@ final class InputEditorView: NSView, NSTextViewDelegate {
     // `minTextLines` tall so the input reads as a roomy entry field.
     private static let sidePadding: CGFloat = 20
     private static let topPadding: CGFloat = 12
-    private static let contextGap: CGFloat = 6
-    private static let bottomPadding: CGFloat = 14
+    private static let contextGap: CGFloat = 8
+    private static let bottomPadding: CGFloat = 12
     private static let textInset: CGFloat = 4
-    private static let minTextLines: CGFloat = 1.5
+    /// Padding inside the rounded field.
+    private static let fieldPadding: CGFloat = 8
+    private static let minTextLines: CGFloat = 1
 
     /// Height of the text area for `textHeight` of laid-out text.
     private func textAreaHeight(_ textHeight: CGFloat) -> CGFloat {
@@ -258,7 +270,8 @@ final class InputEditorView: NSView, NSTextViewDelegate {
             lm.ensureLayout(for: tc)
             textHeight = max(lineHeight, lm.usedRect(for: tc).height)
         }
-        return Self.topPadding + fixBarSpace + contextHeight + Self.contextGap + textAreaHeight(textHeight) + Self.bottomPadding
+        return Self.topPadding + fixBarSpace + contextHeight + Self.contextGap + textAreaHeight(textHeight)
+            + Self.fieldPadding * 2 + Self.bottomPadding
     }
 
     override func layout() {
@@ -272,20 +285,27 @@ final class InputEditorView: NSView, NSTextViewDelegate {
             top += Self.fixBarHeight + Self.fixBarGap
         }
         contextHost.frame = NSRect(x: pad - 4, y: top - 2, width: w - pad * 2 + 8, height: contextHeight)
-        let textTop = top + contextHeight + Self.contextGap
+        // The rounded input field: ❯, the text and, on the right, key hints.
+        let fieldTop = top + contextHeight + Self.contextGap
+        let fieldFrame = NSRect(x: pad - 4, y: fieldTop, width: w - pad * 2 + 8, height: max(0, bounds.height - fieldTop - Self.bottomPadding))
+        field.frame = fieldFrame
+        let inner = fieldFrame.insetBy(dx: 12, dy: Self.fieldPadding)
         let promptWidth: CGFloat = 18
         promptLabel.sizeToFit()
-        promptLabel.frame = NSRect(x: pad, y: textTop + Self.textInset - 1, width: promptWidth, height: lineHeight + 2)
-        let textHeight = bounds.height - textTop - Self.bottomPadding
-        scrollView.frame = NSRect(x: pad + promptWidth, y: textTop, width: w - pad * 2 - promptWidth, height: max(textHeight, lineHeight))
+        promptLabel.frame = NSRect(x: inner.minX, y: inner.minY + Self.textInset - 1, width: promptWidth, height: lineHeight + 2)
+        var hintsWidth: CGFloat = 0
+        if !hintsLabel.isHidden {
+            hintsLabel.sizeToFit()
+            hintsWidth = min(hintsLabel.frame.width, inner.width * 0.45)
+            let firstLine = lineHeight + Self.textInset * 2
+            hintsLabel.frame = NSRect(x: inner.maxX - hintsWidth, y: inner.minY + (firstLine - 14) / 2, width: hintsWidth, height: 14)
+        }
+        scrollView.frame = NSRect(x: inner.minX + promptWidth, y: inner.minY,
+                                  width: max(40, inner.width - promptWidth - (hintsWidth > 0 ? hintsWidth + 12 : 0)),
+                                  height: max(inner.height, lineHeight))
         textView.minSize = NSSize(width: 0, height: scrollView.contentSize.height)
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.frame.size.width = scrollView.contentSize.width
-        if !hintsLabel.isHidden {
-            hintsLabel.sizeToFit()
-            let hw = hintsLabel.frame.width
-            hintsLabel.frame = NSRect(x: w - pad - hw, y: bounds.height - Self.bottomPadding - 2, width: hw, height: 14)
-        }
     }
 
     func refreshContext() {
@@ -1130,7 +1150,7 @@ struct EditorContextBar: View {
 
     @ViewBuilder
     private func chips(_ palette: EditorPalette) -> some View {
-        PromptChip(color: DS.Status.info) {
+        PromptChip(color: DS.Status.info, compressible: true) {
             Text(session.abbreviatedDirectory).lineLimit(1).truncationMode(.head)
         }
         .onTapGesture {
@@ -1139,7 +1159,7 @@ struct EditorContextBar: View {
         .help("Reveal in Finder")
         let repo = repository
         if let branch = repo?.status.branch ?? session.gitBranch {
-            PromptChip(color: DS.Status.review) {
+            PromptChip(color: DS.Status.review, compressible: true) {
                 BranchGlyph(size: 10)
                 Text(branch).lineLimit(1).truncationMode(.middle)
                 if let repo {
@@ -1220,16 +1240,23 @@ struct EditorContextBar: View {
 struct PromptChip<Content: View>: View {
     /// Tint for text and background; nil is neutral.
     var color: Color?
+    /// Lets the chip shrink (its text truncates) when the row is narrow.
+    /// Other chips keep their size.
+    var compressible = false
     @ViewBuilder var content: Content
 
     var body: some View {
-        HStack(spacing: 4) { content }
+        let chip = HStack(spacing: 4) { content }
             .foregroundStyle(color ?? Color.primary.opacity(0.8))
             .padding(.horizontal, 7)
-            .frame(height: 20)
-            .background(RoundedRectangle(cornerRadius: DS.Radius.pill).fill((color ?? .primary).opacity(color == nil ? 0.07 : 0.13)))
+            .frame(height: 22)
+            .background(RoundedRectangle(cornerRadius: DS.Radius.control).fill((color ?? .primary).opacity(color == nil ? 0.08 : 0.13)))
             .contentShape(Rectangle())
-            .fixedSize()
+        if compressible {
+            chip.layoutPriority(-1)
+        } else {
+            chip.fixedSize()
+        }
     }
 }
 

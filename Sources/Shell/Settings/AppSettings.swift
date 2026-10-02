@@ -257,7 +257,7 @@ struct AppSettings: Codable, Equatable {
     var editorFontSize = 0.0 // 0 = same as terminal
 
     // Tabs & windows
-    var tabBarStyle: TabBarStyle = .horizontal
+    var tabBarStyle: TabBarStyle = .vertical
     var sidebarWidth = 240.0
     var newTabPlacement: NewTabPlacement = .afterCurrent
 
