@@ -614,12 +614,14 @@ struct GitHubToolbarTitle: View {
             Text("Pull Requests").font(.system(size: DS.Size.title, weight: .semibold)).lineLimit(1)
             Group {
                 if let model {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 6) {
                         repository(model)
-                        Text("· \(model.pullRequests.count) open")
+                        Text("·").foregroundStyle(.tertiary)
+                        Text("\(model.pullRequests.count) open")
                         if let updated = model.lastUpdated {
+                            Text("·").foregroundStyle(.tertiary)
                             TimelineView(.periodic(from: .now, by: 15)) { _ in
-                                Text("· updated \(ActionsView.ago(updated))")
+                                Text("updated \(ActionsView.ago(updated))")
                             }
                             .help("Refreshes every 2 minutes while this tab is showing")
                         }
@@ -639,16 +641,16 @@ struct GitHubToolbarTitle: View {
     @ViewBuilder private func repository(_ model: GitHubBoardModel) -> some View {
         let others = controller.githubRepositories.filter { $0.root != model.repoRoot }
         if others.isEmpty {
-            Text(model.remote.slug)
+            Text(model.remote.slug).foregroundStyle(.primary)
         } else {
             Menu {
                 ForEach(others, id: \.root) { repo in
                     Button(repo.remote.slug) { controller.showGitHub(repoRoot: repo.root, remote: repo.remote) }
                 }
             } label: {
-                HStack(spacing: 3) {
-                    Text(model.remote.slug)
-                    Image(systemName: "chevron.down").font(.system(size: 7, weight: .bold))
+                HStack(spacing: 6) {
+                    Text(model.remote.slug).foregroundStyle(.primary)
+                    Image(systemName: "arrowtriangle.down.fill").font(.system(size: 6))
                 }
                 .font(.system(size: DS.Size.subtitle))
             }
@@ -666,12 +668,10 @@ struct GitHubToolbarControls: View {
 
     var body: some View {
         let counts = model.layout.counts
-        HStack(spacing: 8) {
-            SegmentedTabs(items: PullRequestBoard.Filter.allCases.map { .init(id: $0, title: $0.title, count: counts.count($0)) },
-                          selection: $model.filter)
-                .fixedSize()
+        HStack(spacing: 12) {
+            filterSegments(counts)
                 .help("For you: assigned to you or waiting on your review. Mine: opened by you. Stacks come along whole.")
-            HStack(spacing: 5) {
+            HStack(spacing: 7) {
                 Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(.secondary)
                 TextField("Title, branch, author, label", text: $model.searchText)
                     .textFieldStyle(.plain)
@@ -683,23 +683,52 @@ struct GitHubToolbarControls: View {
                         .help("Clear the search")
                 }
             }
-            .padding(.horizontal, 8)
-            .frame(minWidth: 120, idealWidth: 230, maxWidth: 240, minHeight: 26, maxHeight: 26)
-            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.row))
-            .overlay(RoundedRectangle(cornerRadius: DS.Radius.row).strokeBorder(Color.primary.opacity(0.09), lineWidth: 0.5))
-            ToolbarCapsule {
-                ToolbarIconButton(symbol: "arrow.clockwise", help: "Refresh (⌘R)") { model.refresh() }
-                    .keyboardShortcut("r", modifiers: .command)
-            }
+            .padding(.horizontal, 9)
+            .frame(minWidth: 120, idealWidth: 220, maxWidth: 220, minHeight: 28, maxHeight: 28)
+            .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: DS.Radius.row))
+            ToolbarIconButton(symbol: "arrow.clockwise", help: "Refresh (⌘R)") { model.refresh() }
+                .keyboardShortcut("r", modifiers: .command)
             Button { NSWorkspace.shared.open(model.remote.url.appendingPathComponent("pulls")) } label: {
                 HStack(spacing: 4) {
                     Text("Open on GitHub")
-                    Image(systemName: "arrow.up.right").font(.system(size: 9, weight: .bold))
+                    Image(systemName: "arrow.up.right").font(.system(size: 9, weight: .semibold))
                 }
+                .font(.system(size: DS.Size.body))
+                .padding(.horizontal, 11)
+                .frame(height: 28)
+                .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.Radius.row))
+                .contentShape(RoundedRectangle(cornerRadius: DS.Radius.row))
             }
-            .buttonStyle(.labeled(.neutral))
+            .buttonStyle(.plain)
             .fixedSize()
             .help("Open \(model.remote.slug)'s pull requests on github.com")
         }
+    }
+
+    /// For you 6 | Mine 3 | All 14: each segment as wide as its label.
+    private func filterSegments(_ counts: PullRequestBoard.Counts) -> some View {
+        HStack(spacing: 0) {
+            ForEach(PullRequestBoard.Filter.allCases) { filter in
+                let selected = model.filter == filter
+                Button { model.filter = filter } label: {
+                    HStack(spacing: 5) {
+                        Text(filter.title).foregroundStyle(selected ? Color.primary : Color.primary.opacity(0.8))
+                        Text("\(counts.count(filter))").monospacedDigit().foregroundStyle(selected ? .secondary : .tertiary)
+                    }
+                    .font(.system(size: 12))
+                    .lineLimit(1)
+                    .padding(.horizontal, 11)
+                    .frame(height: 22)
+                    .background(selected ? Color.primary.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.control))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+            }
+        }
+        .padding(2)
+        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.row))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.row).strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
+        .fixedSize()
     }
 }
