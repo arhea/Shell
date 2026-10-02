@@ -13,9 +13,15 @@ struct DiffView: View {
     var split: Bool?
     /// Draws its own background and border; off inside a card that has them.
     var framed = true
+    /// The file's language (its extension) for syntax colors; nil leaves the code plain.
+    var language: String?
 
-    /// Below this width side by side becomes unified.
-    static let sideBySideMinWidth: CGFloat = 640
+    /// Below this width side by side becomes unified: each side needs room
+    /// for a line of code next to its gutter.
+    static let sideBySideMinWidth: CGFloat = 800
+    /// A line-number column, and the `+`/`−` column after them.
+    static let gutterWidth: CGFloat = 38
+    static let signWidth: CGFloat = 20
     @State private var width: CGFloat = 0
 
     var body: some View {
@@ -25,9 +31,9 @@ struct DiffView: View {
         let split = canSplit && (self.split ?? (style == .sideBySide || (style == .automatic && width >= Self.sideBySideMinWidth)))
         VStack(alignment: .leading, spacing: 0) {
             if split {
-                SideBySideDiff(rows: shownRows, palette: palette, font: font)
+                SideBySideDiff(rows: shownRows, palette: palette, font: font, language: language)
             } else {
-                UnifiedDiff(lines: shownLines, palette: palette, font: font, minWidth: width)
+                UnifiedDiff(lines: shownLines, palette: palette, font: font, minWidth: width, language: language)
             }
             if let limit = collapsedLimit, lines.count > limit {
                 Text("… \(lines.count - limit) more lines").font(.system(size: 10)).foregroundStyle(palette.dim).padding(6)
@@ -57,6 +63,7 @@ private struct UnifiedDiff: View {
     let font: Font
     /// Rows stretch to at least the pane's width so their colors reach the edge.
     var minWidth: CGFloat = 0
+    var language: String?
 
     var body: some View {
         let rows = ClaudeDiff.rows(lines)
@@ -70,17 +77,18 @@ private struct UnifiedDiff: View {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                     if line.kind == .gap {
-                        DiffGapRow(text: line.text, palette: palette, font: font)
+                        DiffGapRow(text: line.text, palette: palette, font: font, indent: DiffView.gutterWidth * 2)
+                            .frame(minWidth: minWidth, alignment: .leading)
                     } else {
                         HStack(spacing: 0) {
                             DiffGutter(number: line.oldNumber, palette: palette, font: font)
                             DiffGutter(number: line.newNumber, palette: palette, font: font)
-                            Text(line.kind == .added ? "+" : line.kind == .removed ? "−" : " ")
-                                .foregroundStyle(line.kind == .added ? palette.green : palette.red)
-                                .frame(width: 14)
-                            DiffText(line: line, change: changes[line], palette: palette, font: font)
+                            DiffSign(kind: line.kind, palette: palette, font: font)
+                            DiffText(line: line, change: changes[line], palette: palette, font: font, language: language)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        // Inside the horizontal scroll view rows size to their text; the
+                        // minimum width carries their colors to the card's edge.
+                        .frame(minWidth: minWidth, maxWidth: .infinity, minHeight: 20, alignment: .leading)
                         .background(DiffColors.background(line.kind, palette))
                     }
                 }
@@ -96,12 +104,13 @@ private struct SideBySideDiff: View {
     let rows: [ClaudeDiff.Row]
     let palette: ClaudePalette
     let font: Font
+    var language: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 if row.left?.kind == .gap {
-                    DiffGapRow(text: row.left?.text ?? "", palette: palette, font: font)
+                    DiffGapRow(text: row.left?.text ?? "", palette: palette, font: font, indent: DiffView.gutterWidth)
                 } else {
                     HStack(alignment: .top, spacing: 0) {
                         cell(row.left, change: row.leftChange, number: row.left?.oldNumber)
@@ -119,16 +128,14 @@ private struct SideBySideDiff: View {
         HStack(alignment: .top, spacing: 0) {
             DiffGutter(number: number, palette: palette, font: font)
             if let line {
-                Text(line.kind == .added ? "+" : line.kind == .removed ? "−" : " ")
-                    .foregroundStyle(line.kind == .added ? palette.green : palette.red)
-                    .frame(width: 14)
-                DiffText(line: line, change: change, palette: palette, font: font)
+                DiffSign(kind: line.kind, palette: palette, font: font)
+                DiffText(line: line, change: change, palette: palette, font: font, language: language)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 Spacer(minLength: 0)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 20, maxHeight: .infinity, alignment: .topLeading)
         .background(line.map { DiffColors.background($0.kind, palette) } ?? palette.raised.opacity(0.5))
     }
 }
@@ -136,10 +143,24 @@ private struct SideBySideDiff: View {
 private enum DiffColors {
     static func background(_ kind: ClaudeDiff.Line.Kind, _ p: ClaudePalette) -> Color {
         switch kind {
-        case .added: p.green.opacity(0.12)
-        case .removed: p.red.opacity(0.12)
+        case .added: p.green.opacity(0.11)
+        case .removed: p.red.opacity(0.11)
         case .context, .gap: .clear
         }
+    }
+}
+
+/// `+` or `−`, centered in its column.
+private struct DiffSign: View {
+    let kind: ClaudeDiff.Line.Kind
+    let palette: ClaudePalette
+    let font: Font
+
+    var body: some View {
+        Text(kind == .added ? "+" : kind == .removed ? "−" : " ")
+            .font(font)
+            .foregroundStyle(kind == .added ? palette.green : palette.red)
+            .frame(width: DiffView.signWidth)
     }
 }
 
@@ -151,8 +172,8 @@ private struct DiffGutter: View {
     var body: some View {
         Text(number.map(String.init) ?? "")
             .font(font)
-            .foregroundStyle(palette.dim.opacity(0.8))
-            .frame(minWidth: 34, alignment: .trailing)
+            .foregroundStyle(palette.dim.opacity(0.7))
+            .frame(minWidth: DiffView.gutterWidth - 6, alignment: .trailing)
             .padding(.trailing, 6)
     }
 }
@@ -163,6 +184,7 @@ private struct DiffText: View {
     let change: Range<Int>?
     let palette: ClaudePalette
     let font: Font
+    var language: String?
 
     var body: some View {
         Text(attributed)
@@ -173,33 +195,37 @@ private struct DiffText: View {
     }
 
     private var attributed: AttributedString {
-        var s = AttributedString(line.text.isEmpty ? " " : line.text)
+        let text = line.text.isEmpty ? " " : line.text
+        var s = language.map { CodeHighlighter.attributed(text, language: $0, palette: palette) } ?? AttributedString(text)
         if let change, change.upperBound <= line.text.count {
             let chars = s.characters
             let lower = chars.index(chars.startIndex, offsetBy: change.lowerBound)
             let upper = chars.index(chars.startIndex, offsetBy: change.upperBound)
-            s[lower..<upper].backgroundColor = (line.kind == .added ? palette.green : palette.red).opacity(0.35)
+            s[lower..<upper].backgroundColor = (line.kind == .added ? palette.green : palette.red).opacity(0.3)
         }
         return s
     }
 }
 
+/// "⋯  38 unchanged lines", lined up with the code.
 private struct DiffGapRow: View {
     let text: String
     let palette: ClaudePalette
     let font: Font
+    /// The gutters' width, so the text starts in the code column.
+    var indent: CGFloat = 0
 
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "ellipsis").font(.system(size: 9))
+        HStack(spacing: 0) {
+            Text("⋯").frame(width: DiffView.signWidth)
             if !text.isEmpty { Text(text) }
             Spacer(minLength: 0)
         }
-        .font(.system(size: 10.5))
+        .font(font)
         .foregroundStyle(palette.dim)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 3)
+        .padding(.leading, max(0, indent - 4))
+        .padding(.vertical, 1)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.raised.opacity(0.6))
+        .background(palette.foreground.opacity(0.03))
     }
 }

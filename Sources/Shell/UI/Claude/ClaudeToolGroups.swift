@@ -134,6 +134,13 @@ enum ClaudeTranscript {
                 rows.append(.item(item))
                 continue
             }
+            // A CI failure that lands after a turn finished follows that
+            // turn's summary instead of splitting it from its reply.
+            if item.kind == .checkFailure, !(turnRunning && i >= currentTurnStart) {
+                endTurn()
+                rows.append(.item(item))
+                continue
+            }
             turn.append(item)
             if hasChanges(item) { turnChanged = true }
             if i < foldBefore, folds(item) || intermediate.contains(i) {
@@ -176,7 +183,11 @@ struct ClaudeRowView: View {
         case .tools(let items):
             ToolGroupView(items: items, palette: palette, mentions: mentions, fontSize: fontSize, directory: directory, session: session)
         case .run(let items):
-            ToolRunCard(items: items, palette: palette, fontSize: fontSize, directory: directory, session: session)
+            if EditRunView.applies(to: items) {
+                EditRunView(items: items, palette: palette, fontSize: fontSize, directory: directory, session: session)
+            } else {
+                ToolRunCard(items: items, palette: palette, fontSize: fontSize, directory: directory, session: session)
+            }
         case .summary(let items):
             TurnSummaryCard(items: items, palette: palette, fontSize: fontSize, directory: directory, session: session)
         }

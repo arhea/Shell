@@ -81,23 +81,30 @@ struct DiffStatsText: View {
     }
 }
 
-/// A bordered transcript card: body fill, hairline border, rounded.
+/// A bordered transcript card: body fill, hairline border, rounded. Tool
+/// runs use the card fill; diffs and output sit on the sunken fill under a
+/// card-colored header; events (a summary, a failure) are larger and tinted.
 private struct TranscriptCard: ViewModifier {
     let palette: ClaudePalette
     var tint: Color?
+    var fill: Color?
+    var radius: CGFloat = DS.Radius.card
 
     func body(content: Content) -> some View {
         content
-            .background(tint.map { $0.opacity(0.07) } ?? palette.surface)
-            .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card))
-            .overlay(RoundedRectangle(cornerRadius: DS.Radius.card)
-                .strokeBorder(tint.map { $0.opacity(0.4) } ?? palette.border.opacity(0.8), lineWidth: tint == nil ? 0.5 : 1))
+            .background {
+                if let tint { palette.background.overlay(tint.opacity(0.1)) } else { fill ?? palette.surface }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: radius))
+            .overlay(RoundedRectangle(cornerRadius: radius)
+                .strokeBorder(tint.map { $0.opacity(0.35) } ?? palette.border.opacity(0.8), lineWidth: tint == nil ? 0.5 : 1))
     }
 }
 
 extension View {
-    fileprivate func transcriptCard(_ palette: ClaudePalette, tint: Color? = nil) -> some View {
-        modifier(TranscriptCard(palette: palette, tint: tint))
+    fileprivate func transcriptCard(_ palette: ClaudePalette, tint: Color? = nil, fill: Color? = nil,
+                                    radius: CGFloat = DS.Radius.card) -> some View {
+        modifier(TranscriptCard(palette: palette, tint: tint, fill: fill, radius: radius))
     }
 }
 
@@ -315,6 +322,78 @@ struct ToolRunCard: View {
     }
 }
 
+/// Consecutive edits: the first as its diff card, the rest folded into one
+/// row ("▸ ✓ Edit StreamWriter.swift +9 −2 … Write BrokenPipeTests.swift +64")
+/// that opens to a row per edit.
+struct EditRunView: View {
+    let items: [ClaudeItem]
+    let palette: ClaudePalette
+    let fontSize: CGFloat
+    var directory: String?
+    var session: ClaudeCodeSession?
+    @State private var expanded = false
+
+    /// Whether a run is edits only (no thinking or other tools in between).
+    static func applies(to items: [ClaudeItem]) -> Bool {
+        items.count >= 2 && items.allSatisfy { $0.kind == .tool && ToolRunCard.editTools.contains($0.toolName) }
+    }
+
+    var body: some View {
+        let p = palette
+        let rest = Array(items.dropFirst())
+        VStack(alignment: .leading, spacing: 6) {
+            EditCard(item: items[0], palette: p, fontSize: fontSize, directory: directory, session: session)
+            VStack(spacing: 0) {
+                Button { withAnimation(.easeOut(duration: 0.15)) { expanded.toggle() } } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 8, weight: .bold))
+                            .rotationEffect(.degrees(expanded ? 90 : 0))
+                            .foregroundStyle(p.dim)
+                            .frame(width: 10)
+                        if let first = rest.first {
+                            StepStatusIcon(item: first)
+                            summary(first, p)
+                        }
+                        Spacer(minLength: 6)
+                        ForEach(rest.dropFirst().prefix(2), id: \.id) { item in summary(item, p) }
+                        if rest.count > 3 {
+                            Text("+\(rest.count - 3) more").font(.system(size: fontSize - 2)).foregroundStyle(p.dim).fixedSize()
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(height: 30)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(expanded ? "Fold these edits" : "Show each edit")
+                if expanded {
+                    ForEach(rest, id: \.id) { item in
+                        p.border.opacity(0.5).frame(height: 0.5)
+                        ToolStepRow(item: item, palette: p, fontSize: fontSize, directory: directory, session: session, indent: 20)
+                    }
+                }
+            }
+            .transcriptCard(p, radius: DS.Radius.row)
+        }
+    }
+
+    /// "Edit StreamWriter.swift +9 −2"
+    private func summary(_ item: ClaudeItem, _ p: ClaudePalette) -> some View {
+        let path = (item.input["file_path"] ?? item.input["notebook_path"]) as? String ?? ""
+        return HStack(spacing: 8) {
+            Text(ClaudeToolFormat.displayName(item.toolName)).font(.system(size: fontSize - 2)).foregroundStyle(p.dim)
+            Text((path as NSString).lastPathComponent)
+                .font(ChatTypography.current.codeFont(size: fontSize - 2))
+                .foregroundStyle(p.foreground)
+                .lineLimit(1).truncationMode(.middle)
+                .help(path)
+            if let stats = item.diffStats { DiffStatsText(stats: stats, palette: p, size: fontSize - 2) }
+        }
+        .layoutPriority(1)
+    }
+}
+
 /// One step of a run: status, tool, argument (folder dimmed), meta; click to
 /// expand its diff, output or result. File steps offer "Open ↗" on hover.
 struct ToolStepRow: View {
@@ -339,6 +418,7 @@ struct ToolStepRow: View {
                             .foregroundStyle(item.toolName.hasPrefix("mcp__") ? p.cyan : p.dim)
                             .lineLimit(1)
                             .fixedSize()
+                            .frame(minWidth: 46, alignment: .leading)
                         Text(argument)
                             .font(ChatTypography.current.codeFont(size: fontSize - 2))
                             .lineLimit(1)
@@ -437,7 +517,8 @@ struct ToolStepRow: View {
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         } else if let diff = ClaudeToolFormat.diff(name: item.toolName, input: item.input) {
-            DiffView(lines: diff, palette: p, fontSize: fontSize - 2)
+            DiffView(lines: diff, palette: p, fontSize: fontSize - 2,
+                     language: filePath.map { ($0 as NSString).pathExtension })
         } else if item.toolName == "Bash" {
             BashOutputBody(item: item, palette: p, fontSize: fontSize, directory: directory, framed: true)
         } else if let result = item.result.map(ClaudeToolFormat.visibleResult), !result.isEmpty {
@@ -527,11 +608,11 @@ struct EditCard: View {
             }
             .padding(.leading, 12).padding(.trailing, 8)
             .frame(minHeight: 38)
-            .background(p.raised)
+            .background(p.surface)
             if let diff {
                 p.border.opacity(0.6).frame(height: 0.5)
                 DiffView(lines: diff, palette: p, fontSize: fontSize - 2, collapsedLimit: showAll ? nil : limit,
-                         split: isSplit, framed: false)
+                         split: isSplit, framed: false, language: filePath.map { ($0 as NSString).pathExtension })
                 if diff.count > limit {
                     HStack {
                         CardTextButton(title: showAll ? "Show less" : "Show all \(diff.count) lines", palette: p, color: p.blue) {
@@ -552,7 +633,7 @@ struct EditCard: View {
             }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-        .transcriptCard(p)
+        .transcriptCard(p, fill: p.sunken)
     }
 
     private var filePath: String? { (item.input["file_path"] ?? item.input["notebook_path"]) as? String }
@@ -628,13 +709,13 @@ struct BashCard: View {
             }
             .padding(.horizontal, 12)
             .frame(minHeight: 36)
-            .background(p.raised)
+            .background(p.surface)
             if !(item.result.map(ClaudeToolFormat.visibleResult) ?? "").isEmpty {
                 p.border.opacity(0.6).frame(height: 0.5)
                 BashOutputBody(item: item, palette: p, fontSize: fontSize, directory: directory, framed: false)
             }
         }
-        .transcriptCard(p)
+        .transcriptCard(p, fill: p.sunken)
     }
 
     @ViewBuilder
@@ -720,11 +801,17 @@ struct BashOutputBody: View {
     }
 
     private func color(_ line: Substring, _ p: ClaudePalette) -> Color {
-        if line.contains("SUCCEEDED") || line.hasPrefix("ok ") || line.contains(" passed") && !line.contains("failed") {
-            return p.green
-        }
+        if Self.isSuccessLine(line) { return p.green }
         if ClaudeOutput.isErrorLine(line) { return p.red }
         return p.foreground.opacity(item.isError ? 0.85 : 0.72)
+    }
+
+    /// A run's success summary ("** TEST SUCCEEDED **", "ok  pkg 0.2s",
+    /// "== 12 passed in 0.4s =="), not every line that mentions "passed".
+    static func isSuccessLine(_ line: Substring) -> Bool {
+        if line.contains("SUCCEEDED") || line.hasPrefix("ok ") || line.hasPrefix("PASS") { return true }
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        return trimmed.hasPrefix("=") && trimmed.contains(" passed") && !trimmed.contains("failed")
     }
 }
 
@@ -768,8 +855,8 @@ struct ToolGroupView: View {
                 }
                 .padding(.horizontal, 12)
                 .frame(minHeight: 32)
-                .background(p.raised.opacity(0.7), in: RoundedRectangle(cornerRadius: DS.Radius.row))
-                .overlay(RoundedRectangle(cornerRadius: DS.Radius.row).strokeBorder(p.border.opacity(0.7), lineWidth: 0.5))
+                .background(p.surface, in: RoundedRectangle(cornerRadius: DS.Radius.row))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.row).strokeBorder(p.border.opacity(0.8), lineWidth: 0.5))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -835,7 +922,7 @@ struct TurnSummaryCard: View {
                     .foregroundStyle(Color.black.opacity(0.8))
                     .frame(width: 20, height: 20)
                     .background(DS.Status.done, in: Circle())
-                Text(Self.title(work)).font(.system(size: fontSize, weight: .semibold))
+                Text(Self.title(work)).font(.system(size: fontSize + 1, weight: .semibold))
                 Spacer(minLength: 8)
                 let meta = [(user?.turnDuration ?? work.duration).map(ClaudeFormat.duration),
                             user?.turnCost.map { String(format: "$%.2f", $0) }].compactMap { $0 }
@@ -853,8 +940,7 @@ struct TurnSummaryCard: View {
                 }
             }
             .font(.system(size: fontSize - 1))
-            .padding(.leading, 46).padding(.trailing, 16).padding(.bottom, 14)
-            p.border.opacity(0.6).frame(height: 0.5)
+            .padding(.leading, 46).padding(.trailing, 16).padding(.top, 4).padding(.bottom, 14)
             HStack(spacing: 8) {
                 Button("Review changes") { session?.requestReviewChanges() }
                     .buttonStyle(.labeled(.neutral))
@@ -863,17 +949,19 @@ struct TurnSummaryCard: View {
                         .buttonStyle(.labeled(.neutral))
                 }
                 Spacer()
-                Button(copied ? "Copied" : "Copy summary") {
+                Button {
                     ClaudeClipboard.copy(Self.plainText(work, rows: rows))
                     copied = true
+                } label: {
+                    Text(copied ? "Copied" : "Copy summary").foregroundStyle(p.dim)
                 }
                 .buttonStyle(.labeled(.plain))
-                .foregroundStyle(p.dim)
             }
             .padding(.horizontal, 16).padding(.vertical, 10)
-            .background(p.raised.opacity(0.6))
+            .background(p.surface)
+            .overlay(alignment: .top) { p.border.opacity(0.6).frame(height: 0.5) }
         }
-        .transcriptCard(p)
+        .transcriptCard(p, fill: p.raised.opacity(0.75), radius: DS.Radius.panel)
     }
 
     struct Row {
@@ -975,18 +1063,18 @@ struct CheckFailureCard: View {
                 }
                 .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 6)
                 if let line = Self.failureLine(failure) {
-                    Text(line)
+                    Text(Self.failureLineText(line, step: failure.failedStep, palette: p, fontSize: fontSize))
                         .font(.system(size: fontSize - 1.5)).foregroundStyle(p.foreground.opacity(0.75))
-                        .padding(.leading, 42).padding(.trailing, 14).padding(.bottom, 8)
+                        .padding(.leading, 42).padding(.trailing, 14).padding(.top, 2).padding(.bottom, 8)
                 }
                 let excerpt = ClaudeOutput.logExcerpt(failure.log)
                 if !excerpt.isEmpty {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(excerpt.enumerated()), id: \.offset) { _, line in
                             Text(line.text)
-                                .foregroundStyle(line.isError ? p.red : p.dim)
+                                .foregroundStyle(line.isError ? p.red.mix(with: p.foreground, by: 0.35) : p.dim)
                                 .lineLimit(1).truncationMode(.tail)
-                                .padding(.horizontal, 12).padding(.vertical, 1)
+                                .padding(.horizontal, 12).padding(.vertical, 1.5)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .background(line.isError ? DS.Status.failed.opacity(0.14) : .clear)
                                 .help(line.text)
@@ -995,20 +1083,34 @@ struct CheckFailureCard: View {
                     .font(ChatTypography.current.codeFont(size: fontSize - 2))
                     .textSelection(.enabled)
                     .padding(.vertical, 8)
-                    .background(p.background.opacity(0.7), in: RoundedRectangle(cornerRadius: DS.Radius.row))
+                    .background(Color.black.opacity(p.isDark ? 0.3 : 0.05), in: RoundedRectangle(cornerRadius: DS.Radius.row))
                     .padding(.horizontal, 14)
                 }
                 HStack(spacing: 6) {
-                    Button {
-                        session?.fixCheckFailure(job, log: failure.log)
-                    } label: {
+                    if item.checkFixRequested {
+                        // The same state the inspector's Checks card shows.
                         HStack(spacing: 6) {
-                            ClaudeMark(size: 11, color: .white)
-                            Text(item.checkFixRequested ? "Claude is fixing" : "Fix with Claude")
+                            SpinnerRing(color: DS.claude, size: 10)
+                            Text("Claude is fixing")
                         }
+                        .font(.system(size: DS.Size.body, weight: .medium))
+                        .foregroundStyle(DS.claude)
+                        .padding(.horizontal, 10)
+                        .frame(minHeight: 26)
+                        .background(DS.claude.opacity(0.18), in: RoundedRectangle(cornerRadius: DS.Radius.control))
+                        .accessibilityElement(children: .combine)
+                    } else {
+                        Button {
+                            session?.fixCheckFailure(job, log: failure.log)
+                        } label: {
+                            HStack(spacing: 6) {
+                                ClaudeMark(size: 11, color: .white)
+                                Text("Fix with Claude")
+                            }
+                        }
+                        .buttonStyle(.labeled(.primary))
+                        .disabled(session?.canSend != true)
                     }
-                    .buttonStyle(.labeled(.primary))
-                    .disabled(item.checkFixRequested || session?.canSend != true)
                     if let repo = session?.repository {
                         Button("Re-run failed jobs") {
                             Task { await BranchChecksModel.shared(for: repo).rerun(job) }
@@ -1026,7 +1128,7 @@ struct CheckFailureCard: View {
                 }
                 .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 12)
             }
-            .transcriptCard(p, tint: DS.Status.failed)
+            .transcriptCard(p, tint: DS.Status.failed, radius: DS.Radius.panel)
         }
     }
 
@@ -1034,6 +1136,18 @@ struct CheckFailureCard: View {
     static func subtitle(_ f: ClaudeCheckFailure) -> String {
         [f.workflowName.map { $0 + " workflow" }, f.headSHA, f.job.duration.map(ClaudeFormat.duration)]
             .compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// The failure line with the step name in the code font.
+    @MainActor
+    static func failureLineText(_ line: String, step: String?, palette: ClaudePalette, fontSize: CGFloat) -> AttributedString {
+        var text = AttributedString(line)
+        if let step, let range = text.range(of: "step " + step) {
+            let name = text.index(range.lowerBound, offsetByCharacters: 5)..<range.upperBound
+            text[name].font = ChatTypography.current.codeFont(size: fontSize - 2)
+            text[name].foregroundColor = palette.foreground
+        }
+        return text
     }
 
     /// "Failed at step Run tests · 1 of 211 tests failed"
@@ -1080,7 +1194,12 @@ struct ClaudeActivityLine: View {
                 }
                 .layoutPriority(-1)
                 Spacer(minLength: 6)
-                KeyHint("esc", boxed: true)
+                Text("esc")
+                    .font(.system(size: 11))
+                    .foregroundStyle(p.foreground.opacity(0.8))
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(p.foreground.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
+                    .fixedSize()
                 Text("to interrupt").font(.system(size: 12)).foregroundStyle(p.dim).fixedSize()
             }
             .font(.system(size: 12.5))

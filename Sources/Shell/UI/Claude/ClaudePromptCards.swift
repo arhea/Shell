@@ -10,9 +10,12 @@ private struct PromptCardChrome: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .background(RoundedRectangle(cornerRadius: 12).fill(palette.surface))
-            .background(RoundedRectangle(cornerRadius: 12).fill(DS.Status.needsYou.opacity(0.06)))
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DS.Status.needsYou.opacity(0.4), lineWidth: 1))
+            // The tint sits over the background (it used to sit behind an opaque fill and never showed).
+            .background {
+                RoundedRectangle(cornerRadius: 12).fill(palette.background)
+                    .overlay(RoundedRectangle(cornerRadius: 12).fill(DS.Status.needsYou.opacity(palette.isDark ? 0.08 : 0.1)))
+            }
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DS.Status.needsYou.opacity(0.35), lineWidth: 1))
     }
 }
 
@@ -215,7 +218,7 @@ struct PermissionCard: View {
                 }
                 .frame(maxHeight: 160)
                 .fixedSize(horizontal: false, vertical: true)
-                .background(RoundedRectangle(cornerRadius: DS.Radius.row).fill(p.background.opacity(0.7)))
+                .background(RoundedRectangle(cornerRadius: DS.Radius.row).fill(Color.black.opacity(p.isDark ? 0.28 : 0.05)))
             }
         }
     }
@@ -426,7 +429,7 @@ struct PlanCard: View {
             }
             .frame(maxHeight: 320)
             .fixedSize(horizontal: false, vertical: true)
-            .background(RoundedRectangle(cornerRadius: DS.Radius.row).fill(p.background.opacity(0.7)))
+            .background(RoundedRectangle(cornerRadius: DS.Radius.row).fill(Color.black.opacity(p.isDark ? 0.28 : 0.05)))
             .padding(.horizontal, 14)
             VStack(spacing: 4) {
                 PromptChoiceRow(number: 1, title: Text("Yes, and auto-accept edits"), trailing: "⏎", selected: true, palette: p, fontSize: size) {

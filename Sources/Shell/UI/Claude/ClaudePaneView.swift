@@ -125,10 +125,10 @@ struct ClaudePaneView: View {
                     LoginGate(login: login, palette: p, onClose: onClose)
                 }
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 14)
             // A comfortable reading measure on wide windows (Settings › Chat Text).
             .frame(maxWidth: readingWidth ?? .infinity, alignment: .leading)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 14)
             .frame(maxWidth: .infinity)
         }
         .defaultScrollAnchor(.bottom)
@@ -264,7 +264,8 @@ struct ClaudePaneView: View {
             .buttonStyle(ComposerToolButtonStyle(palette: p))
             .help("Run a skill or slash command (/)")
             Spacer(minLength: 4)
-            if claude.isRunning {
+            // While a prompt waits, typing answers it, so the button sends.
+            if claude.isRunning && claude.pending.isEmpty {
                 Button { claude.interrupt() } label: {
                     RoundedRectangle(cornerRadius: 2).fill(p.background).frame(width: 9, height: 9)
                         .frame(width: 28, height: 28)
@@ -298,8 +299,8 @@ struct ClaudePaneView: View {
         switch claude.permissionMode {
         case .acceptEdits: p.magenta.opacity(0.6)
         case .plan: p.cyan.opacity(0.6)
-        case .auto: p.yellow.opacity(0.6)
         case .bypassPermissions: p.red.opacity(0.7)
+        // Auto mode is the everyday mode; the toolbar names it.
         default: p.border
         }
     }
@@ -802,7 +803,7 @@ struct UserMessageView: View {
                     .fixedSize(horizontal: true, vertical: false)
             }
             if !item.text.isEmpty {
-                MarkdownView(text: item.text, palette: p, mentions: mentions, fontSize: fontSize, directory: directory)
+                MarkdownView(text: item.text, palette: p, mentions: mentions, fontSize: fontSize, directory: directory, fills: false)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
@@ -940,43 +941,27 @@ struct TodoListView: View {
         let p = palette
         let todos = item.summary.isEmpty ? [] : ClaudeToolFormat.todos(item.input)
         let done = todos.filter { $0.status == .completed }.count
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 7) {
-                Image(systemName: "checklist").foregroundStyle(p.dim).frame(width: 14)
-                Text("Todos").font(.system(size: fontSize - 1, weight: .semibold))
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: "checklist").font(.system(size: fontSize - 2)).foregroundStyle(p.dim).frame(width: 14)
+                Text("To-dos").font(.system(size: fontSize - 1.5, weight: .semibold))
                 if !todos.isEmpty {
-                    Text("\(done) of \(todos.count) done").font(.system(size: fontSize - 1.5)).foregroundStyle(p.dim)
+                    Text("\(done) of \(todos.count)").font(.system(size: fontSize - 2)).foregroundStyle(p.dim)
                 }
             }
             ForEach(Array(todos.enumerated()), id: \.offset) { _, todo in
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Image(systemName: symbol(todo.status)).foregroundStyle(color(todo.status, p)).font(.system(size: fontSize - 2))
-                    Text(todo.status == .inProgress && !todo.activeForm.isEmpty ? todo.activeForm : todo.content)
-                        .font(.system(size: fontSize - 1, weight: todo.status == .inProgress ? .semibold : .regular))
+                HStack(alignment: .firstTextBaseline, spacing: 9) {
+                    TodoStateMark(state: InspectorTodo.State(todo.status), size: 14)
+                        .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 3 }
+                    Text(todo.content)
+                        .font(.system(size: fontSize - 1.5, weight: todo.status == .inProgress ? .medium : .regular))
                         .strikethrough(todo.status == .completed, color: p.dim)
-                        .foregroundStyle(todo.status == .completed ? p.dim : p.foreground)
+                        .foregroundStyle(todo.status == .completed ? p.dim : todo.status == .pending ? p.foreground.opacity(0.8) : p.foreground)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.leading, 21)
             }
         }
         .padding(.vertical, 2)
-    }
-
-    private func symbol(_ s: ClaudeToolFormat.Todo.Status) -> String {
-        switch s {
-        case .completed: "checkmark.square.fill"
-        case .inProgress: "arrow.right.square.fill"
-        case .pending: "square"
-        }
-    }
-
-    private func color(_ s: ClaudeToolFormat.Todo.Status, _ p: ClaudePalette) -> Color {
-        switch s {
-        case .completed: p.green
-        case .inProgress: p.claude
-        case .pending: p.dim
-        }
     }
 }
 
