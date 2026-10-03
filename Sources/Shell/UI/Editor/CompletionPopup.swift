@@ -262,8 +262,13 @@ struct CompletionPreview: View {
                 let subtitle = "\(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)) · modified \(modified)"
                 var lines: [String] = []
                 var thumbnail: String?
-                if size < 2_000_000, let h = FileHandle(forReadingAtPath: path) {
-                    let data = h.readData(ofLength: 4096)
+                // Only regular files: opening a FIFO blocks this thread until
+                // something writes to it, and devices can block or never end.
+                let isRegular = (try? URL(fileURLWithPath: path).resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true
+                if !isRegular {
+                    // Name, size and date only.
+                } else if size < 2_000_000, let h = FileHandle(forReadingAtPath: path) {
+                    let data = (try? h.read(upToCount: 4096)) ?? Data()
                     try? h.close()
                     if !data.contains(0), let s = String(data: data, encoding: .utf8) {
                         lines = s.components(separatedBy: "\n").prefix(14).map { String($0.prefix(80)) }
@@ -279,7 +284,7 @@ struct CompletionPreview: View {
         case .command:
             let path = CommandIndex.shared.path(for: item.display)
             return PreviewContent(title: item.display, subtitle: desc ?? path ?? item.tag.replacingOccurrences(of: "-", with: " "),
-                                  lines: desc != nil && path != nil ? [path!] : [])
+                                  lines: desc != nil ? path.map { [$0] } ?? [] : [])
         default:
             return PreviewContent(title: item.display, subtitle: desc ?? item.tag.replacingOccurrences(of: "-", with: " "), lines: [])
         }

@@ -103,6 +103,8 @@ struct TerminalTheme: Identifiable, Hashable {
 
     // MARK: Built-in themes
 
+    // Constant hex literals; ThemeTests loads both themes.
+    // swiftlint:disable force_unwrapping
     static let shellDark = TerminalTheme(
         name: "Shell Dark",
         background: RGB(hex: "#15171c")!, foreground: RGB(hex: "#e4e6eb")!,
@@ -120,6 +122,7 @@ struct TerminalTheme: Identifiable, Hashable {
         palette: ["#24292f", "#cf222e", "#116329", "#9a6700", "#0969da", "#8250df", "#1b7c83", "#6e7781",
                   "#57606a", "#a40e26", "#1a7f37", "#7d4e00", "#218bff", "#a475f9", "#3192aa", "#8c959f"]
             .map { RGB(hex: $0)! })
+    // swiftlint:enable force_unwrapping
 
     static let builtIn: [TerminalTheme] = [shellDark, shellLight]
 }

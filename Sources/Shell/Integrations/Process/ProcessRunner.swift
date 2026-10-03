@@ -67,9 +67,12 @@ enum ProcessRunner {
                     cont.resume(returning: Result(status: -1, stdout: Data(), stderr: error.localizedDescription))
                     return
                 }
-                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
-                    if p.isRunning {
-                        state.markTimedOut()
+                // Weak: holding the process and its state until the deadline
+                // would keep its pipes (two file descriptors) and all of its
+                // output alive long after it exits.
+                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) { [weak p, weak state] in
+                    if let p, p.isRunning {
+                        state?.markTimedOut()
                         stop(p)
                     }
                 }
@@ -92,7 +95,7 @@ enum ProcessRunner {
         guard p.isRunning else { return }
         p.terminate()
         let pid = p.processIdentifier
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 3) {
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + AppEnvironment.wait(3)) {
             if p.isRunning { kill(pid, SIGKILL) }
         }
     }

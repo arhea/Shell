@@ -32,8 +32,8 @@ private final class ComposerHarness {
         let field = ClaudeComposerField(claude: claude, model: model, palette: ClaudeViewFixtures.palette, fontSize: 13,
                                         onExit: { exitHandler() }, onFocus: { focusHandler() })
         window = test.claudeWindow(field, width: 600, height: 120)
-        exitHandler = { [unowned self] in exits += 1 }
-        focusHandler = { [unowned self] in focuses += 1 }
+        exitHandler = { [weak self] in self?.exits += 1 }
+        focusHandler = { [weak self] in self?.focuses += 1 }
     }
 
     /// Replaces the text and puts the cursor at the end, as typing would.

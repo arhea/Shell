@@ -228,7 +228,7 @@ struct WorktreesView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(model.busy.count > 0)
+        .disabled(!model.busy.isEmpty)
         .help("Remove worktrees whose pull request has merged and that have no uncommitted changes")
     }
 
@@ -260,7 +260,7 @@ struct WorktreesView: View {
             .help("Change the threshold and schedule automatic cleanup in Settings › Worktrees")
             Button { confirmCleanup = true } label: { Text("Review & Remove…").frame(maxWidth: .infinity) }
                 .buttonStyle(CheckCardButtonStyle())
-                .disabled(model.busy.count > 0)
+                .disabled(!model.busy.isEmpty)
         }
         .padding(.horizontal, 12).padding(.vertical, 11)
         .frame(maxWidth: .infinity, alignment: .leading)

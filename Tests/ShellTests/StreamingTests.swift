@@ -44,7 +44,7 @@ final class StreamingTests: XCTestCase {
             seen += batch.objects.compactMap { $0["n"] as? String }
             if seen.count == 3 { delivered.fulfill() }
         }
-        let payload = Data(#"{"n":"a"}"# .utf8) + Data([0x0A]) + Data(#"{"n":"b"}"#.utf8) + Data([0x0A]) + Data(#"{"n":"c"}"#.utf8) + Data([0x0A])
+        let payload = Data(#"{"n":"a"}"#.utf8) + Data([0x0A]) + Data(#"{"n":"b"}"#.utf8) + Data([0x0A]) + Data(#"{"n":"c"}"#.utf8) + Data([0x0A])
         // Feed in awkward chunks, including one that splits a line.
         DispatchQueue.global().async {
             decoder.feed(payload.prefix(5))

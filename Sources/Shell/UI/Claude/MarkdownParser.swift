@@ -364,7 +364,7 @@ enum MarkdownBlock: Hashable {
 
     // Regex is immutable once built; it just isn't marked Sendable.
 
-    nonisolated(unsafe) private static let imagePattern = /^!\[([^\]]*)\]\(\s*<?([^\s>)]+)>?(?:\s+"[^"]*")?\s*\)$/
+    private nonisolated(unsafe) static let imagePattern = /^!\[([^\]]*)\]\(\s*<?([^\s>)]+)>?(?:\s+"[^"]*")?\s*\)$/
 
     private static func standaloneImage(_ s: String) -> MarkdownBlock? {
         guard let m = s.wholeMatch(of: imagePattern) else { return nil }
@@ -392,7 +392,7 @@ enum MarkdownBlock: Hashable {
 
     // Regex is immutable once built; it just isn't marked Sendable.
 
-    nonisolated(unsafe) private static let footnoteDefinition = /^ {0,3}\[\^([^\]\s]+)\]:\s?(.*)$/
+    private nonisolated(unsafe) static let footnoteDefinition = /^ {0,3}\[\^([^\]\s]+)\]:\s?(.*)$/
 
     /// Pulls `[^label]: text` definitions (and their indented continuation
     /// lines) out of the flow, skipping fenced code.
@@ -502,7 +502,7 @@ private struct Fence {
         guard run >= 3 else { return nil }
         let info = s.dropFirst(run).trimmingCharacters(in: .whitespaces)
         if c == "`", info.contains("`") { return nil }
-        self.char = c
+        char = c
         length = run
         self.indent = indent
         // "ts title=x" or "{.python}" → the first word. A file name ("bash
@@ -530,7 +530,6 @@ private struct Fence {
         String(line.dropFirst(min(indent, line.prefix { $0 == " " }.count)))
     }
 }
-
 
 /// Parsed markdown, cached. A reply that's still streaming grows on every
 /// token; re-parsing all of it each time is quadratic over the reply. The

@@ -76,6 +76,7 @@ final class InputEditorView: NSView, NSTextViewDelegate {
     private let separator = NSView()
     /// The rounded field the prompt glyph, input and key hints sit in.
     private let field = NSView()
+    // swiftlint:disable:next implicitly_unwrapped_optional - set in init, before any use
     private var contextHost: NSHostingView<EditorContextBar>!
     private var fixHost: NSHostingView<CommandFixBar>?
     private let hintsLabel = NSTextField(labelWithString: "")
@@ -1010,7 +1011,7 @@ final class EditorBarState {
         clearWork?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.flashMessage = nil }
         clearWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + AppEnvironment.wait(1.6), execute: work)
     }
 }
 

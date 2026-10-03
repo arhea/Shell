@@ -18,7 +18,7 @@ enum AppIcon {
         // effectiveAppearance doesn't change when Shell overrides its own
         // appearance, so watch the system setting directly.
         DistributedNotificationCenter.default().addObserver(
-            forName: Notification.Name("AppleInterfaceThemeChangedNotification"), object: nil, queue: .main
+            forName: Notification.Name("AppleInterfaceThemeChangedNotification"), object: nil, queue: .main,
         ) { _ in
             MainActor.assumeIsolated { AppIcon.update() }
         }

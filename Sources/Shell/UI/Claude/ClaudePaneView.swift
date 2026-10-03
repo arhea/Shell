@@ -967,6 +967,6 @@ struct TodoListView: View {
     }
 }
 
-extension Optional where Wrapped == Bool {
+extension Bool? {
     var isTrue: Bool { self == true }
 }

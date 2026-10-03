@@ -28,7 +28,7 @@ struct DiffView: View {
         let style = ChatPreferences.shared.diffStyle
         // A new file has nothing on the left.
         let canSplit = lines.contains { $0.kind == .removed || $0.kind == .context }
-        let split = canSplit && (self.split ?? (style == .sideBySide || (style == .automatic && width >= Self.sideBySideMinWidth)))
+        let split = canSplit && (split ?? (style == .sideBySide || (style == .automatic && width >= Self.sideBySideMinWidth)))
         VStack(alignment: .leading, spacing: 0) {
             if split {
                 SideBySideDiff(rows: shownRows, palette: palette, font: font, language: language)

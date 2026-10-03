@@ -63,10 +63,7 @@ enum ShellIntegration {
     static let completeSequence = "\u{1b}[9002~"
     static let configureSequence = "\u{1b}[9003~"
 
-    private(set) static var runtimeDirectory: URL = {
-        let base = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("app.bethesdalabs.Shell", isDirectory: true)
-        return base
-    }()
+    private(set) static var runtimeDirectory: URL = .init(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("app.bethesdalabs.Shell", isDirectory: true)
 
     static var socketPath: String { runtimeDirectory.appendingPathComponent("ctl-\(getpid()).sock").path }
 

@@ -39,7 +39,7 @@ extension ReviewChangesModel {
 
     /// Runs a staging operation, shows its error, then reloads.
     private func run(_ ref: ReviewHunkRef? = nil, _ op: @escaping @Sendable (GitStaging) async -> String?) {
-        let staging = self.staging
+        let staging = staging
         if let ref { markBusy(ref, true) }
         Task {
             let err = await op(staging)
@@ -65,7 +65,7 @@ extension ReviewChangesModel {
             return
         }
         isCommitting = true
-        let staging = self.staging
+        let staging = staging
         Task {
             var err = await staging.commit(message: message)
             if err == nil {

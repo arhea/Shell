@@ -118,7 +118,7 @@ extension String {
     }
 }
 
-extension Optional where Wrapped == String {
+extension String? {
     func withCString<T>(_ body: (UnsafePointer<CChar>?) throws -> T) rethrows -> T {
         if let value = self {
             return try value.withCString(body)

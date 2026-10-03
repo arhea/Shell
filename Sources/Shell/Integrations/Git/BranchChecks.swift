@@ -72,7 +72,7 @@ struct BranchChecksSnapshot: Equatable, Sendable {
 @MainActor
 @Observable
 final class BranchChecksModel {
-    let repository: GitRepository
+    private(set) var repository: GitRepository
     private(set) var snapshot: BranchChecksSnapshot?
     private(set) var isLoading = false
     private(set) var error: String?
@@ -115,7 +115,16 @@ final class BranchChecksModel {
 
     /// The shared model for a repository (one per worktree root).
     static func shared(for repository: GitRepository) -> BranchChecksModel {
-        if let model = models[repository.root] { return model }
+        if let model = models[repository.root] {
+            // A new instance for the same root means the old one was stopped
+            // (every holder left, then one came back). Rebind, keeping the
+            // watchers and failure observers, so checks follow the live branch.
+            if model.repository !== repository {
+                model.repository = repository
+                if model.users > 0 { model.refresh(force: true) }
+            }
+            return model
+        }
         let model = BranchChecksModel(repository: repository)
         models[repository.root] = model
         return model
@@ -164,8 +173,8 @@ final class BranchChecksModel {
         guard var next = Self.parse(prView: out, branch: branch) else { return }
         // Steps for failing and running Actions jobs (one API call each).
         if let remote = repository.github {
-            for i in next.jobs.indices where next.jobs[i].jobID != nil && (next.jobs[i].state == .failed || next.jobs[i].state == .running) {
-                let id = next.jobs[i].jobID!
+            for i in next.jobs.indices where next.jobs[i].state == .failed || next.jobs[i].state == .running {
+                guard let id = next.jobs[i].jobID else { continue }
                 if let json = await GitRepository.run(gh, ["api", "repos/\(remote.owner)/\(remote.name)/actions/jobs/\(id)"], in: dir, environment: env) {
                     Self.applySteps(json, to: &next.jobs[i])
                 }
@@ -224,7 +233,7 @@ final class BranchChecksModel {
     }
 
     private func afterRerun() async {
-        try? await Task.sleep(for: .seconds(2))
+        try? await Task.sleep(for: AppEnvironment.wait(.seconds(2)))
         rerunning.removeAll()
         refreshedAt = nil
         await load()

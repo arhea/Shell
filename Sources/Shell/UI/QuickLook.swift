@@ -1,6 +1,6 @@
 import AppKit
-import QuickLookThumbnailing
 import Quartz
+import QuickLookThumbnailing
 import SwiftUI
 
 /// The system Quick Look panel for files Shell shows (file explorer, completions).
@@ -21,17 +21,19 @@ final class QuickLookController: NSObject, QLPreviewPanelDataSource, QLPreviewPa
         self.urls = urls
         panel.dataSource = self
         panel.delegate = self
-        panel.reloadData()
+        // Index first: the shared panel may hold another source's index.
         panel.currentPreviewItemIndex = 0
+        panel.reloadData()
         panel.makeKeyAndOrderFront(nil)
     }
 
-    nonisolated func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int {
+    nonisolated func numberOfPreviewItems(in panel: QLPreviewPanel?) -> Int {
         MainActor.assumeIsolated { urls.count }
     }
 
-    nonisolated func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> (any QLPreviewItem)! {
-        MainActor.assumeIsolated { urls[index] as NSURL }
+    nonisolated func previewPanel(_ panel: QLPreviewPanel?, previewItemAt index: Int) -> (any QLPreviewItem)? {
+        let url: NSURL? = MainActor.assumeIsolated { urls.indices.contains(index) ? urls[index] as NSURL : nil }
+        return url
     }
 }
 

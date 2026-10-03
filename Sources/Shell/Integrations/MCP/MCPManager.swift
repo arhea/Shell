@@ -231,8 +231,8 @@ final class MCPManager {
         trusted = isTrusted(directory)
         let c = ClaudeControlClient(binary: binary, directory: trusted ? directory : NSHomeDirectory(), environment: environment)
         c.onExit = { [weak self, weak c] in
-            guard let self, self.client === c else { return }
-            self.initialized = false
+            guard let self, client === c else { return }
+            initialized = false
         }
         try c.start()
         client = c
@@ -256,7 +256,7 @@ final class MCPManager {
             for attempt in 0..<12 {
                 try await refreshStatus()
                 if !servers.contains(where: { $0.status == .pending }) || attempt == 11 { break }
-                try await Task.sleep(for: .seconds(1.5))
+                try await Task.sleep(for: AppEnvironment.wait(.seconds(1.5)))
             }
         } catch {
             if !(error is CancellationError) { lastError = describe(error) }
@@ -321,7 +321,7 @@ final class MCPManager {
                 let callbackExpected = r["callbackExpected"] as? Bool ?? true
                 // Claude Code finishes the OAuth callback itself; watch for the connection.
                 for i in 0..<120 {
-                    try await Task.sleep(for: .seconds(2))
+                    try await Task.sleep(for: AppEnvironment.wait(.seconds(2)))
                     if !callbackExpected, i % 3 == 2 { _ = try? await c.request(["subtype": "mcp_reconnect", "serverName": name], timeout: 30) }
                     try await refreshStatus()
                     if let s = server(name), s.status == .connected || s.status == .failed { break }

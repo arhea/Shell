@@ -4,10 +4,7 @@ import XCTest
 /// Writes an executable `#!/bin/sh` script into `dir`.
 @discardableResult
 private func script(_ dir: URL, _ name: String, _ body: String) throws -> String {
-    let url = dir.appendingPathComponent(name)
-    try ("#!/bin/sh\n" + body + "\n").write(to: url, atomically: true, encoding: .utf8)
-    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
-    return url.path
+    try writeExecutable("#!/bin/sh\n" + body + "\n", to: dir.appendingPathComponent(name))
 }
 
 /// A maintenance job whose behavior each test sets.

@@ -107,16 +107,23 @@ struct GitHubRemote: Equatable {
     var name: String
 
     var slug: String { "\(owner)/\(name)" }
-    var url: URL { URL(string: "https://\(host)/\(owner)/\(name)")! }
+    /// `parse` only returns remotes whose URL builds.
+    // swiftlint:disable:next force_unwrapping - validated in parse(_:)
+    var url: URL { Self.url(host: host, owner: owner, name: name)! }
+
+    private static func url(host: String, owner: String, name: String) -> URL? {
+        URL(string: "https://\(host)/\(owner)/\(name)")
+    }
 
     func branchURL(_ branch: String) -> URL {
         url.appendingPathComponent("tree").appendingPathComponent(branch)
     }
 
     func compareURL(_ branch: String) -> URL {
-        var c = URLComponents(url: url.appendingPathComponent("compare").appendingPathComponent(branch), resolvingAgainstBaseURL: false)!
+        let compare = url.appendingPathComponent("compare").appendingPathComponent(branch)
+        guard var c = URLComponents(url: compare, resolvingAgainstBaseURL: false) else { return compare }
         c.queryItems = [URLQueryItem(name: "expand", value: "1")]
-        return c.url!
+        return c.url ?? compare
     }
 
     /// Parses https, ssh and scp-style remote URLs. Nil for non-GitHub hosts.
@@ -140,7 +147,8 @@ struct GitHubRemote: Equatable {
         if path.hasSuffix(".git") { path.removeLast(4) }
         s = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let parts = s.split(separator: "/").map(String.init)
-        guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
+        guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty,
+              url(host: host, owner: parts[0], name: parts[1]) != nil else { return nil }
         return GitHubRemote(host: host, owner: parts[0], name: parts[1])
     }
 }
@@ -154,9 +162,9 @@ struct PullRequestInfo: Equatable {
     var state: State
     var isDraft: Bool
     /// APPROVED, CHANGES_REQUESTED or REVIEW_REQUIRED.
-    var reviewDecision: String? = nil
+    var reviewDecision: String?
     /// The PR's head commit (full SHA), when known.
-    var headOID: String? = nil
+    var headOID: String?
 }
 
 /// A git repository (or linked worktree) that a native Claude view is working
@@ -260,7 +268,12 @@ final class GitRepository {
             refreshAgain = false
             if let out = await Self.run(git, ["status", "--porcelain=v1", "-z", "-b", "--untracked-files=all", "--ignored=matching"], in: root.path) {
                 let snap = GitStatusSnapshot.parse(out)
-                if snap != status { status = snap }
+                if snap != status {
+                    // Drop the PR as soon as HEAD leaves its branch, not after the
+                    // rest of this refresh, so it never shows against the new HEAD.
+                    if pullRequest != nil, snap.detached || snap.branch != prBranch { pullRequest = nil }
+                    status = snap
+                }
             }
             if status.detached || status.branch == nil {
                 headCommit = await Self.run(git, ["rev-parse", "--short", "HEAD"], in: root.path)?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -326,9 +339,9 @@ final class GitRepository {
 
     private func startWatching() {
         // A 1 s latency coalesces bursts (a build writes thousands of files).
-        watcher = DirectoryWatcher(path: root.path, latency: 1.0) { [weak self] paths in
+        watcher = DirectoryWatcher(path: root.path, latency: AppEnvironment.wait(1.0)) { [weak self] paths in
             guard let self else { return }
-            if paths.contains(where: { self.affectsStatus($0) }) { self.refresh() }
+            if paths.contains(where: { self.affectsStatus($0) }) { refresh() }
         }
     }
 

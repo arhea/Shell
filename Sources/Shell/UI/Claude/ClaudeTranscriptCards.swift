@@ -101,8 +101,8 @@ private struct TranscriptCard: ViewModifier {
     }
 }
 
-extension View {
-    fileprivate func transcriptCard(_ palette: ClaudePalette, tint: Color? = nil, fill: Color? = nil,
+private extension View {
+    func transcriptCard(_ palette: ClaudePalette, tint: Color? = nil, fill: Color? = nil,
                                     radius: CGFloat = DS.Radius.card) -> some View {
         modifier(TranscriptCard(palette: palette, tint: tint, fill: fill, radius: radius))
     }

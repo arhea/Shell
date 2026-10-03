@@ -89,7 +89,7 @@ final class BrewService {
             return
         }
         searchTask = Task {
-            try? await Task.sleep(for: .milliseconds(250))
+            try? await Task.sleep(for: AppEnvironment.wait(.milliseconds(250)))
             if Task.isCancelled { return }
             isSearching = true
             defer { isSearching = false }

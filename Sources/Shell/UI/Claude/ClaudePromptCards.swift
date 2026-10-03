@@ -19,8 +19,8 @@ private struct PromptCardChrome: ViewModifier {
     }
 }
 
-extension View {
-    fileprivate func promptCard(_ palette: ClaudePalette) -> some View { modifier(PromptCardChrome(palette: palette)) }
+private extension View {
+    func promptCard(_ palette: ClaudePalette) -> some View { modifier(PromptCardChrome(palette: palette)) }
 }
 
 /// "!" in a yellow disc, then the card's title.
@@ -228,6 +228,8 @@ struct PermissionCard: View {
 
 /// Claude's AskUserQuestion prompt: pick an option, several for
 /// multi-select questions, or type your own answer under "Other".
+/// Several questions show one at a time, with a step for each, so the card
+/// never grows taller than the pane.
 struct QuestionCard: View {
     let request: ClaudePermissionRequest
     let palette: ClaudePalette
@@ -238,26 +240,75 @@ struct QuestionCard: View {
     @State private var choices: [String: Set<String>] = [:]
     @State private var other: [String: String] = [:]
     @State private var hovered: [String: String] = [:]
+    @State private var page = 0
 
     var body: some View {
         let p = palette
         let questions = request.questions
+        let paged = questions.count > 1
+        let index = min(page, max(questions.count - 1, 0))
+        let last = index == questions.count - 1
         VStack(alignment: .leading, spacing: 14) {
             PromptHeader(title: questions.count == 1 ? "Claude has a question" : "Claude has \(questions.count) questions",
-                         fontSize: fontSize) { EmptyView() }
-            ForEach(questions) { q in question(q) }
+                         fontSize: fontSize) {
+                if paged {
+                    Text("\(index + 1) of \(questions.count)").font(.system(size: 10.5).monospacedDigit()).foregroundStyle(p.dim)
+                }
+            }
+            if paged { steps(questions, current: index) }
+            if questions.indices.contains(index) {
+                question(questions[index]).id(questions[index].id)
+            }
             HStack(spacing: 8) {
-                Button("Submit") { onAnswer(answers(questions)) }
-                    .buttonStyle(.labeled(.primary))
-                    .disabled(!questions.allSatisfy { !answer(for: $0).isEmpty })
+                if paged, index > 0 {
+                    Button("Back") { page = index - 1 }
+                        .buttonStyle(.labeled(.neutral))
+                }
+                if paged, !last {
+                    Button("Next") { page = index + 1 }
+                        .buttonStyle(.labeled(.primary))
+                        .disabled(answer(for: questions[index]).isEmpty)
+                } else {
+                    Button("Submit") { onAnswer(answers(questions)) }
+                        .buttonStyle(.labeled(.primary))
+                        .disabled(!questions.allSatisfy { !answer(for: $0).isEmpty })
+                }
                 Button("Skip") { onDeny() }
                     .buttonStyle(.labeled(.neutral))
                 Spacer()
-                Text(hint(questions)).font(.system(size: 10.5)).foregroundStyle(p.dim)
+                Text(hint(questions, last: last)).font(.system(size: 10.5)).foregroundStyle(p.dim)
             }
         }
         .padding(14)
         .promptCard(p)
+    }
+
+    /// One step per question, named by its header, checked once answered.
+    /// Clicking a step jumps to it.
+    private func steps(_ questions: [ClaudeQuestion], current: Int) -> some View {
+        let p = palette
+        return HStack(spacing: 4) {
+            ForEach(Array(questions.enumerated()), id: \.offset) { i, q in
+                let done = !answer(for: q).isEmpty
+                let on = i == current
+                Button { page = i } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: done ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 10))
+                            .foregroundStyle(done ? DS.Status.selection : p.dim)
+                        Text(q.header.isEmpty ? "Question \(i + 1)" : q.header)
+                            .font(.system(size: 10.5, weight: on ? .semibold : .regular))
+                            .foregroundStyle(on ? p.foreground : p.dim)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(on ? p.foreground.opacity(0.1) : .clear))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(q.question)
+            }
+        }
     }
 
     private func question(_ q: ClaudeQuestion) -> some View {
@@ -364,6 +415,9 @@ struct QuestionCard: View {
             other[q.id] = ""
         }
         choices[q.id] = set
+        // Picking the answer to a single-select question moves on, like Claude Code's TUI.
+        let questions = request.questions
+        if !q.multiSelect, let i = questions.firstIndex(of: q), i == page, i < questions.count - 1 { page = i + 1 }
     }
 
     /// The highlighted option's preview, else the chosen one's, else the first.
@@ -385,8 +439,8 @@ struct QuestionCard: View {
         Dictionary(questions.map { ($0.question, answer(for: $0)) }, uniquingKeysWith: { a, _ in a })
     }
 
-    private func hint(_ questions: [ClaudeQuestion]) -> String {
-        guard questions.count == 1, let q = questions.first else { return "esc skips" }
+    private func hint(_ questions: [ClaudeQuestion], last: Bool) -> String {
+        guard questions.count == 1, let q = questions.first else { return last ? "Submit sends every answer · esc skips" : "esc skips" }
         return q.multiSelect ? "Type an answer and ⏎ · esc skips"
             : "1–\(q.options.count) chooses · type an answer and ⏎ · esc skips"
     }

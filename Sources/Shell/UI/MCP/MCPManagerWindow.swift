@@ -507,7 +507,8 @@ struct MCPServerDetail: View {
         // Prefer the server's own list (it has descriptions), else Claude Code's names.
         let names: [String] = details?.map(\.name) ?? server.tools.map(\.name)
         let shown = names.filter { toolFilter.isEmpty || $0.localizedCaseInsensitiveContains(toolFilter)
-            || (byName[$0]?.description.localizedCaseInsensitiveContains(toolFilter) ?? false) }
+            || (byName[$0]?.description.localizedCaseInsensitiveContains(toolFilter) ?? false)
+        }
         return section("Tools", p, trailing: {
             HStack(spacing: 8) {
                 if !names.isEmpty {

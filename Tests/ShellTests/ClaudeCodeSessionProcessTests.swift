@@ -46,8 +46,7 @@ private struct FakeClaude {
 
     init(dir: URL) throws {
         self.dir = dir
-        try Self.script.write(to: dir.appendingPathComponent("claude"), atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binary)
+        try writeExecutable(Self.script, to: dir.appendingPathComponent("claude"))
     }
 
     func write(_ name: String, _ text: String) throws {

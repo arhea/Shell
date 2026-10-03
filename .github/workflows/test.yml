@@ -35,6 +35,13 @@ jobs:
           xcodebuild -version
           swift --version
 
+      # Pinned SwiftFormat and SwiftLint, checksum-verified (scripts/lint.sh).
+      # Runs before the slow build so a lint error fails in seconds.
+      - name: Lint
+        run: |
+          ./scripts/lint.sh --install "$RUNNER_TEMP/lint-tools"
+          PATH="$RUNNER_TEMP/lint-tools:$PATH" ./scripts/lint.sh
+
       - name: Read pinned Ghostty commit
         id: ghostty
         run: echo "commit=$(sed -n 's/^GHOSTTY_COMMIT="\(.*\)"$/\1/p' scripts/bootstrap.sh)" >> "$GITHUB_OUTPUT"
@@ -86,7 +93,7 @@ jobs:
             CODE_SIGN_STYLE=Manual \
             DEVELOPMENT_TEAM= \
             2>&1 | tee build/xcodebuild-test.log \
-            | grep -E '^/.*(error|warning):|Test Case .* failed|Executed [0-9]+ tests|\*\* (TEST|BUILD) (SUCCEEDED|FAILED) \*\*'
+            | grep -E '^/.*(error|warning):|[Tt]est [Cc]ase .* failed|Executed [0-9]+ tests|\*\* (TEST|BUILD) (SUCCEEDED|FAILED) \*\*'
 
       # Counts and coverage go to the PR comment; failure details, to the job
       # summary and inline annotations.

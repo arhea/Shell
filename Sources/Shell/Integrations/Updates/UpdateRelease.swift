@@ -10,6 +10,8 @@ struct UpdateRelease: Codable, Equatable, Sendable {
     var dmgSize: Int
     var checksumURL: URL
 
+    // GitHub's field names.
+    // swiftlint:disable identifier_name
     private struct GitHubRelease: Decodable {
         struct Asset: Decodable {
             var name: String
@@ -22,6 +24,7 @@ struct UpdateRelease: Codable, Equatable, Sendable {
         var prerelease: Bool
         var assets: [Asset]
     }
+    // swiftlint:enable identifier_name
 
     /// Parses a `GET /repos/{owner}/{repo}/releases/latest` response. Nil for a
     /// draft or pre-release, or when the release is missing the DMG or its

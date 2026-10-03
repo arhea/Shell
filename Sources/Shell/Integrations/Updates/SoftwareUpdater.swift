@@ -79,6 +79,7 @@ final class SoftwareUpdater {
     }
 
     var currentVersion: String { system.currentVersion }
+    // swiftlint:disable:next force_unwrapping - constant URL; the repository is owner/name
     var releasesURL: URL { URL(string: "https://github.com/\(UpdateInstaller.repository)/releases")! }
 
     private var stateURL: URL { system.stateURL ?? SettingsStore.supportDirectory.appendingPathComponent("updates.json") }
@@ -207,9 +208,9 @@ final class SoftwareUpdater {
         let total = Double(max(release.dmgSize, 1))
         let progress = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(250))
+                try? await Task.sleep(for: AppEnvironment.wait(.milliseconds(250)))
                 guard let self, case .downloading = self.phase else { return }
-                self.downloadFraction = min(1, Double(monitor.bytesReceived) / total)
+                downloadFraction = min(1, Double(monitor.bytesReceived) / total)
             }
         }
         defer {

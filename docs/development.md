@@ -19,15 +19,36 @@ xcodebuild -project Shell.xcodeproj -scheme Shell test
 
 Tests run inside Shell (it's the test host), but they never touch your real files: `AppEnvironment.isRunningTests` makes launch skip windows, the terminal engine, the control socket, iCloud sync, the hotkey, scheduled jobs and session restore, and points `SettingsStore.supportDirectory` (settings, the Ghostty config, history, session restore, themes) at a throwaway `$TMPDIR/ShellTests-<pid>` folder. `TestIsolationTests` checks this.
 
+Test classes run in parallel: the scheme marks `ShellTests` parallelizable, so Xcode spreads classes across several clones of the test host (one per core by default), each with its own `ShellTests-<pid>` folder. The suite takes about 35 seconds on an M-series Mac. Add `-parallel-testing-enabled NO` to run serially, for example to read one test's log in order or to time individual tests.
+
 `make coverage` (`scripts/coverage.sh`) runs the suite with coverage and prints line coverage per file, the total (same exclusions as CI) and the pass/fail counts. `FILTER=UI/Claude make coverage` limits the per-file list; extra arguments go to `xcodebuild`, e.g. `./scripts/coverage.sh -only-testing:ShellTests/ThemeTests`.
+
+### Formatting and linting
+
+```bash
+make lint
+```
+
+```bash
+make format
+```
+
+`make lint` (`scripts/lint.sh`) checks formatting with [SwiftFormat](https://github.com/nicklockwood/SwiftFormat) (`.swiftformat`) and runs [SwiftLint](https://github.com/realm/SwiftLint) (`.swiftlint.yml`). `make format` applies the formatting first. Install both with `brew install swiftformat swiftlint`. CI runs the pinned versions in `scripts/lint.sh` and warns locally if yours differ.
+
+- **Errors fail CI.** These are the rules that catch crashes and leaks: `force_unwrapping`, `force_try`, `force_cast`, `implicitly_unwrapped_optional`, `weak_delegate`, `unowned_variable_capture` and `unhandled_throwing_task`. Style rules (line length, complexity, naming) only warn.
+- **Prefer a rewrite to a suppression.** Use `guard let`, `?? fallback`, `first`/`last`, `flatMap`. When a force is provably safe (a constant regex, a hex literal, an IUO set in `init`), suppress just that line and say why: `// swiftlint:disable:next force_try - constant pattern, exercised by LinkDetector tests`.
+- **Tests** (`Tests/.swiftlint.yml`) may force-unwrap and `try!`, because a crash there only fails the test. The leak rules still apply.
+- **Formatting is a light touch.** The config keeps the codebase's compact one-line bodies and its own wrapping, and only normalizes things like `self.`, trailing commas, modifier and import order. Run `make format` before committing so formatting doesn't show up mixed into a review.
 
 ### Writing tests
 
 - **Helpers.** `Tests/ShellTests/Support/TestSupport.swift` has `render(_:size:)` (lays out and draws a SwiftUI or AppKit view so its body runs), `withSettings` (changes settings and restores them), `makeTemporaryDirectory()` and `waitUntil`. `ClaudeViewTestSupport.swift` hosts views in an offscreen key window with `press(_:)` to trigger real SwiftUI button actions. `AppDelegate.shared.newWindowController()` and `newTab(directory:)` work in tests (no terminal engine); close every controller you open.
-- **Stand-in tools.** Never run the real `claude`, `gh`, `brew`, `npm`, `go` or `zsh` completion. Services take an injectable executable, runner or environment; tests write small `#!/bin/sh` stand-ins into a temp folder (see `ClaudeCodeSessionProcessTests`, `MCPTestSupport`, `GitFixtureSupport`). Git runs only on throwaway repos with `GIT_CONFIG_GLOBAL=/dev/null`.
+- **Stand-in tools.** Never run the real `claude`, `gh`, `brew`, `npm`, `go` or `zsh` completion. Services take an injectable executable, runner or environment; tests write small `#!/bin/sh` stand-ins into a temp folder with `writeExecutable(_:to:)` (see `ClaudeCodeSessionProcessTests`, `MCPTestSupport`, `GitFixtureSupport`). Don't write executables directly: macOS scans every new executable on its first run (about 170 ms each). `writeExecutable` hard-links one shared launcher that's scanned once and keeps the script beside it in a hidden `.<name>.body` file. Git runs only on throwaway repos with `GIT_CONFIG_GLOBAL=/dev/null`.
 - **Your real state.** The test host shares Shell's bundle ID, so `UserDefaults.standard` is your real Shell preferences: code that writes defaults uses the `app.bethesdalabs.Shell.tests` suite under tests, and windows skip frame autosave. Files go under `SettingsStore.supportDirectory` or a temp folder, never `~`. Don't name temp folders `ShellTests-*`: launch removes stale ones.
 - **SwiftUI tasks run in tests.** `.task` and `.onAppear` run inside `render`, so a view that scans real files or spawns tools when it appears takes injected data or checks `AppEnvironment.isRunningTests`.
 - **Async tests.** `waitUntil` spins the run loop, which doesn't let main-actor tasks progress inside an `async` test; poll with `try await Task.sleep(for: .milliseconds(10))` there.
+- **Fixed delays.** Wrap a fixed wait in app code (a debounce, a settle delay, a status poll, a kill grace period) in `AppEnvironment.wait(_:)`. It's a 20th as long under tests, so the suite doesn't sit through it. In tests, wait for the condition itself (`waitUntil`, `eventually`), not for a set time; if a test must wait out a delay, use `AppEnvironment.wait(delay)` plus a margin.
+- **No sleeping until something is ready.** Have the stand-in signal readiness (print a line, write a file) and wait for that. A fixed sleep before acting is a flake under a loaded CI runner.
 - **No modals.** `runModal`, `NSAlert`, `NSOpenPanel` and sheets hang the suite.
 - **Unique names.** All test files share one module; keep helpers `private` or prefix them with their area.
 

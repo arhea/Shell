@@ -183,9 +183,14 @@ final class GitRepositoryCoverageTests: GitAreaTestCase {
         let r = try XCTUnwrap(found)
         defer { r.stop() }
         XCTAssertEqual(r.status.changeCount, 0)
-        try await Task.sleep(for: .milliseconds(300)) // let the stream start
-        try repo.write("hello\n", "watched.txt")
-        try await eventually(timeout: 10, "FSEvents refresh") { r.status.changeCount == 1 }
+        // FSEvents only reports writes made after its stream is running, so
+        // rewrite the file every quarter second until one is seen.
+        var polls = 0
+        try await eventually(timeout: 10, "FSEvents refresh") {
+            if polls % 25 == 0 { try? repo.write("hello \(polls)\n", "watched.txt") }
+            polls += 1
+            return r.status.changeCount == 1
+        }
     }
 
     func testLookUpPullRequestHandlesMissingGhAndBadOutput() async throws {

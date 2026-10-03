@@ -218,10 +218,10 @@ final class SettingsSyncFlowTests: XCTestCase {
             XCTAssertEqual(try readRemote().settings["darkTheme"] as? String, "Before Sync")
             // Let the folder watcher see that write first: it can re-apply this Mac's own
             // file (its `modified` stamp is rounded to milliseconds), which would race a
-            // change made within the watcher's one-second latency.
-            RunLoop.main.run(until: Date().addingTimeInterval(1.6))
+            // change made within the watcher's latency (one second, shortened under tests).
+            RunLoop.main.run(until: Date().addingTimeInterval(AppEnvironment.wait(1) + 0.25))
 
-            SettingsStore.shared.settings.darkTheme = "After Sync" // scheduled push, about a second later
+            SettingsStore.shared.settings.darkTheme = "After Sync" // scheduled push, a moment later
             XCTAssertTrue(waitUntil(timeout: 5) {
                 (try? self.readRemote().settings["darkTheme"] as? String) == "After Sync"
             })
@@ -229,7 +229,7 @@ final class SettingsSyncFlowTests: XCTestCase {
             SettingsStore.shared.settings.shellPath = "/bin/not-portable" // not portable: no push
             SettingsStore.shared.settings.iCloudSync = false // deactivates
             SettingsStore.shared.settings.darkTheme = "While Off"
-            RunLoop.main.run(until: Date().addingTimeInterval(1.3))
+            RunLoop.main.run(until: Date().addingTimeInterval(AppEnvironment.wait(1) + 0.25)) // past the push delay
             XCTAssertEqual(try readRemote().settings["darkTheme"] as? String, "After Sync", "nothing is pushed while sync is off")
         }
     }

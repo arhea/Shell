@@ -43,7 +43,7 @@ final class SessionWaiters {
         on sessionID: UUID,
         timeout seconds: TimeInterval,
         register: () throws -> Void = {},
-        match: @escaping (Event) -> T?
+        match: @escaping (Event) -> T?,
     ) async throws -> T {
         let waiter = Waiter()
         let token = waiter.token
@@ -71,6 +71,8 @@ final class SessionWaiters {
                     self?.expire(token, sessionID: sessionID)
                 }
                 do {
+                    // Cancelled before we got here: don't run the action.
+                    try Task.checkCancellation()
                     try register()
                 } catch {
                     remove(token, sessionID: sessionID)
