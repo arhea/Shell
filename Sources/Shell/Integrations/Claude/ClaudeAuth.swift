@@ -209,9 +209,11 @@ final class ClaudeLogin {
         (p.standardOutput as? Pipe)?.fileHandleForReading.readabilityHandler = nil
         guard p.isRunning else { return }
         p.terminate()
-        let pid = p.processIdentifier
+        // Ask the Process, not kill(pid, 0): once it's reaped, the pid may
+        // already belong to an unrelated process.
+        let box = UncheckedSendable(p)
         DispatchQueue.global().asyncAfter(deadline: .now() + AppEnvironment.wait(2)) {
-            if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
+            if box.value.isRunning { kill(box.value.processIdentifier, SIGKILL) }
         }
     }
 
@@ -235,11 +237,11 @@ final class ClaudeLogin {
         phase = .verifying
         Task { [weak self, binary, environment, directory] in
             let status = await ClaudeAuth.status(binary: binary, environment: environment, directory: directory)
-            guard let self, gen == self.generation else { return }
+            guard let self, gen == generation else { return }
             if status == .loggedOut {
-                self.phase = .failed("Claude Code still isn't signed in. Try again.")
+                phase = .failed("Claude Code still isn't signed in. Try again.")
             } else {
-                self.onSignedIn?()
+                onSignedIn?()
             }
         }
     }

@@ -43,7 +43,7 @@ enum CommitMessageDraft {
 
     // MARK: Model
 
-    nonisolated private static let model = SystemLanguageModel(useCase: .general, guardrails: .permissiveContentTransformations)
+    private nonisolated static let model = SystemLanguageModel(useCase: .general, guardrails: .permissiveContentTransformations)
 
     private static func generate(_ prompt: String) async -> CommitMessageIdea? {
         await withTaskGroup(of: CommitMessageIdea?.self) { group in

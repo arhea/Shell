@@ -467,7 +467,7 @@ struct ClaudeComposerField: NSViewRepresentable {
             if let date = model.fileIndexDate, Date().timeIntervalSince(date) < 15 { return }
             guard !model.fileIndexLoading else { return }
             model.fileIndexLoading = true
-            let model = self.model
+            let model = model
             let directory = claude.directory
             let repo = claude.repository
             Task { [weak self] in

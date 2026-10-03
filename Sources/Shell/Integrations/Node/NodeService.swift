@@ -80,7 +80,7 @@ struct NodeLine: Hashable {
 }
 
 struct PackageManagerStatus: Identifiable, Hashable {
-    enum Source: String { case bundled = "bundled with Node", corepack = "corepack", npm = "npm global", homebrew = "Homebrew", standalone = "standalone" }
+    enum Source: String { case bundled = "bundled with Node", corepack, npm = "npm global", homebrew = "Homebrew", standalone }
     var name: String
     var path: String?
     var version: SemVer?
@@ -444,7 +444,7 @@ final class NodeService {
         if let bin = nodeBinDirectory, let first = nodeOnPath.first, manager != nil,
            (first as NSString).deletingLastPathComponent != bin {
             list.append(NodeIssue(severity: .error, title: "Another node comes first on PATH",
-                                  detail: "New shells run \(first) instead of \(bin)/node. Put the \(manager!.title) directory earlier in PATH in ~/.zshrc.",
+                                  detail: "New shells run \(first) instead of \(bin)/node. Put the \(manager?.title ?? "version manager") directory earlier in PATH in ~/.zshrc.",
                                   fix: nil))
         }
         if nodeOnPath.count > 1, manager != nil {
@@ -495,7 +495,7 @@ final class NodeService {
         let wanted = SettingsStore.shared.settings.nodePackageManagers
         let outdated = packageManagers.filter { wanted.contains($0.name) && $0.isOutdated }
         if !outdated.isEmpty {
-            list.append(NodeIssue(severity: .info, title: "Package manager updates: " + outdated.map { "\($0.name) \($0.latest!.description)" }.joined(separator: ", "),
+            list.append(NodeIssue(severity: .info, title: "Package manager updates: " + outdated.map { "\($0.name) \($0.latest?.description ?? "?")" }.joined(separator: ", "),
                                   detail: "", fix: .updatePackageManagers))
         }
         if let npmPrefix = nodeBinDirectory.map({ ($0 as NSString).deletingLastPathComponent + "/lib/node_modules" }),

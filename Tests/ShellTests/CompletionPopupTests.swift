@@ -160,6 +160,18 @@ final class CompletionPopupTests: XCTestCase {
         XCTAssertEqual(b.thumbnailPath, big.path)
     }
 
+    func testPreviewOfANamedPipeDoesNotBlock() async throws {
+        let dir = try makeTemporaryDirectory()
+        let fifo = dir.appendingPathComponent("pipe")
+        XCTAssertEqual(mkfifo(fifo.path, 0o600), 0)
+        // Opening a FIFO for reading blocks until a writer appears; the
+        // preview must describe it without opening it.
+        let c = await CompletionPreview.load(popupItem(0, "pipe", file: true), cwd: dir.path)
+        XCTAssertEqual(c.title, "pipe")
+        XCTAssertTrue(c.lines.isEmpty)
+        XCTAssertNil(c.thumbnailPath)
+    }
+
     func testPreviewFallsBackToTheEscapedInsertionAndThenToTheDescription() async throws {
         let dir = try makeTemporaryDirectory()
         try "hi".write(to: dir.appendingPathComponent("my file.txt"), atomically: true, encoding: .utf8)

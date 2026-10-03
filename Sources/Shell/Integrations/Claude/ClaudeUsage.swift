@@ -297,12 +297,12 @@ final class TranscriptScanner: @unchecked Sendable {
 
     private static let assistantMarker = Data(#""type":"assistant""#.utf8)
     private static let usageMarker = Data(#""usage""#.utf8)
-    nonisolated(unsafe) private static let fractionalDates: ISO8601DateFormatter = {
+    private nonisolated(unsafe) static let fractionalDates: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f
     }()
-    nonisolated(unsafe) private static let wholeSecondDates = ISO8601DateFormatter()
+    private nonisolated(unsafe) static let wholeSecondDates = ISO8601DateFormatter()
 
     private static func date(_ stamp: String) -> Date? {
         fractionalDates.date(from: stamp) ?? wholeSecondDates.date(from: stamp)

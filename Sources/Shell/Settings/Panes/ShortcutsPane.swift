@@ -77,7 +77,14 @@ struct ShortcutRecorder: View {
 
     private func start() {
         recording = true
+        // Local monitors see key-downs from every window: only record in
+        // this one, and stop if typing moves elsewhere (a terminal).
+        let window = NSApp.keyWindow
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.window === window else {
+                stop()
+                return event
+            }
             let mods = event.modifierFlags.intersection([.command, .option, .control, .shift])
             if event.keyCode == 0x35 && mods.isEmpty { // Esc
                 stop()

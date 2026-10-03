@@ -46,7 +46,7 @@ enum ClaudeDiff {
         }
     }
 
-    nonisolated(unsafe) private static var cache: [String: [Line]] = [:]
+    private nonisolated(unsafe) static var cache: [String: [Line]] = [:]
     private static let cacheLock = NSLock()
 
     /// Diffs are rebuilt on every render of a tool call, so keep them.
@@ -129,7 +129,7 @@ enum ClaudeDiff {
         return out
     }
 
-    nonisolated(unsafe) private static var rowCache: [[Line]: [Row]] = [:]
+    private nonisolated(unsafe) static var rowCache: [[Line]: [Row]] = [:]
 
     /// Pairs removed and added runs into rows (git's side-by-side view).
     /// Memoized: views call this on every render, including each frame of a

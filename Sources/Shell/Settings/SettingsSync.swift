@@ -92,6 +92,8 @@ final class SettingsSync {
     // MARK: Lifecycle
 
     func start() {
+        // A second observer would push every change twice and never be removed.
+        guard observer == nil else { return }
         observer = SettingsStore.shared.observe { old, new in
             MainActor.assumeIsolated { SettingsSync.shared.settingsChanged(old: old, new: new) }
         }

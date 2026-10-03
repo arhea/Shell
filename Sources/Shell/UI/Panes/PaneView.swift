@@ -59,23 +59,23 @@ final class PaneView: NSView, TerminalSessionUI {
         session.surfaceView.keyInterceptor = { [weak self] event in self?.interceptTerminalKey(event) ?? false }
         session.surfaceView.onFocusChange = { [weak self] focused in
             guard let self, focused else { return }
-            self.onFocus?(self)
+            onFocus?(self)
         }
         session.surfaceView.onMouseDown = { [weak self] in
             guard let self else { return }
-            self.onFocus?(self)
+            onFocus?(self)
         }
         session.surfaceView.onHoverURLChange = { [weak self] url in self?.showLink(url) }
         session.surfaceView.onPointerMove = { [weak self] point, flags in
             guard let self, SettingsStore.shared.settings.highlightLinks else { return }
-            self.linkOverlay.mouseMoved(to: point, modifiers: flags)
+            linkOverlay.mouseMoved(to: point, modifiers: flags)
             // Our hint replaces the bottom-left URL label for http(s) links.
-            if self.linkOverlay.hovered != nil { self.linkLabel.isHidden = true }
+            if linkOverlay.hovered != nil { linkLabel.isHidden = true }
         }
         // ⌘-click on anything Shell underlined: URLs open, paths reveal in Finder.
         session.surfaceView.linkClickHandler = { [weak self] point, flags in
             guard let self, SettingsStore.shared.settings.highlightLinks, flags.contains(.command),
-                  let link = self.linkOverlay.link(at: point) else { return false }
+                  let link = linkOverlay.link(at: point) else { return false }
             link.activate()
             return true
         }
@@ -89,18 +89,18 @@ final class PaneView: NSView, TerminalSessionUI {
         editor.onHeightChange = { [weak self] in
             guard let self else { return }
             // Fires on every keystroke; only re-lay out when the height moves.
-            let h = self.editor.preferredHeight
-            if h != self.lastEditorHeight {
-                self.lastEditorHeight = h
-                self.needsLayout = true
-            } else if self.editor.completion.isVisible {
-                self.layoutPopup() // filtered items may change its size
+            let h = editor.preferredHeight
+            if h != lastEditorHeight {
+                lastEditorHeight = h
+                needsLayout = true
+            } else if editor.completion.isVisible {
+                layoutPopup() // filtered items may change its size
             }
         }
         editor.onCompletionVisibilityChange = { [weak self] in self?.updatePopup() }
         editor.onFocus = { [weak self] in
             guard let self else { return }
-            self.onFocus?(self)
+            onFocus?(self)
         }
 
         editorVisible = wantsEditor
@@ -226,7 +226,7 @@ final class PaneView: NSView, TerminalSessionUI {
             if wasFocused { window?.makeFirstResponder(session.surfaceView) }
             let work = DispatchWorkItem { [weak self] in
                 guard let self, self.session.state == .running else { return }
-                self.setEditorVisible(false)
+                setEditorVisible(false)
             }
             hideEditorWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
@@ -292,7 +292,7 @@ final class PaneView: NSView, TerminalSessionUI {
                     },
                     onFocus: { [weak self] in
                         guard let self else { return }
-                        self.onFocus?(self)
+                        onFocus?(self)
                     }))
                 host.sizingOptions = []
                 // Clicking anywhere in the view focuses this pane.

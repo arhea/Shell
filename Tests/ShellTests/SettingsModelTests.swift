@@ -223,6 +223,7 @@ final class SettingsModelTests: XCTestCase {
 
     func testVisualChangesAreNotIgnored() {
         let base = AppSettings()
+        // swiftformat:disable:next redundantParens,redundantVoidReturnType - closure type, not a return type
         for change: (inout AppSettings) -> Void in [{ $0.fontSize = 20 }, { $0.darkTheme = "Nord" }, { $0.paddingX = 0 },
                                                     { $0.inputEditor = false }, { $0.extraGhosttyConfig = "x = 1" }] {
             var s = base

@@ -140,6 +140,9 @@ enum MainMenu {
         let help = NSMenu(title: "Help")
         // Restart to Update shows only once an update is found (UpdateMenuItem).
         help.addItem(item(.checkForUpdates))
+        // install() rebuilds the menu bar when shortcuts change; AppKit throws
+        // if an item is added while it still belongs to the old Help menu.
+        UpdateMenuItem.shared.menu?.removeItem(UpdateMenuItem.shared)
         help.addItem(UpdateMenuItem.shared)
         help.addItem(.separator())
         help.delegate = UpdateMenuItem.shared

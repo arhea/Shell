@@ -144,7 +144,7 @@ final class FileExplorerViewTests: XCTestCase {
         XCTAssertGreaterThan(repo.status.changeCount, 3)
         XCTAssertTrue(repo.isIgnored("build/out.bin", isDirectory: false))
 
-        let expanded: Set<String> = ["Sources", "Sources/App", "build", "notes"]
+        let expanded: Set = ["Sources", "Sources/App", "build", "notes"]
         for changedOnly in [false, true] {
             withSettings({ $0.claudeExplorerChangedOnly = changedOnly }) {
                 for isClaude in [true, false] {

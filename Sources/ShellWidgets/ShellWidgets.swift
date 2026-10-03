@@ -76,7 +76,7 @@ extension WidgetSnapshot {
             limitsUpdatedAt: now,
             tokensToday: 18_400_000, tokensLastFiveHours: 6_200_000, sessionsToday: 7,
             days: (0..<7).reversed().map { offset in
-                Day(day: calendar.date(byAdding: .day, value: -offset, to: today)!, tokens: [9, 14, 6, 21, 12, 17, 18][6 - offset] * 1_000_000)
+                Day(day: calendar.date(byAdding: .day, value: -offset, to: today) ?? today, tokens: [9, 14, 6, 21, 12, 17, 18][6 - offset] * 1_000_000)
             },
             models: [Model(name: "Opus 5.5", tokens: 15_000_000), Model(name: "Haiku 4.5", tokens: 3_400_000)])
     }

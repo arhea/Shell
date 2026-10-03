@@ -544,7 +544,7 @@ extension AppSettings {
     /// re-theming every pane for those. Anything not listed here, including
     /// fields added later, counts as visual.
     func differsOnlyInNonVisualState(from other: AppSettings) -> Bool {
-        self.withoutNonVisualState == other.withoutNonVisualState
+        withoutNonVisualState == other.withoutNonVisualState
     }
 
     private var withoutNonVisualState: AppSettings {

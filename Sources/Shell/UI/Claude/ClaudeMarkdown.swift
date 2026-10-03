@@ -323,7 +323,7 @@ struct MarkdownImageView: View {
     /// Off the main thread, regular files only (the path comes from model
     /// output: `/dev/zero` must not hang the app), size-capped, and decoded
     /// as a thumbnail rather than at full resolution.
-    nonisolated private static func loadThumbnail(_ path: String) -> NSImage? {
+    private nonisolated static func loadThumbnail(_ path: String) -> NSImage? {
         let url = URL(fileURLWithPath: path)
         guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
               values.isRegularFile == true, (values.fileSize ?? .max) <= 50_000_000,

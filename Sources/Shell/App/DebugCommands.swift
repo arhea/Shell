@@ -16,12 +16,15 @@ extension NSView {
 @MainActor
 enum DebugCommands {
     private(set) static var events: [String] = []
+    /// Keeps `render-storage`'s window alive while it's on screen.
+    private static var debugWindow: NSWindow?
 
     static func trace(_ s: String) {
         events.append(String(format: "%.3f ", Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 1000)) + s)
         if events.count > 200 { events.removeFirst(events.count - 200) }
     }
 
+    // swiftlint:disable:next cyclomatic_complexity - one flat switch over debug commands
     static func handle(_ fields: [String]) {
         guard fields.count >= 3 else { return }
         let command = fields[2]
@@ -199,12 +202,18 @@ enum DebugCommands {
                 : NSHostingView(rootView: AnyView(AgentStoragePane().frame(width: 700, height: 1100)))
             w.center()
             w.makeKeyAndOrderFront(nil)
+            debugWindow = w
         case "storage":
             // Read-only: measures every category and traces sizes.
             let m = AgentStorageModel.shared
             m.measure()
             Task {
-                while m.isMeasuring || m.measured.isEmpty { try? await Task.sleep(for: .milliseconds(300)) }
+                // Bounded: a measure that finds nothing would otherwise poll forever.
+                var polls = 0
+                while m.isMeasuring || m.measured.isEmpty, polls < 200 {
+                    polls += 1
+                    try? await Task.sleep(for: .milliseconds(300))
+                }
                 trace("storage total=\(WorktreeService.formatBytes(m.total))")
                 for c in m.categories {
                     let r = m.removable(c)
@@ -244,7 +253,7 @@ enum DebugCommands {
                 let scale = window.backingScaleFactor
                 let size = view.bounds.size
                 if let ctx = CGContext(data: nil, width: Int(size.width * scale), height: Int(size.height * scale), bitsPerComponent: 8,
-                                       bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                       bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
                                        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
                     ctx.scaleBy(x: scale, y: scale)
                     if !view.isFlipped {

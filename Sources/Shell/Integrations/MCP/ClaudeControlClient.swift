@@ -92,6 +92,10 @@ final class ClaudeControlClient {
             if p.isRunning { p.terminate() }
         }
         process = nil
+        // Don't leave callers suspended until their timeout if the process
+        // ignores SIGTERM.
+        for w in waiters.values { w.resume(throwing: ClientError.notRunning) }
+        waiters.removeAll()
     }
 
     /// Sends a control request and waits for its response.

@@ -35,6 +35,7 @@ This is a personal open-source project (MIT, bundle ID `app.bethesdalabs.Shell`)
 | `./scripts/build.sh` | Debug build, printing only this project's errors and warnings. Use this to check a change compiles. |
 | `make run` | Debug build and launch |
 | `xcodebuild -project Shell.xcodeproj -scheme Shell test` | Unit tests (isolated from real settings) |
+| `make lint` / `make format` | SwiftFormat check + SwiftLint (crash/leak rules are errors, CI-gating) / apply formatting. See `docs/development.md` › Formatting and linting |
 | `make coverage` | Unit tests with line coverage per file and in total (see `docs/development.md` › Writing tests) |
 | `make dist` | Release build, sign, notarize and staple the app, then a signed, notarized `.dmg` + `.sha256` in `build/dist/` |
 
@@ -84,6 +85,7 @@ Deeper references: `docs/architecture.md` (key types, data flow, threading, quit
 - `@MainActor` for UI and model types; prefer `@Observable`. Cross-thread state is queue-confined or locked and marked `@unchecked Sendable` with a comment saying which.
 - Run external tools with `ProcessRunner` or `GitRepository.run`, quote with `ShellQuote`, share repos via `GitRepository.discover` (balance each with `stop()`).
 - Log through the per-area loggers in `Log`; don't swallow failed writes with a bare `try?`.
+- No `!`, `try!`, `as!` or implicitly unwrapped optionals in `Sources/` unless provably safe, with an inline `swiftlint:disable:next <rule> - <why>`. Capture `self` weakly in stored closures. `make lint` enforces both.
 - To inspect the running app without Screen Recording, use `"$SHELL_APP_CTL" debug snapshot <dir>` from a Shell tab.
 - Update `docs/` when behavior, settings or shortcuts change.
 - **Don't touch `CHANGELOG.md` in feature or fix PRs.** Only the release PR writes to it (see *Releasing a new version*), so parallel branches never conflict on it. Make the PR title and body describe the user-visible change clearly; that's what the release changelog is written from.

@@ -48,7 +48,7 @@ enum InlineMarkdown {
 
     // Regex is immutable once built; it just isn't marked Sendable.
 
-    nonisolated(unsafe) private static let htmlReplacements: [(Regex<AnyRegexOutput>, String)] = ([
+    private nonisolated(unsafe) static let htmlReplacements: [(Regex<AnyRegexOutput>, String)] = ([
         (#"<br\s*/?>"#, "\n"),
         (#"</?(?:b|strong)>"#, "**"),
         (#"</?(?:i|em)>"#, "*"),
