@@ -239,7 +239,7 @@ final class TabViewsTests: XCTestCase {
         // into an inactive window can be spent activating it. Click again,
         // past the double-click interval so it isn't a rename, until it lands.
         var selected = false
-        for _ in 0 ..< 3 where !selected {
+        for _ in 0..<3 where !selected {
             w.click(x: 80, y: 14)
             selected = waitUntil(timeout: NSEvent.doubleClickInterval + 0.5) { fx.workspace.selectedTabID == first.id }
         }
