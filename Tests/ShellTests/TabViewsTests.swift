@@ -235,8 +235,15 @@ final class TabViewsTests: XCTestCase {
         fx.tab("Second")
         let w = claudeWindow(SidebarTabRow(controller: fx.controller, workspace: fx.workspace, tab: first, group: nil),
                              width: 240, height: 44)
-        w.click(x: 80, y: 14)
-        XCTAssertTrue(waitUntil(timeout: 2) { fx.workspace.selectedTabID == first.id })
+        // Parallel test processes compete to be the active app, and a click
+        // into an inactive window can be spent activating it. Click again,
+        // past the double-click interval so it isn't a rename, until it lands.
+        var selected = false
+        for _ in 0 ..< 3 where !selected {
+            w.click(x: 80, y: 14)
+            selected = waitUntil(timeout: NSEvent.doubleClickInterval + 0.5) { fx.workspace.selectedTabID == first.id }
+        }
+        XCTAssertTrue(selected)
         w.hover(x: 80, y: 14)
     }
 
