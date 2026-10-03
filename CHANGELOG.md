@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-03
+
+A stability release. Shell fixes a crash when rebinding shortcuts, plugs a set of memory and file-descriptor leaks that built up over a long day, and pages Claude's multi-question prompts so every question and the **Submit** button stay in reach.
+
+### Changed
+
+- When Claude asks several questions, the question card shows one at a time with a step for each question. Use **Back** and **Next** or click a step to move between them; picking a single-choice answer moves on automatically, and answers are kept when you go back. ([#48](https://github.com/arhea/Shell/pull/48), fixes [#47](https://github.com/arhea/Shell/issues/47))
+
+### Fixed
+
+- Rebinding a shortcut, or an iCloud settings sync, no longer crashes Shell. ([#52](https://github.com/arhea/Shell/pull/52), fixes [#51](https://github.com/arhea/Shell/issues/51))
+- The shortcut recorder no longer swallows terminal typing or rebinds a shortcut by accident if you click away while it's recording. ([#52](https://github.com/arhea/Shell/pull/52), fixes [#51](https://github.com/arhea/Shell/issues/51))
+- Fixed crash paths when a terminal quits or closes all windows from inside libghostty, and when a clipboard request arrives without data. ([#52](https://github.com/arhea/Shell/pull/52), fixes [#51](https://github.com/arhea/Shell/issues/51))
+- Completion previews no longer hang on pipes and device files. ([#52](https://github.com/arhea/Shell/pull/52), fixes [#51](https://github.com/arhea/Shell/issues/51))
+- Plugged memory leaks in panes, repositories, the dashboard, Review Changes, session summaries and MCP and Claude control requests, and cleaned up stale temp files at launch. ([#52](https://github.com/arhea/Shell/pull/52), fixes [#51](https://github.com/arhea/Shell/issues/51))
+- Background commands such as `git status` release their file descriptors as soon as they finish, instead of holding them for up to two minutes. ([#50](https://github.com/arhea/Shell/pull/50), fixes [#49](https://github.com/arhea/Shell/issues/49))
+- Switching branches or detaching HEAD no longer briefly shows the previous branch's pull request. ([#50](https://github.com/arhea/Shell/pull/50), fixes [#49](https://github.com/arhea/Shell/issues/49))
+- The window controls stay inset in the floating tab sidebar after you first click into a window or switch between windows. ([#46](https://github.com/arhea/Shell/pull/46), fixes [#45](https://github.com/arhea/Shell/issues/45))
+
 ## [0.5.0] - 2026-10-02
 
 Shell gets a calmer, more native look with one status language everywhere: an orange spinner means working, a yellow **Input** badge means Claude needs you, green means done. The review-and-fix loop now stays in Shell, with a Pull Requests board, CI checks that can go straight to Claude, a Review Changes view for staging and committing, and command blocks in the terminal.
@@ -102,7 +121,8 @@ First public release.
 - Optional on-device Apple Intelligence features, all off by default.
 - Shortcuts and Spotlight actions, Finder services, a Dock menu, a desktop widget, Quick Look previews and optional iCloud settings sync.
 
-[Unreleased]: https://github.com/arhea/Shell/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/arhea/Shell/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/arhea/Shell/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/arhea/Shell/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/arhea/Shell/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/arhea/Shell/compare/v0.2.0...v0.3.0
